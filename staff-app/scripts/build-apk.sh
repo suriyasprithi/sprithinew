@@ -14,7 +14,7 @@ if [ -z "${ANDROID_HOME:-}" ]; then
   exit 1
 fi
 if ! command -v java >/dev/null; then
-  echo "ERROR: java not on PATH. Expected JDK 17 from devcontainer feature." >&2
+  echo "ERROR: java not on PATH. Expected JDK 21 from devcontainer feature." >&2
   exit 1
 fi
 

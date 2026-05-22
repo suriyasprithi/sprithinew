@@ -20,7 +20,7 @@ needed on your machine.
    `main`** (or your branch).
 3. The first time it opens, the container provisions:
    - Node.js 22 (from the base image — Capacitor 8 CLI requires Node 22+)
-   - JDK 17 (via the `java` devcontainer feature)
+   - JDK 21 (via the `java` devcontainer feature — Capacitor 8 Android lib requires Java 21)
    - Android SDK cmdline-tools, platform-tools, `platforms;android-34`,
      `build-tools;34.0.0` (via [`.devcontainer/setup-android.sh`](.devcontainer/setup-android.sh))
 
