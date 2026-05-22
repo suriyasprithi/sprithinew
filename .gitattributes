@@ -1,0 +1,26 @@
+# Default to autodetect text/binary on Windows
+* text=auto
+
+# Shell scripts MUST be LF — they run on Linux (Codespaces) and CRLF
+# breaks the shebang line ("bad interpreter: /usr/bin/env^M").
+*.sh text eol=lf
+
+# Same for Gradle wrapper if/when generated
+gradlew text eol=lf
+
+# Lock files — keep LF to match what the package managers write
+*.lock text eol=lf
+package-lock.json text eol=lf
+composer.lock text eol=lf
+
+# Binary files
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.webp binary
+*.pdf binary
+*.zip binary
+*.apk binary
+*.phar binary

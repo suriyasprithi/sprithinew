@@ -1,0 +1,35 @@
+{
+  "name": "epey — Android APK build",
+  "image": "mcr.microsoft.com/devcontainers/javascript-node:1-20-bookworm",
+  "features": {
+    "ghcr.io/devcontainers/features/java:1": {
+      "version": "17",
+      "installGradle": false
+    }
+  },
+  "remoteEnv": {
+    "ANDROID_HOME": "/home/node/android-sdk",
+    "ANDROID_SDK_ROOT": "/home/node/android-sdk",
+    "PATH": "/home/node/android-sdk/cmdline-tools/latest/bin:/home/node/android-sdk/platform-tools:/home/node/android-sdk/build-tools/34.0.0:${containerEnv:PATH}"
+  },
+  "containerEnv": {
+    "ANDROID_HOME": "/home/node/android-sdk",
+    "ANDROID_SDK_ROOT": "/home/node/android-sdk"
+  },
+  "postCreateCommand": "bash .devcontainer/setup-android.sh",
+  "remoteUser": "node",
+  "hostRequirements": {
+    "cpus": 4,
+    "memory": "8gb",
+    "storage": "32gb"
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "dbaeumer.vscode-eslint",
+        "esbenp.prettier-vscode",
+        "bradlc.vscode-tailwindcss"
+      ]
+    }
+  }
+}

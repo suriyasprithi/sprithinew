@@ -1,0 +1,98 @@
+import { create } from "zustand";
+import { api, AuthUser, AuthTokens } from "@/lib/api";
+import { storage, STORAGE_KEYS } from "@/lib/storage";
+import { registerDeviceToken, unregisterDeviceToken } from "@/lib/push";
+
+type AuthState = {
+  user: AuthUser | null;
+  isHydrated: boolean;
+  isLoading: boolean;
+  hydrate: () => Promise<void>;
+  login: (mobile: string, password: string) => Promise<AuthUser>;
+  register: (input: { name: string; mobile: string; password: string; email?: string }) => Promise<AuthUser>;
+  logout: () => Promise<void>;
+};
+
+const persistTokens = (tokens: AuthTokens) => {
+  storage.set(STORAGE_KEYS.ACCESS, tokens.access_token);
+  storage.set(STORAGE_KEYS.REFRESH, tokens.refresh_token);
+};
+
+const clearTokens = () => {
+  storage.remove(STORAGE_KEYS.ACCESS);
+  storage.remove(STORAGE_KEYS.REFRESH);
+};
+
+export const useAuth = create<AuthState>((set) => ({
+  user: null,
+  isHydrated: false,
+  isLoading: false,
+
+  hydrate: async () => {
+    const token = storage.get(STORAGE_KEYS.ACCESS);
+    if (!token) {
+      set({ isHydrated: true });
+      return;
+    }
+    try {
+      const res = await api.get("/auth/me");
+      set({ user: res.data.data as AuthUser, isHydrated: true });
+      void registerDeviceToken();
+    } catch {
+      clearTokens();
+      set({ user: null, isHydrated: true });
+    }
+  },
+
+  login: async (mobile, password) => {
+    set({ isLoading: true });
+    try {
+      const res = await api.post("/auth/login", {
+        mobile_number: mobile,
+        password,
+        role: "customer",
+      });
+      const tokens = res.data.data as AuthTokens;
+      persistTokens(tokens);
+      set({ user: tokens.user });
+      void registerDeviceToken();
+      return tokens.user;
+    } finally {
+      set({ isLoading: false });
+    }
+  },
+
+  register: async ({ name, mobile, password, email }) => {
+    set({ isLoading: true });
+    try {
+      const res = await api.post("/auth/register", {
+        name,
+        mobile_number: mobile,
+        password,
+        email: email || undefined,
+      });
+      const tokens = res.data.data as AuthTokens;
+      persistTokens(tokens);
+      set({ user: tokens.user });
+      void registerDeviceToken();
+      return tokens.user;
+    } finally {
+      set({ isLoading: false });
+    }
+  },
+
+  logout: async () => {
+    try {
+      await unregisterDeviceToken();
+    } catch {
+      // ignore
+    }
+    try {
+      await api.post("/auth/logout");
+    } catch {
+      // ignore — local clear is what matters
+    }
+    clearTokens();
+    set({ user: null });
+  },
+}));

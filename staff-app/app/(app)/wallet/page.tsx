@@ -1,0 +1,180 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { motion } from "framer-motion";
+import { Wallet as WalletIcon, Banknote, Clock, Sparkles, Users, Loader2 } from "lucide-react";
+import { toast } from "sonner";
+import { LuxuryCard } from "@/components/ui/custom/luxury-card";
+import { AnimatedCounter } from "@/components/ui/custom/animated-counter";
+import { EmptyState } from "@/components/data-table/empty-state";
+import { MobileHeader } from "@/components/layout/mobile-nav";
+import { PageHeader } from "@/components/layout/page-header";
+import { useAuth } from "@/stores/auth";
+import { api, apiErrorMessage } from "@/lib/api";
+
+type PoolMonth = {
+  id: number;
+  period: string;
+  collected: number;
+  distributed: number;
+  eligible_count: number;
+  per_user_amount: number;
+  distributed_at: string | null;
+};
+type PoolPayload = {
+  current_balance: number;
+  total_collected: number;
+  total_distributed: number;
+  months: PoolMonth[];
+};
+
+const fmtINR = (n: number) =>
+  new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 2 }).format(n);
+
+const periodLabel = (p: string) => {
+  const [y, m] = p.split("-").map(Number);
+  if (!y || !m) return p;
+  return new Date(y, m - 1, 1).toLocaleString("en-IN", { month: "short", year: "numeric" });
+};
+
+export default function StaffWalletPage() {
+  const { user } = useAuth();
+  const isAdmin = user?.role === "admin";
+
+  const [pool, setPool] = useState<PoolPayload | null>(null);
+  const [loadingPool, setLoadingPool] = useState(false);
+
+  useEffect(() => {
+    if (!isAdmin) return;
+    setLoadingPool(true);
+    void (async () => {
+      try {
+        const res = await api.get("/admin/wallet/global-pool");
+        setPool(res.data.data as PoolPayload);
+      } catch (e) { toast.error(apiErrorMessage(e)); }
+      finally { setLoadingPool(false); }
+    })();
+  }, [isAdmin]);
+
+  return (
+    <>
+      <MobileHeader title="Wallet" />
+      <section className="mx-auto max-w-4xl space-y-5 p-4 pb-24 md:p-8">
+        <PageHeader
+          eyebrow="Finance"
+          icon={WalletIcon}
+          title="Wallet"
+          description={isAdmin ? "Your earnings, plus the platform's global pool." : "Your earnings balance and transaction history."}
+        />
+
+        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
+          <LuxuryCard glow hoverLift={false} className="relative overflow-hidden brand-gradient p-6 text-brand-foreground">
+            <div className="absolute inset-0 brand-gradient-soft opacity-40" />
+            <div className="relative space-y-3">
+              <p className="flex items-center gap-1.5 text-xs uppercase tracking-wider opacity-80">
+                <Banknote className="h-4 w-4" /> Wallet balance
+              </p>
+              <p className="text-4xl font-bold tracking-tight md:text-5xl">
+                <AnimatedCounter value={user?.wallet_balance ?? 0} format={fmtINR} />
+              </p>
+            </div>
+          </LuxuryCard>
+        </motion.div>
+
+        {/* Admin-only: global pool snapshot + monthly history */}
+        {isAdmin && (
+          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
+            <div
+              className="rounded-[20px] border p-5"
+              style={{
+                background: "linear-gradient(135deg,#ffffff 0%,#fff7ed 100%)",
+                borderColor: "rgba(245,158,11,0.18)",
+                boxShadow: "0 1px 0 rgba(255,255,255,0.6) inset, 0 6px 18px -10px rgba(15,23,42,0.10)",
+              }}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <span className="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-[#fef3c7] text-[#b45309]">
+                    <Sparkles className="h-5 w-5" />
+                  </span>
+                  <div>
+                    <p className="text-[15px] font-bold text-[#111827]">Global pool</p>
+                    <p className="text-xs text-[#6b7280]">2.5% of every order accumulates here; distributed monthly to all eligible customers.</p>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <p className="text-[28px] font-bold leading-none tracking-tight text-[#111827]">
+                    <AnimatedCounter value={pool?.current_balance ?? 0} format={fmtINR} />
+                  </p>
+                  <p className="mt-1 text-[11px] text-[#6b7280]">Awaiting distribution</p>
+                </div>
+              </div>
+
+              <div className="mt-4 grid grid-cols-2 gap-3 text-xs">
+                <div className="rounded-xl bg-white/70 p-3">
+                  <p className="text-[11px] uppercase tracking-wider text-[#6b7280]">Total collected (last 12 mo.)</p>
+                  <p className="mt-1 text-base font-bold text-[#111827]">{fmtINR(pool?.total_collected ?? 0)}</p>
+                </div>
+                <div className="rounded-xl bg-white/70 p-3">
+                  <p className="text-[11px] uppercase tracking-wider text-[#6b7280]">Total distributed</p>
+                  <p className="mt-1 text-base font-bold text-emerald-600">{fmtINR(pool?.total_distributed ?? 0)}</p>
+                </div>
+              </div>
+
+              <div className="mt-5 overflow-hidden rounded-xl border border-black/5 bg-white/70">
+                {loadingPool ? (
+                  <div className="flex items-center justify-center gap-2 p-6 text-xs text-[#6b7280]">
+                    <Loader2 className="h-4 w-4 animate-spin" /> Loading…
+                  </div>
+                ) : !pool || pool.months.length === 0 ? (
+                  <div className="p-6 text-center text-xs text-[#6b7280]">No monthly pool history yet.</div>
+                ) : (
+                  <table className="w-full text-sm">
+                    <thead className="bg-black/[0.025] text-left text-[11px] uppercase tracking-wider text-[#6b7280]">
+                      <tr>
+                        <th className="px-3 py-2 font-semibold">Month</th>
+                        <th className="px-3 py-2 font-semibold">Collected</th>
+                        <th className="hidden px-3 py-2 font-semibold sm:table-cell">Distributed</th>
+                        <th className="hidden px-3 py-2 font-semibold md:table-cell">
+                          <span className="inline-flex items-center gap-1"><Users className="h-3 w-3" /> Recipients</span>
+                        </th>
+                        <th className="px-3 py-2 text-right font-semibold">Per user</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-black/5">
+                      {pool.months.map((m) => {
+                        const isDistributed = m.distributed > 0 && m.distributed_at;
+                        return (
+                          <tr key={m.id} className="transition-colors hover:bg-black/[0.025]">
+                            <td className="px-3 py-2.5 font-medium text-[#111827]">{periodLabel(m.period)}</td>
+                            <td className="px-3 py-2.5">{fmtINR(m.collected)}</td>
+                            <td className="hidden px-3 py-2.5 sm:table-cell">
+                              <span className={isDistributed ? "text-emerald-600 font-medium" : "text-[#6b7280]"}>
+                                {fmtINR(m.distributed)}
+                              </span>
+                              {!isDistributed && <span className="ml-1 text-[11px] text-amber-600">pending</span>}
+                            </td>
+                            <td className="hidden px-3 py-2.5 md:table-cell">{m.eligible_count || "—"}</td>
+                            <td className="px-3 py-2.5 text-right font-medium">{m.per_user_amount ? fmtINR(m.per_user_amount) : "—"}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            </div>
+          </motion.div>
+        )}
+
+        <LuxuryCard hoverLift={false} className="p-3">
+          <EmptyState
+            icon={Clock}
+            title="Transaction history coming soon"
+            description="Wallet history will appear here once Phase 4 backend lands."
+          />
+        </LuxuryCard>
+      </section>
+    </>
+  );
+}
