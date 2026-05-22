@@ -25,8 +25,9 @@ if [ ! -d "node_modules" ]; then
 fi
 
 # 3. Next.js static export → out/
-echo "==> Building Next.js (static export)…"
-npm run build
+# CAPACITOR_BUILD=1 strips basePath/assetPrefix so the APK loads from /
+echo "==> Building Next.js (static export, Capacitor mode)…"
+CAPACITOR_BUILD=1 npm run build
 
 # 4. Add android platform on first run
 if [ ! -d "android" ]; then
