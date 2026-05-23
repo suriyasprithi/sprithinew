@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Bell, LogOut } from "lucide-react";
+import { Bell, LogOut, ShoppingBag } from "lucide-react";
 import { api } from "@/lib/api";
 import { useAuth } from "@/stores/auth";
 
@@ -49,6 +49,13 @@ export function AppHeader({ title }: { title?: string }) {
             </>
           )}
         </div>
+        <Link
+          href="/shop-public"
+          aria-label="Go to shop"
+          className="ml-1 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-border bg-surface-2/60 hover:border-brand/40 hover:text-brand"
+        >
+          <ShoppingBag className="h-4 w-4" />
+        </Link>
       </div>
       <div className="flex items-center gap-1.5">
         <Link

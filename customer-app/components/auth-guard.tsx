@@ -27,7 +27,7 @@ export function GuestGuard({ children }: { children: React.ReactNode }) {
   const { user, isHydrated } = useAuth();
 
   useEffect(() => {
-    if (isHydrated && user) router.replace("/dashboard");
+    if (isHydrated && user) router.replace("/home");
   }, [isHydrated, user, router]);
 
   if (!isHydrated) {

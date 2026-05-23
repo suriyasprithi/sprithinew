@@ -46,6 +46,14 @@ $RECYCLE.BIN/
 Vagrantfile
 
 #-------------------------
+# Secrets — never commit
+#-------------------------
+/writable/firebase-service-account.json
+/writable/*-service-account.json
+/writable/*.key
+/writable/*.pem.key
+
+#-------------------------
 # Temporary Files
 #-------------------------
 /writable/cache/*

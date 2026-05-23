@@ -205,16 +205,45 @@ class PublicController extends BaseApiController
         $vendorProfiles = $vendorIds ? (new VendorProfileModel())->whereIn('user_id', $vendorIds)->findAll() : [];
         $shopName  = []; foreach ($vendorProfiles as $p) $shopName[(int) $p['user_id']] = $p['shop_name'];
 
-        return array_map(static function ($r) use ($catName, $vendName, $shopName) {
+        // Default (cheapest in-stock active) variant per product that has variants —
+        // lets list/tile screens add to cart in one click without making the user
+        // open the detail page just to pick a variant.
+        $variantProductIds = [];
+        foreach ($rows as $r) {
+            if ((int) ($r['has_variants'] ?? 0) === 1 && ! empty($r['id'])) {
+                $variantProductIds[] = (int) $r['id'];
+            }
+        }
+        $defaultVariant = [];
+        if ($variantProductIds) {
+            // ORDER puts in-stock variants first (stock > 0 → false → 0 → sorts before
+            // stock = 0 → true → 1), then cheapest, then oldest. The third arg `false`
+            // tells the query builder to leave the expression unescaped.
+            $variants = (new ProductVariantModel())
+                ->whereIn('product_id', $variantProductIds)
+                ->where('status', 'active')
+                ->orderBy('product_id', 'ASC')
+                ->orderBy('(stock = 0)', 'ASC', false)
+                ->orderBy('price', 'ASC')
+                ->orderBy('id', 'ASC')
+                ->findAll();
+            foreach ($variants as $v) {
+                $pid = (int) ($v['product_id'] ?? 0);
+                if (! isset($defaultVariant[$pid])) $defaultVariant[$pid] = (int) $v['id'];
+            }
+        }
+
+        return array_map(static function ($r) use ($catName, $vendName, $shopName, $defaultVariant) {
             $rawAttrs = $r['attributes'] ?? null;
             $attrs    = is_string($rawAttrs) ? (json_decode($rawAttrs, true) ?: null) : (is_array($rawAttrs) ? $rawAttrs : null);
             return array_merge($r, [
-                'category_name' => $catName[(int) ($r['category_id'] ?? 0)]  ?? null,
-                'vendor_name'   => $shopName[(int) ($r['vendor_id'] ?? 0)] ?? $vendName[(int) ($r['vendor_id'] ?? 0)] ?? null,
-                'price'         => (float) ($r['price'] ?? 0),
-                'stock'         => (int)   ($r['stock'] ?? 0),
-                'has_variants'  => (bool)  ($r['has_variants'] ?? 0),
-                'attributes'    => $attrs,
+                'category_name'      => $catName[(int) ($r['category_id'] ?? 0)]  ?? null,
+                'vendor_name'        => $shopName[(int) ($r['vendor_id'] ?? 0)] ?? $vendName[(int) ($r['vendor_id'] ?? 0)] ?? null,
+                'price'              => (float) ($r['price'] ?? 0),
+                'stock'              => (int)   ($r['stock'] ?? 0),
+                'has_variants'       => (bool)  ($r['has_variants'] ?? 0),
+                'default_variant_id' => $defaultVariant[(int) ($r['id'] ?? 0)] ?? null,
+                'attributes'         => $attrs,
             ]);
         }, $rows);
     }

@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
-import { Loader2, Minus, Plus, ShoppingBag, Trash2 } from "lucide-react";
+import { ArrowLeft, Loader2, Minus, Plus, ShoppingBag, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { AppHeader } from "@/components/layout/app-header";
 import { LuxuryCard } from "@/components/ui/custom/luxury-card";
@@ -75,7 +75,7 @@ export default function CartPage() {
             <ShoppingBag className="mx-auto mb-3 h-12 w-12 text-brand" />
             <p className="text-sm font-medium">Your cart is empty</p>
             <p className="mt-1 text-xs text-muted-foreground">Browse the shop to add some items.</p>
-            <Link href="/shop" className="mt-5 inline-block">
+            <Link href="/shop-public" className="mt-5 inline-block">
               <GradientButton>Browse shop</GradientButton>
             </Link>
           </LuxuryCard>
@@ -114,6 +114,12 @@ export default function CartPage() {
 
             <Link href="/pay" className="block">
               <GradientButton size="lg" className="w-full">Checkout</GradientButton>
+            </Link>
+            <Link
+              href="/home"
+              className="flex w-full items-center justify-center gap-2 rounded-xl border border-border bg-surface-2/40 px-4 py-3 text-sm font-medium text-muted-foreground hover:border-brand/40 hover:text-brand"
+            >
+              <ArrowLeft className="h-4 w-4" /> Continue shopping
             </Link>
           </>
         )}

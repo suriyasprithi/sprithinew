@@ -27,6 +27,8 @@ type ApiProduct = {
   image: string | null;
   vendor_name?: string | null;
   stock?: number;
+  has_variants?: boolean;
+  default_variant_id?: number | null;
 };
 type ApiVendor = {
   id: number; name: string; shop_name?: string | null; area?: string | null; pincode?: string | null;
@@ -56,6 +58,8 @@ export default function PublicHomePage() {
           image: p.image,
           vendor_name: p.vendor_name ?? null,
           stock: p.stock,
+          has_variants: !!p.has_variants,
+          default_variant_id: p.default_variant_id ?? null,
         }));
         setProducts(featured);
 

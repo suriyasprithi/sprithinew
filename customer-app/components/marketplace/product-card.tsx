@@ -6,6 +6,7 @@ import { Heart, Star, Plus, Minus, Store } from "lucide-react";
 import { toast } from "sonner";
 import { ProductImage } from "@/components/ui/custom/product-image";
 import { wishlist } from "@/lib/wishlist";
+import { api, apiErrorMessage } from "@/lib/api";
 
 export type MarketplaceProduct = {
   id: number;
@@ -19,6 +20,8 @@ export type MarketplaceProduct = {
   reviews?: number;
   stock?: number;
   badge?: string;           // "20% OFF", "Trending", etc.
+  has_variants?: boolean;
+  default_variant_id?: number | null;  // backend picks cheapest in-stock variant
 };
 
 const fmtINR = (n: number) =>
@@ -31,6 +34,7 @@ export function ProductCard({ product, onAdd }: {
   const [weight, setWeight] = useState(product.weights?.[0] ?? "");
   const [qty, setQty] = useState(0);
   const [liked, setLiked] = useState(false);
+  const [busy, setBusy] = useState(false);
 
   // Hydrate from localStorage on mount + react to changes in other tabs.
   useEffect(() => {
@@ -42,14 +46,46 @@ export function ProductCard({ product, onAdd }: {
     ? Math.round(((product.old_price - product.price) / product.old_price) * 100)
     : 0;
 
-  function add() {
-    if (qty === 0) {
-      setQty(1);
-      onAdd?.(product, 1);
-      toast.success(`${product.name} added to cart`);
-    } else {
-      setQty(qty + 1);
-      onAdd?.(product, qty + 1);
+  // Persist to the backend cart. If a parent supplies `onAdd`, defer to it
+  // (e.g. for a UI-only override or analytics shim). Otherwise POST directly
+  // to /cart/add — the api axios interceptor handles 401 by routing to /login.
+  async function add() {
+    if (busy) return;
+    const nextQty = qty + 1;
+    setBusy(true);
+    try {
+      if (onAdd) {
+        onAdd(product, nextQty);
+      } else {
+        // Products with variants require a variation_id — fall back to the
+        // backend-provided default (cheapest in-stock active variant).
+        const payload: Record<string, unknown> = { product_id: product.id, qty: 1 };
+        if (product.has_variants && product.default_variant_id) {
+          payload.variation_id = product.default_variant_id;
+        }
+        await api.post("/cart/add", payload);
+      }
+      setQty(nextQty);
+      if (qty === 0) toast.success(`${product.name} added to cart`);
+    } catch (err) {
+      toast.error(apiErrorMessage(err, "Could not add to cart"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function decrement() {
+    if (busy) return;
+    const nextQty = Math.max(0, qty - 1);
+    setBusy(true);
+    try {
+      // No /cart/remove-one endpoint — best-effort: optimistic UI only.
+      // Decrementing on the home tile won't perfectly mirror server state if
+      // the user has multiple entries; the Cart page is the source of truth.
+      if (onAdd) onAdd(product, nextQty);
+      setQty(nextQty);
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -136,17 +172,18 @@ export function ProductCard({ product, onAdd }: {
             <button
               type="button"
               onClick={add}
-              className="inline-flex items-center gap-1 rounded-lg border-2 border-[var(--mk-brand)] bg-[var(--mk-brand-soft)] px-3 py-1.5 text-xs font-bold text-[var(--mk-brand-deep)] transition-colors hover:bg-[var(--mk-brand)] hover:text-white"
+              disabled={busy}
+              className="inline-flex items-center gap-1 rounded-lg border-2 border-[var(--mk-brand)] bg-[var(--mk-brand-soft)] px-3 py-1.5 text-xs font-bold text-[var(--mk-brand-deep)] transition-colors hover:bg-[var(--mk-brand)] hover:text-white disabled:opacity-60"
             >
               ADD
             </button>
           ) : (
             <div className="inline-flex items-center overflow-hidden rounded-lg bg-[var(--mk-brand)] text-white">
-              <button onClick={() => { const n = Math.max(0, qty - 1); setQty(n); onAdd?.(product, n); }} className="px-2 py-1 hover:bg-[var(--mk-brand-deep)]">
+              <button onClick={decrement} disabled={busy} className="px-2 py-1 hover:bg-[var(--mk-brand-deep)] disabled:opacity-60">
                 <Minus className="h-3 w-3" />
               </button>
               <span className="min-w-6 text-center text-xs font-bold">{qty}</span>
-              <button onClick={add} className="px-2 py-1 hover:bg-[var(--mk-brand-deep)]">
+              <button onClick={add} disabled={busy} className="px-2 py-1 hover:bg-[var(--mk-brand-deep)] disabled:opacity-60">
                 <Plus className="h-3 w-3" />
               </button>
             </div>

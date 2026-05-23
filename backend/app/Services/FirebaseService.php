@@ -3,7 +3,6 @@
 namespace App\Services;
 
 use Firebase\JWT\JWT;
-use CodeIgniter\HTTP\CURLRequest;
 
 /**
  * Sends FCM v1 messages using a Firebase service-account JSON.
@@ -79,25 +78,76 @@ class FirebaseService
         ];
 
         $url = "https://fcm.googleapis.com/v1/projects/{$projectId}/messages:send";
-        try {
-            /** @var CURLRequest $client */
-            $client   = service('curlrequest', ['timeout' => 10]);
-            $response = $client->post($url, [
-                'headers' => [
-                    'Authorization' => "Bearer {$accessToken}",
-                    'Content-Type'  => 'application/json',
-                ],
-                'json'        => $payload,
-                'http_errors' => false,
-            ]);
-            $code = $response->getStatusCode();
-            if ($code >= 200 && $code < 300) return true;
-            log_message('error', 'FCM send failed: ' . $code . ' ' . $response->getBody());
-            return false;
-        } catch (\Throwable $e) {
-            log_message('error', 'FCM exception: ' . $e->getMessage());
-            return false;
+        $res = $this->rawPost($url, [
+            "Authorization: Bearer {$accessToken}",
+            'Content-Type: application/json',
+        ], json_encode($payload));
+        if ($res['code'] >= 200 && $res['code'] < 300) return true;
+        log_message('error', 'FCM send failed: ' . $res['code'] . ' ' . $res['body'] . ($res['error'] ? ' curl_err=' . $res['error'] : ''));
+        return false;
+    }
+
+    /**
+     * Raw cURL POST so we can reliably attach CURLOPT_CAINFO on Windows
+     * (CI4's CURLRequest doesn't honour `verify` => path consistently).
+     *
+     * @param string[] $headers
+     */
+    private function rawPost(string $url, array $headers, string $body): array
+    {
+        $cacert = $this->caBundlePath();
+        // Default: verify ON. Only turn OFF when env is literally '0' or 'false'.
+        $sslVerifyEnv = env('firebase.ssl_verify');
+        $sslVerify = !in_array((string) $sslVerifyEnv, ['0', 'false', 'no'], true);
+
+        $opts = [
+            CURLOPT_POST           => true,
+            CURLOPT_POSTFIELDS     => $body,
+            CURLOPT_HTTPHEADER     => $headers,
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_TIMEOUT        => 15,
+            CURLOPT_CONNECTTIMEOUT => 10,
+            CURLOPT_SSL_VERIFYPEER => $sslVerify,
+            CURLOPT_SSL_VERIFYHOST => $sslVerify ? 2 : 0,
+        ];
+        if ($sslVerify && $cacert !== null) $opts[CURLOPT_CAINFO] = $cacert;
+
+        log_message('error', 'FCM rawPost: url=' . $url . ' verify=' . ($sslVerify ? '1' : '0') . ' cacert=' . ($cacert ?? '(null)'));
+
+        $ch = curl_init($url);
+        curl_setopt_array($ch, $opts);
+        $body = curl_exec($ch);
+        $code = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $err  = curl_error($ch);
+        // PHP 8+ auto-cleans cURL handles when out of scope — no curl_close needed.
+        return ['code' => $code, 'body' => is_string($body) ? $body : '', 'error' => $err];
+    }
+
+    /**
+     * Locate a CA bundle for HTTPS verification. Returns null if none found
+     * (default cURL/system trust store is then used). On Windows without a
+     * properly-configured cainfo, you want to point at writable/cacert.pem
+     * — download from https://curl.se/ca/cacert.pem.
+     */
+    private function caBundlePath(): ?string
+    {
+        static $resolved = false;
+        static $cached   = null;
+        if ($resolved) return $cached;
+        $resolved = true;
+
+        $candidates = [
+            env('firebase.cacert') ?: null,
+            rtrim(ROOTPATH, '/\\') . DIRECTORY_SEPARATOR . 'writable' . DIRECTORY_SEPARATOR . 'cacert.pem',
+        ];
+        foreach ($candidates as $p) {
+            if ($p && is_file($p)) {
+                log_message('info', 'FCM cacert resolved: ' . $p);
+                return $cached = $p;
+            }
         }
+        log_message('warning', 'FCM cacert: none of the candidates found — ' . json_encode($candidates));
+        return null;
     }
 
     private function loadCredentials(): ?array
@@ -139,27 +189,24 @@ class FirebaseService
             return null;
         }
 
-        try {
-            /** @var CURLRequest $client */
-            $client   = service('curlrequest', ['timeout' => 10]);
-            $response = $client->post('https://oauth2.googleapis.com/token', [
-                'form_params' => [
-                    'grant_type' => 'urn:ietf:params:oauth:grant-type:jwt-bearer',
-                    'assertion'  => $jwt,
-                ],
-                'http_errors' => false,
-            ]);
-            $body = json_decode((string) $response->getBody(), true) ?: [];
-            $token = $body['access_token'] ?? null;
-            if (! $token) {
-                log_message('error', 'OAuth token fetch failed: ' . $response->getBody());
-                return null;
-            }
-            $cache->save($cacheKey, $token, max(60, (int) ($body['expires_in'] ?? 3600) - 60));
-            return $token;
-        } catch (\Throwable $e) {
-            log_message('error', 'OAuth fetch exception: ' . $e->getMessage());
+        $formBody = http_build_query([
+            'grant_type' => 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+            'assertion'  => $jwt,
+        ]);
+        $res = $this->rawPost('https://oauth2.googleapis.com/token', [
+            'Content-Type: application/x-www-form-urlencoded',
+        ], $formBody);
+        if ($res['code'] < 200 || $res['code'] >= 300) {
+            log_message('error', 'OAuth token fetch failed: ' . $res['code'] . ' ' . $res['body'] . ($res['error'] ? ' curl_err=' . $res['error'] : ''));
             return null;
         }
+        $body = json_decode($res['body'], true) ?: [];
+        $token = $body['access_token'] ?? null;
+        if (! $token) {
+            log_message('error', 'OAuth token fetch: no access_token in response — ' . $res['body']);
+            return null;
+        }
+        $cache->save($cacheKey, $token, max(60, (int) ($body['expires_in'] ?? 3600) - 60));
+        return $token;
     }
 }

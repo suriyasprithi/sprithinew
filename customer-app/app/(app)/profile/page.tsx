@@ -1,8 +1,9 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
-import { LogOut, Mail, MapPin, Phone, Shield, Wallet, Coins, User as UserIcon, type LucideIcon } from "lucide-react";
+import { ArrowLeft, LogOut, Mail, MapPin, Phone, Shield, Wallet, Coins, User as UserIcon, type LucideIcon } from "lucide-react";
 import { AppHeader } from "@/components/layout/app-header";
 import { LuxuryCard } from "@/components/ui/custom/luxury-card";
 import { GradientButton } from "@/components/ui/custom/gradient-button";
@@ -90,6 +91,13 @@ export default function ProfilePage() {
             <InfoRow icon={Shield} label="Status"  value={user?.status} />
           </div>
         </LuxuryCard>
+
+        <Link
+          href="/home"
+          className="flex w-full items-center justify-center gap-2 rounded-xl border border-border bg-surface-2/40 px-4 py-3 text-sm font-medium text-muted-foreground hover:border-brand/40 hover:text-brand"
+        >
+          <ArrowLeft className="h-4 w-4" /> Continue shopping
+        </Link>
 
         <GradientButton
           size="lg"

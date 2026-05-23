@@ -20,6 +20,8 @@ type ApiProduct = {
   image: string | null;
   stock: number | string;
   vendor_name?: string | null;
+  has_variants?: boolean;
+  default_variant_id?: number | null;
 };
 
 function adapt(raw: ApiProduct): MarketplaceProduct {
@@ -30,6 +32,8 @@ function adapt(raw: ApiProduct): MarketplaceProduct {
     image: raw.image,
     vendor_name: raw.vendor_name ?? null,
     stock: Number(raw.stock),
+    has_variants: !!raw.has_variants,
+    default_variant_id: raw.default_variant_id ?? null,
   };
 }
 

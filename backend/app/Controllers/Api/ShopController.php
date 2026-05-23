@@ -54,6 +54,7 @@ class ShopController extends BaseApiController
             'name'          => $byId[(int) $u['id']]['shop_name'] ?? $u['name'],
             'area'          => $byId[(int) $u['id']]['area']    ?? '',
             'pincode'       => $byId[(int) $u['id']]['pincode'] ?? '',
+            'mobile'        => $u['mobile_number']              ?? '',
             'image'         => $byId[(int) $u['id']]['image']   ?? '',
             'product_count' => $countBy[(int) $u['id']] ?? 0,
         ], $rows);
@@ -61,7 +62,7 @@ class ShopController extends BaseApiController
         if ($q) {
             $needle = strtolower($q);
             $items = array_values(array_filter($items, static function ($it) use ($needle) {
-                $hay = strtolower(($it['name'] ?? '') . ' ' . ($it['area'] ?? '') . ' ' . ($it['pincode'] ?? ''));
+                $hay = strtolower(($it['name'] ?? '') . ' ' . ($it['area'] ?? '') . ' ' . ($it['pincode'] ?? '') . ' ' . ($it['mobile'] ?? ''));
                 return str_contains($hay, $needle);
             }));
         }

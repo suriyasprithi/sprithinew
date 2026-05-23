@@ -26,7 +26,7 @@ export default function LoginPage() {
     try {
       await login(mobile.trim(), password);
       toast.success("Welcome back");
-      router.replace("/dashboard");
+      router.replace("/home");
     } catch (err) {
       toast.error(apiErrorMessage(err, "Login failed"));
     }

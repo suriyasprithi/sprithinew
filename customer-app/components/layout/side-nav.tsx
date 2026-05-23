@@ -3,14 +3,13 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { motion } from "framer-motion";
-import { Home, Store, QrCode, Wallet, User, LogOut, ShoppingBag, ShoppingCart, Activity, Sparkles } from "lucide-react";
+import { Home, QrCode, Wallet, User, LogOut, ShoppingBag, ShoppingCart, Activity, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/stores/auth";
 
 const ITEMS = [
   { href: "/dashboard", label: "Home",     icon: Home },
-  { href: "/shops",     label: "Shops",    icon: ShoppingBag },
-  { href: "/shop",      label: "Shop",     icon: Store },
+  { href: "/shop-public", label: "Shop",   icon: ShoppingBag },
   { href: "/cart",      label: "Cart",     icon: ShoppingCart },
   { href: "/qr",        label: "Scan",     icon: QrCode },
   { href: "/wallet",         label: "Wallet",         icon: Wallet },

@@ -11,7 +11,7 @@ import { LuxuryCard } from "@/components/ui/custom/luxury-card";
 import { GradientButton } from "@/components/ui/custom/gradient-button";
 import { api, apiErrorMessage } from "@/lib/api";
 
-type Shop = { id: number; name: string; area: string; pincode: string; image: string; product_count: number };
+type Shop = { id: number; name: string; area: string; pincode: string; mobile: string; image: string; product_count: number };
 
 export default function ShopsPage() {
   const [shops, setShops] = useState<Shop[]>([]);
@@ -61,10 +61,10 @@ export default function ShopsPage() {
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm font-semibold">{s.name}</p>
                       <p className="truncate text-xs text-muted-foreground">{s.area}{s.pincode ? ` · ${s.pincode}` : ""}</p>
+                      {s.mobile && (
+                        <p className="truncate text-xs font-mono text-muted-foreground">{s.mobile}</p>
+                      )}
                     </div>
-                    <span className="rounded-full border border-brand/30 bg-brand/10 px-2 py-0.5 text-[10px] font-medium text-brand">
-                      {s.product_count} items
-                    </span>
                   </LuxuryCard>
                 </Link>
               </motion.div>
