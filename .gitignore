@@ -38,6 +38,17 @@ customer-app/.next/
 staff-app/out/
 staff-app/.next/
 
+# Per-role staff-app build outputs (deployed via robocopy to backend/public/{role}/)
+staff-app/out-admin/
+staff-app/out-district/
+staff-app/out-state/
+staff-app/out-taluk/
+staff-app/out-vendor/
+
+# Build archives — never commit these to git
+*.tar.gz
+*.zip
+
 # OS junk
 .DS_Store
 Thumbs.db
