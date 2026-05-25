@@ -4,6 +4,12 @@ Options -Indexes
 # Resolve directory requests to index.html (for /admin/* static SPA) before index.php
 DirectoryIndex index.html index.php
 
+# Redirect bare root to customer home
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteRule ^$ /customer/home/ [R=302,L]
+</IfModule>
+
 # ----------------------------------------------------------------------
 # Rewrite engine
 # ----------------------------------------------------------------------
