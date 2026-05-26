@@ -1,7 +1,7 @@
 "use client";
 
 import { Suspense, useEffect, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Search, Filter, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import { TopInfoBar } from "@/components/marketplace/top-info-bar";
@@ -45,12 +45,23 @@ export default function PublicShopPage() {
 
 function PublicShopInner() {
   const sp = useSearchParams();
+  const router = useRouter();
   const [items, setItems] = useState<MarketplaceProduct[]>([]);
   const [cats, setCats] = useState<Category[]>([]);
-  const [catId, setCatId] = useState<number | null>(sp?.get("category_id") ? Number(sp.get("category_id")) : null);
+  // catId is derived from the URL so the dropdown <Link> clicks (which only
+  // change the query string) actually re-filter the products.
+  const catId = sp?.get("category_id") ? Number(sp.get("category_id")) : null;
   const [pincode, setPincode] = useState(sp?.get("pincode") ?? "");
   const [q, setQ] = useState(sp?.get("q") ?? "");
   const [loading, setLoading] = useState(true);
+
+  function setCategory(id: number | null) {
+    const params = new URLSearchParams(sp?.toString() ?? "");
+    if (id === null) params.delete("category_id");
+    else params.set("category_id", String(id));
+    const qs = params.toString();
+    router.push(`/shop-public${qs ? `?${qs}` : ""}`);
+  }
 
   // Vendor scope from ?vendor_id=N — vendor click on home jumps here. Name is
   // derived from the first product's vendor_name (no separate API call needed).
@@ -129,9 +140,9 @@ function PublicShopInner() {
       {cats.length > 0 && (
         <section className="mx-auto max-w-7xl px-4 pt-4">
           <div className="flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-            <CategoryPill active={catId === null} onClick={() => setCatId(null)}>All</CategoryPill>
+            <CategoryPill active={catId === null} onClick={() => setCategory(null)}>All</CategoryPill>
             {cats.map((c) => (
-              <CategoryPill key={c.id} active={catId === c.id} onClick={() => setCatId(c.id)}>{c.name}</CategoryPill>
+              <CategoryPill key={c.id} active={catId === c.id} onClick={() => setCategory(c.id)}>{c.name}</CategoryPill>
             ))}
           </div>
         </section>

@@ -59,6 +59,7 @@ export function CategoryNavBar() {
                     <Link
                       key={c.id}
                       href={`/shop-public?category_id=${c.id}`}
+                      onClick={() => setOpen(false)}
                       className="rounded-md px-3 py-2 text-sm text-[var(--mk-text)] transition-colors hover:bg-[var(--mk-brand-soft)] hover:text-[var(--mk-brand-deep)]"
                     >
                       {c.name}
