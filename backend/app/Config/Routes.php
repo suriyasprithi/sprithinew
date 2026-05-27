@@ -16,8 +16,10 @@ $routes->group('api/v1', ['filter' => 'cors'], static function ($routes) {
     $routes->group('auth', static function ($routes) {
         $routes->post('register',    'Api\AuthController::register',   ['filter' => 'rate_limit:auth-register,10,3600']);
         $routes->post('login',       'Api\AuthController::login',      ['filter' => 'rate_limit:auth-login,10,300']);
-        $routes->post('staff-login', 'Api\AuthController::staffLogin', ['filter' => 'rate_limit:auth-login,10,300']);
-        $routes->post('refresh',     'Api\AuthController::refresh');
+        $routes->post('staff-login',     'Api\AuthController::staffLogin', ['filter' => 'rate_limit:auth-login,10,300']);
+        $routes->post('forgot-password', 'Api\AuthController::forgotPassword', ['filter' => 'rate_limit:auth-login,5,3600']);
+        $routes->post('reset-password',  'Api\AuthController::resetPassword',  ['filter' => 'rate_limit:auth-login,10,3600']);
+        $routes->post('refresh',         'Api\AuthController::refresh');
     });
     $routes->group('auth', ['filter' => 'auth'], static function ($routes) {
         $routes->get('me',      'Api\AuthController::me');

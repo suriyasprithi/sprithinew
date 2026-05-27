@@ -126,10 +126,47 @@ class TokenController extends BaseApiController
 
         try {
             $fromLabel = ucfirst((string) $auth->role);
-            (new NotificationService())->sendTypedToRole($startLevel, 'token_request', (int) $id, '/tokens',
-                "New token request from {$fromLabel}",
-                "{$d['tokens']} tokens requested by {$auth->name}"
-            );
+            // $auth is a stdClass with only id+role from the JWT; look up the
+            // requester's name from the DB so the notification body has it.
+            $requester     = (new \App\Models\UserModel())->find((int) $auth->id);
+            $requesterName = $requester['name'] ?? $fromLabel;
+            $title         = "New token request from {$fromLabel}";
+            $body          = "{$d['tokens']} tokens requested by {$requesterName}";
+
+            // Find the SPECIFIC upstream user for this requester. Falls back to
+            // a role-wide broadcast (e.g. admins) if no specific user found.
+            $targetUserId = null;
+            $db = \Config\Database::connect();
+            if ($auth->role === 'vendor') {
+                $row = $db->query(
+                    'SELECT t.user_id FROM vendor_profiles vp JOIN taluks t ON t.id = vp.taluk_id WHERE vp.user_id = ? LIMIT 1',
+                    [(int) $auth->id]
+                )->getRow();
+                if ($row) $targetUserId = (int) $row->user_id;
+            } elseif ($auth->role === 'taluk') {
+                $row = $db->query(
+                    'SELECT d.user_id FROM taluks t JOIN districts d ON d.id = t.district_id WHERE t.user_id = ? LIMIT 1',
+                    [(int) $auth->id]
+                )->getRow();
+                if ($row) $targetUserId = (int) $row->user_id;
+            } elseif ($auth->role === 'district') {
+                $row = $db->query(
+                    'SELECT s.user_id FROM districts d JOIN states s ON s.id = d.state_id WHERE d.user_id = ? LIMIT 1',
+                    [(int) $auth->id]
+                )->getRow();
+                if ($row) $targetUserId = (int) $row->user_id;
+            }
+
+            if ($targetUserId) {
+                (new NotificationService())->sendTyped(
+                    $targetUserId, 'token_request', (int) $id, '/tokens', $title, $body
+                );
+            } else {
+                // Fallback: broadcast to whole upstream role (e.g. admins for state requests).
+                (new NotificationService())->sendTypedToRole(
+                    $startLevel, 'token_request', (int) $id, '/tokens', $title, $body
+                );
+            }
         } catch (\Throwable $e) { log_message('error', 'Token request push failed: ' . $e->getMessage()); }
 
         return $this->ok(['id' => (int) $id, 'current_level' => $startLevel], 'Submitted');

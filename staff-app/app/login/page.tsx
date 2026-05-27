@@ -6,9 +6,12 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
+} from "@/components/ui/dialog";
 import { GuestGuard } from "@/components/auth-guard";
 import { useAuth } from "@/stores/auth";
-import { apiErrorMessage, StaffRole } from "@/lib/api";
+import { api, apiErrorMessage, StaffRole } from "@/lib/api";
 
 // After login, redirect to the role-specific deployment so the existing
 // per-role build serves the dashboard. Same-origin localStorage carries tokens.
@@ -27,6 +30,11 @@ export default function LoginPage() {
   const [mobile, setMobile] = useState("");
   const [password, setPassword] = useState("");
 
+  // Forgot-password dialog state
+  const [forgotOpen, setForgotOpen] = useState(false);
+  const [forgotEmail, setForgotEmail] = useState("");
+  const [forgotSending, setForgotSending] = useState(false);
+
   const onSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!mobile || !password) return toast.error("Enter mobile and password");
@@ -39,6 +47,21 @@ export default function LoginPage() {
       toast.error(apiErrorMessage(err, "Login failed"));
     }
   };
+
+  async function sendForgot() {
+    if (!forgotEmail) return toast.error("Enter your email");
+    setForgotSending(true);
+    try {
+      const res = await api.post("/auth/forgot-password", { email: forgotEmail.trim() });
+      toast.success(res.data?.message || "If that email exists, a reset link is on its way");
+      setForgotOpen(false);
+      setForgotEmail("");
+    } catch (err) {
+      toast.error(apiErrorMessage(err, "Could not send reset email"));
+    } finally {
+      setForgotSending(false);
+    }
+  }
 
   return (
     <GuestGuard>
@@ -90,11 +113,50 @@ export default function LoginPage() {
               </Button>
             </form>
             <p className="mt-6 text-center text-sm text-muted-foreground">
-              <a href="/forgot-password" className="text-brand hover:underline">Forgot password?</a>
+              <button
+                type="button"
+                onClick={() => setForgotOpen(true)}
+                className="text-brand hover:underline"
+              >
+                Forgot password?
+              </button>
             </p>
           </CardContent>
         </Card>
       </main>
+
+      <Dialog open={forgotOpen} onOpenChange={setForgotOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Reset your password</DialogTitle>
+            <DialogDescription>
+              Enter the email on your account. We&apos;ll send a reset link that expires in 1 hour.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label htmlFor="forgot-email">Email</Label>
+            <Input
+              id="forgot-email"
+              type="email"
+              autoComplete="email"
+              placeholder="you@example.com"
+              value={forgotEmail}
+              onChange={(e) => setForgotEmail(e.target.value)}
+              disabled={forgotSending}
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setForgotOpen(false)} disabled={forgotSending}>Cancel</Button>
+            <Button
+              onClick={() => void sendForgot()}
+              disabled={forgotSending}
+              className="bg-brand text-brand-foreground hover:bg-brand/90"
+            >
+              {forgotSending ? "Sending..." : "Send reset link"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </GuestGuard>
   );
 }

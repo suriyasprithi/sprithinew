@@ -320,7 +320,9 @@ export default function VariantTypeGroupsPage() {
                   onValueChange={(v) => setEditing((p) => p && ({ ...p, category_id: v === "none" ? null : Number(v) }))}
                 >
                   <SelectTrigger className="h-11 rounded-xl bg-surface-2/60">
-                    <SelectValue placeholder={productCats.length ? "Pick a product category" : "Loading…"} />
+                    <SelectValue placeholder={productCats.length ? "Pick a product category" : "Loading…"}>
+                      {(v: string) => v === "none" ? "— Unlinked" : (productCats.find((x) => String(x.id) === v)?.name ?? null)}
+                    </SelectValue>
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="none">— Unlinked</SelectItem>

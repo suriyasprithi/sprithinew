@@ -26,8 +26,9 @@ import { TableSkeleton } from "@/components/data-table/table-skeleton";
 import { MobileHeader } from "@/components/layout/mobile-nav";
 import { PageHeader } from "@/components/layout/page-header";
 import { api, apiErrorMessage } from "@/lib/api";
+import { useAuth } from "@/stores/auth";
 
-type DistrictOption = { id: number; name: string };
+type DistrictOption = { id: number; name: string; user_id?: number | null };
 type TalukRow = {
   id: number;
   name: string;
@@ -39,6 +40,7 @@ type TalukRow = {
 type Editing = Partial<TalukRow> & { password?: string };
 
 export default function ManageTaluksPage() {
+  const user = useAuth((s) => s.user);
   const [items, setItems] = useState<TalukRow[]>([]);
   const [districts, setDistricts] = useState<DistrictOption[]>([]);
   const [loading, setLoading] = useState(true);
@@ -55,7 +57,11 @@ export default function ManageTaluksPage() {
         api.get("/geo/districts"),
       ]);
       setItems((tRes.data?.data?.items ?? []) as TalukRow[]);
-      setDistricts(((dRes.data?.data?.items ?? []) as DistrictOption[]).map((d) => ({ id: d.id, name: d.name })));
+      setDistricts(((dRes.data?.data?.items ?? []) as DistrictOption[]).map((d) => ({
+        id: Number(d.id),
+        name: d.name,
+        user_id: d.user_id ? Number(d.user_id) : null,
+      })));
     } catch (e) {
       toast.error(apiErrorMessage(e, "Failed to load taluks"));
     } finally {
@@ -70,6 +76,13 @@ export default function ManageTaluksPage() {
     for (const d of districts) m[d.id] = d.name;
     return m;
   }, [districts]);
+
+  const isDistrictRole = user?.role === "district";
+  const myDistrictId = useMemo(() => {
+    if (!isDistrictRole || !user) return null;
+    const own = districts.find((d) => d.user_id === user.id);
+    return own?.id ?? null;
+  }, [isDistrictRole, user, districts]);
 
   const filtered = useMemo(() => items.filter((t) =>
     !search || t.name.toLowerCase().includes(search.toLowerCase())
@@ -146,7 +159,7 @@ export default function ManageTaluksPage() {
           title="Taluks"
           description="Sub-divisions under each district."
           action={
-            <GradientButton onClick={() => setEditing({ name: "", status: "active", mobile_number: "", password: "" })}>
+            <GradientButton onClick={() => setEditing({ name: "", status: "active", mobile_number: "", password: "", district_id: myDistrictId ?? undefined })}>
               <Plus className="h-4 w-4" /> Add taluk
             </GradientButton>
           }
@@ -230,8 +243,12 @@ export default function ManageTaluksPage() {
             <div className="space-y-1.5"><Label>Name</Label><Input value={editing?.name ?? ""} onChange={(e) => setEditing((p) => ({ ...(p ?? {}), name: e.target.value }))} /></div>
             <div className="space-y-1.5">
               <Label>District</Label>
-              <Select value={editing?.district_id ? String(editing.district_id) : ""} onValueChange={(v) => v && setEditing((p) => ({ ...(p ?? {}), district_id: Number(v) }))}>
-                <SelectTrigger><SelectValue placeholder="Select district" /></SelectTrigger>
+              <Select value={editing?.district_id ? String(editing.district_id) : ""} onValueChange={(v) => v && setEditing((p) => ({ ...(p ?? {}), district_id: Number(v) }))} disabled={isDistrictRole}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select district">
+                    {(v: string) => districts.find((d) => String(d.id) === v)?.name ?? null}
+                  </SelectValue>
+                </SelectTrigger>
                 <SelectContent>
                   {districts.map((d) => <SelectItem key={d.id} value={String(d.id)}>{d.name}</SelectItem>)}
                 </SelectContent>

@@ -182,6 +182,91 @@ class AuthController extends BaseApiController
         return $this->ok(null, 'Logged out');
     }
 
+    public function forgotPassword(): ResponseInterface
+    {
+        if (! $this->validate(['email' => 'required|valid_email|max_length[150]'])) {
+            return $this->fail('Validation failed', 422, $this->validator->getErrors());
+        }
+        $d = $this->request->getJSON(true) ?? $this->request->getPost();
+        $email = trim((string) $d['email']);
+
+        $users = new UserModel();
+        $user  = $users->where('email', $email)->where('status', 'active')->first();
+
+        // Generic response either way — don't reveal whether the email exists.
+        $genericMessage = 'If an account with that email exists, a reset link has been sent.';
+        if (! $user) {
+            return $this->ok(null, $genericMessage);
+        }
+
+        $token = bin2hex(random_bytes(32));
+        $users->update($user['id'], [
+            'password_reset_token'      => $token,
+            'password_reset_expires_at' => date('Y-m-d H:i:s', time() + 3600),
+        ]);
+
+        // Build reset URL from the incoming request's host (not the static
+        // app.baseURL config, which may point at the wrong port locally).
+        $uri = $this->request->getUri();
+        $scheme = $uri->getScheme() ?: 'http';
+        $host = $uri->getHost();
+        $port = $uri->getPort();
+        $baseUrl = $scheme . '://' . $host;
+        if ($port && ! in_array($port, [80, 443], true)) {
+            $baseUrl .= ':' . $port;
+        }
+        // Staff land at /admin/reset-password, customers at /customer/reset-password.
+        $prefix  = $user['role'] === 'customer' ? '/customer' : '/admin';
+        $resetUrl = $baseUrl . $prefix . '/reset-password?token=' . $token;
+
+        // Log the URL so dev can grab it without SMTP set up.
+        log_message('info', 'Password reset URL for ' . $email . ': ' . $resetUrl);
+
+        // Try to send the email (silent fail if SMTP not configured).
+        try {
+            $mailer = service('email');
+            $mailer->setTo($email);
+            $mailer->setSubject('Reset your password');
+            $mailer->setMessage(
+                "Hello " . ($user['name'] ?? '') . ",\n\n"
+                . "Click the link below to reset your password. The link expires in 1 hour.\n\n"
+                . $resetUrl . "\n\n"
+                . "If you didn't request this, you can ignore this email."
+            );
+            $mailer->send();
+        } catch (\Throwable $e) {
+            log_message('warning', 'Could not send reset email to ' . $email . ': ' . $e->getMessage());
+        }
+
+        return $this->ok(null, $genericMessage);
+    }
+
+    public function resetPassword(): ResponseInterface
+    {
+        if (! $this->validate([
+            'token'    => 'required|string|min_length[32]|max_length[64]',
+            'password' => 'required|string|min_length[6]|max_length[64]',
+        ])) return $this->fail('Validation failed', 422, $this->validator->getErrors());
+
+        $d = $this->request->getJSON(true) ?? $this->request->getPost();
+        $users = new UserModel();
+        $user  = $users->where('password_reset_token', (string) $d['token'])->first();
+
+        if (! $user) return $this->fail('Invalid or expired reset link', 400);
+        $expiry = $user['password_reset_expires_at'] ?? null;
+        if (! $expiry || strtotime($expiry) < time()) {
+            return $this->fail('Reset link expired', 400);
+        }
+
+        $users->update($user['id'], [
+            'password_hash'             => password_hash($d['password'], PASSWORD_BCRYPT),
+            'password_reset_token'      => null,
+            'password_reset_expires_at' => null,
+        ]);
+
+        return $this->ok(null, 'Password updated. You can now sign in.');
+    }
+
     public function updateAddress(): ResponseInterface
     {
         $auth = $this->authUser();

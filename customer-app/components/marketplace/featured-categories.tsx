@@ -5,6 +5,7 @@ import Link from "next/link";
 import useEmblaCarousel from "embla-carousel-react";
 import { ArrowRight, ChevronLeft, ChevronRight } from "lucide-react";
 import { api } from "@/lib/api";
+import { readSavedLocation } from "./location-picker";
 
 type VendorCategory = {
   id: number;
@@ -41,20 +42,31 @@ export function FeaturedCategories() {
   const [loading, setLoading] = useState(true);
 
   // Show up to 12 in the carousel so there's something to swipe through when the
-  // user has more than fit on screen at once.
+  // user has more than fit on screen at once. Filters by chosen delivery location.
   useEffect(() => {
-    void (async () => {
+    const fetchCats = async () => {
+      setLoading(true);
       try {
-        const res = await api.get("/vendor-categories");
+        const loc = readSavedLocation();
+        const params: Record<string, string> = {};
+        if (loc?.taluk_id)         params.taluk_id    = String(loc.taluk_id);
+        else if (loc?.district_id) params.district_id = String(loc.district_id);
+        else if (loc?.state_id)    params.state_id    = String(loc.state_id);
+        const res = await api.get("/vendor-categories", { params });
         const items = (res.data.data?.items ?? []) as VendorCategory[];
         setCats(items.slice(0, 12));
       } catch {
-        // Backend unreachable — hide the section rather than show stale demo data.
         setCats([]);
       } finally {
         setLoading(false);
       }
-    })();
+    };
+    void fetchCats();
+    if (typeof window !== "undefined") {
+      const onChange = () => { void fetchCats(); };
+      window.addEventListener("epey-location-changed", onChange);
+      return () => window.removeEventListener("epey-location-changed", onChange);
+    }
   }, []);
 
   // Don't render the section while loading or when empty

@@ -44,6 +44,8 @@ class UserModel extends Model
         'address_line',
         'landmark',
         'city',
+        'password_reset_token',
+        'password_reset_expires_at',
     ];
 
     protected $useTimestamps = true;

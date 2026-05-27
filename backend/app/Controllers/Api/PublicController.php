@@ -20,7 +20,29 @@ class PublicController extends BaseApiController
 {
     public function home(): ResponseInterface
     {
-        $featured = (new ProductModel())->where('status', 'active')->orderBy('id', 'DESC')->findAll(8);
+        // Optional location scope (customer's chosen delivery location).
+        // Filter featured products to vendors in that taluk/district/state.
+        $talukId    = (int) $this->request->getGet('taluk_id');
+        $districtId = (int) $this->request->getGet('district_id');
+        $stateId    = (int) $this->request->getGet('state_id');
+
+        $vendorIds = null;
+        if ($talukId > 0) {
+            $vendorIds = (new VendorProfileModel())->where('taluk_id', $talukId)->findColumn('user_id') ?: [];
+        } elseif ($districtId > 0) {
+            $vendorIds = (new VendorProfileModel())->where('district_id', $districtId)->findColumn('user_id') ?: [];
+        } elseif ($stateId > 0) {
+            $vendorIds = (new VendorProfileModel())->where('state_id', $stateId)->findColumn('user_id') ?: [];
+        }
+
+        $featuredQ = (new ProductModel())->where('status', 'active');
+        if (is_array($vendorIds)) {
+            if (empty($vendorIds)) {
+                return $this->ok(['featured' => [], 'categories' => []]);
+            }
+            $featuredQ->whereIn('vendor_id', $vendorIds);
+        }
+        $featured = $featuredQ->orderBy('id', 'DESC')->findAll(8);
         $featured = $this->enrich($featured);
         $cats     = (new CategoryModel())->where('status', 'active')->findAll(8);
         return $this->ok(['featured' => $featured, 'categories' => $cats]);
@@ -158,10 +180,23 @@ class PublicController extends BaseApiController
 
     public function vendors(): ResponseInterface
     {
-        $pincode   = (string) $this->request->getGet('pincode');
+        $pincode    = (string) $this->request->getGet('pincode');
+        $talukId    = (int) $this->request->getGet('taluk_id');
+        $districtId = (int) $this->request->getGet('district_id');
+        $stateId    = (int) $this->request->getGet('state_id');
+
         $vendorIds = null;
         if ($pincode) {
             $vendorIds = (new VendorProfileModel())->where('pincode', $pincode)->findColumn('user_id') ?: [];
+            if (empty($vendorIds)) return $this->ok(['items' => []]);
+        } elseif ($talukId > 0) {
+            $vendorIds = (new VendorProfileModel())->where('taluk_id', $talukId)->findColumn('user_id') ?: [];
+            if (empty($vendorIds)) return $this->ok(['items' => []]);
+        } elseif ($districtId > 0) {
+            $vendorIds = (new VendorProfileModel())->where('district_id', $districtId)->findColumn('user_id') ?: [];
+            if (empty($vendorIds)) return $this->ok(['items' => []]);
+        } elseif ($stateId > 0) {
+            $vendorIds = (new VendorProfileModel())->where('state_id', $stateId)->findColumn('user_id') ?: [];
             if (empty($vendorIds)) return $this->ok(['items' => []]);
         }
 

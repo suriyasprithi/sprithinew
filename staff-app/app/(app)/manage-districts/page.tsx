@@ -26,8 +26,9 @@ import { TableSkeleton } from "@/components/data-table/table-skeleton";
 import { MobileHeader } from "@/components/layout/mobile-nav";
 import { PageHeader } from "@/components/layout/page-header";
 import { api, apiErrorMessage } from "@/lib/api";
+import { useAuth } from "@/stores/auth";
 
-type StateOption = { id: number; name: string };
+type StateOption = { id: number; name: string; user_id?: number | null };
 type DistrictRow = {
   id: number;
   name: string;
@@ -39,6 +40,7 @@ type DistrictRow = {
 type Editing = Partial<DistrictRow> & { password?: string };
 
 export default function ManageDistrictsPage() {
+  const user = useAuth((s) => s.user);
   const [items, setItems] = useState<DistrictRow[]>([]);
   const [states, setStates] = useState<StateOption[]>([]);
   const [loading, setLoading] = useState(true);
@@ -55,7 +57,11 @@ export default function ManageDistrictsPage() {
         api.get("/geo/states"),
       ]);
       setItems((dRes.data?.data?.items ?? []) as DistrictRow[]);
-      setStates(((sRes.data?.data?.items ?? []) as StateOption[]).map((s) => ({ id: s.id, name: s.name })));
+      setStates(((sRes.data?.data?.items ?? []) as StateOption[]).map((s) => ({
+        id: Number(s.id),
+        name: s.name,
+        user_id: s.user_id ? Number(s.user_id) : null,
+      })));
     } catch (e) {
       toast.error(apiErrorMessage(e, "Failed to load districts"));
     } finally {
@@ -70,6 +76,13 @@ export default function ManageDistrictsPage() {
     for (const s of states) m[s.id] = s.name;
     return m;
   }, [states]);
+
+  const isStateRole = user?.role === "state";
+  const myStateId = useMemo(() => {
+    if (!isStateRole || !user) return null;
+    const own = states.find((s) => s.user_id === user.id);
+    return own?.id ?? null;
+  }, [isStateRole, user, states]);
 
   const filtered = useMemo(() => items.filter((d) =>
     !search || d.name.toLowerCase().includes(search.toLowerCase())
@@ -146,7 +159,7 @@ export default function ManageDistrictsPage() {
           title="Districts"
           description="Top-level administrative divisions in each state."
           action={
-            <GradientButton onClick={() => setEditing({ name: "", status: "active", mobile_number: "", password: "" })}>
+            <GradientButton onClick={() => setEditing({ name: "", status: "active", mobile_number: "", password: "", state_id: myStateId ?? undefined })}>
               <Plus className="h-4 w-4" /> Add district
             </GradientButton>
           }
@@ -230,8 +243,16 @@ export default function ManageDistrictsPage() {
             <div className="space-y-1.5"><Label>Name</Label><Input value={editing?.name ?? ""} onChange={(e) => setEditing((p) => ({ ...(p ?? {}), name: e.target.value }))} /></div>
             <div className="space-y-1.5">
               <Label>State</Label>
-              <Select value={editing?.state_id ? String(editing.state_id) : ""} onValueChange={(v) => v && setEditing((p) => ({ ...(p ?? {}), state_id: Number(v) }))}>
-                <SelectTrigger><SelectValue placeholder="Select state" /></SelectTrigger>
+              <Select
+                value={editing?.state_id ? String(editing.state_id) : ""}
+                onValueChange={(v) => v && setEditing((p) => ({ ...(p ?? {}), state_id: Number(v) }))}
+                disabled={isStateRole}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select state">
+                    {(v: string) => states.find((s) => String(s.id) === v)?.name ?? null}
+                  </SelectValue>
+                </SelectTrigger>
                 <SelectContent>
                   {states.map((s) => <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>)}
                 </SelectContent>

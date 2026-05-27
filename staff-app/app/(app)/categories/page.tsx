@@ -259,7 +259,11 @@ export default function ProductCategoriesPage() {
                 value={editing?.vendor_category_id != null ? String(editing.vendor_category_id) : "none"}
                 onValueChange={(v) => setEditing((p) => p && ({ ...p, vendor_category_id: v === "none" ? null : Number(v) }))}
               >
-                <SelectTrigger><SelectValue placeholder="Pick a vendor category" /></SelectTrigger>
+                <SelectTrigger>
+                  <SelectValue placeholder="Pick a vendor category">
+                    {(v: string) => v === "none" ? "— Unlinked" : (vendorCats.find((x) => String(x.id) === v)?.name ?? null)}
+                  </SelectValue>
+                </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="none">— Unlinked</SelectItem>
                   {vendorCats.map((v) => (

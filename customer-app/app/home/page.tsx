@@ -17,6 +17,7 @@ import { MarketplaceBottomNav } from "@/components/marketplace/mobile-bottom-nav
 import { MarketplaceFooter } from "@/components/marketplace/marketplace-footer";
 import { api } from "@/lib/api";
 import { EMPTY_BANNERS, type BannersBySlot } from "@/lib/banners";
+import { readSavedLocation } from "@/components/marketplace/location-picker";
 import Link from "next/link";
 import { Sparkles } from "lucide-react";
 
@@ -41,11 +42,18 @@ export default function PublicHomePage() {
   const [loading,  setLoading]  = useState(true);
 
   useEffect(() => {
-    (async () => {
+    const fetchAll = async () => {
+      setLoading(true);
       try {
+        const loc = readSavedLocation();
+        const params: Record<string, string> = {};
+        if (loc?.taluk_id)         params.taluk_id    = String(loc.taluk_id);
+        else if (loc?.district_id) params.district_id = String(loc.district_id);
+        else if (loc?.state_id)    params.state_id    = String(loc.state_id);
+
         const [hr, vr, br] = await Promise.all([
-          api.get("/public/home").catch(() => null),
-          api.get("/public/vendors").catch(() => null),
+          api.get("/public/home",    { params }).catch(() => null),
+          api.get("/public/vendors", { params }).catch(() => null),
           api.get("/public/banners").catch(() => null),
         ]);
         if (br?.data.data?.by_slot) {
@@ -75,7 +83,14 @@ export default function PublicHomePage() {
         setVendors(vs);
       } catch { /* ignore — render empty states */ }
       finally { setLoading(false); }
-    })();
+    };
+
+    void fetchAll();
+    if (typeof window !== "undefined") {
+      const onChange = () => { void fetchAll(); };
+      window.addEventListener("epey-location-changed", onChange);
+      return () => window.removeEventListener("epey-location-changed", onChange);
+    }
   }, []);
 
   return (

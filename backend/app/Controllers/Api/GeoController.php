@@ -79,7 +79,17 @@ class GeoController extends BaseApiController
 
     public function districts(): ResponseInterface
     {
+        $auth = $this->authUser();
         $stateId = (int) $this->request->getGet('state_id');
+
+        // Auto-scope: a state-role user can only see their own state's
+        // districts (their states.user_id points to themselves).
+        if (! $stateId && $auth && $auth->role === 'state') {
+            $myState = (new StateModel())->where('user_id', $auth->id)->first();
+            if ($myState) $stateId = (int) $myState['id'];
+            else return $this->ok(['items' => []]);
+        }
+
         $model = new DistrictModel();
         if ($stateId) $model->where('state_id', $stateId);
         $rows = $model->orderBy('name', 'ASC')->findAll();
@@ -88,7 +98,7 @@ class GeoController extends BaseApiController
 
     public function createDistrict(): ResponseInterface
     {
-        if ($r = $this->requireRole(['admin'])) return $r;
+        if ($r = $this->requireRole(['admin', 'state'])) return $r;
         if (! $this->validate([
             'name'          => 'required|string|max_length[100]',
             'mobile_number' => 'required|string|min_length[7]|max_length[15]',
@@ -96,6 +106,17 @@ class GeoController extends BaseApiController
         ])) return $this->fail('Validation failed', 422, $this->validator->getErrors());
 
         $d = $this->request->getJSON(true) ?? $this->request->getPost();
+        $stateId = isset($d['state_id']) ? (int) $d['state_id'] : null;
+
+        // State-role user can only create districts within their own state.
+        // Force the state_id to their own state regardless of what the frontend sent.
+        $auth = $this->authUser();
+        if ($auth && $auth->role === 'state') {
+            $myState = (new StateModel())->where('user_id', (int) $auth->id)->first();
+            if (! $myState) return $this->fail('No state linked to your account', 403);
+            $stateId = (int) $myState['id'];
+        }
+
         $users = new UserModel();
         if ($users->mobileExistsForRole($d['mobile_number'], 'district')) {
             return $this->fail('Mobile already used for district', 409);
@@ -111,7 +132,7 @@ class GeoController extends BaseApiController
 
         $id = (new DistrictModel())->insert([
             'name'     => $d['name'],
-            'state_id' => isset($d['state_id']) ? (int) $d['state_id'] : null,
+            'state_id' => $stateId,
             'user_id'  => $userId,
             'status'   => $d['status'] ?? 'active',
         ], true);
@@ -120,12 +141,23 @@ class GeoController extends BaseApiController
 
     public function updateDistrict(int $id): ResponseInterface
     {
-        if ($r = $this->requireRole(['admin'])) return $r;
+        if ($r = $this->requireRole(['admin', 'state'])) return $r;
         $d = $this->request->getJSON(true) ?? $this->request->getPost();
 
         $districts = new DistrictModel();
         $row = $districts->find($id);
         if (! $row) return $this->fail('District not found', 404);
+
+        // State user can only modify districts in their own state.
+        $auth = $this->authUser();
+        if ($auth && $auth->role === 'state') {
+            $myState = (new StateModel())->where('user_id', (int) $auth->id)->first();
+            if (! $myState || (int) $row['state_id'] !== (int) $myState['id']) {
+                return $this->fail('District not in your state', 403);
+            }
+            // Block state_id changes that would move it out of their state.
+            if (isset($d['state_id'])) $d['state_id'] = (int) $myState['id'];
+        }
 
         $payload = array_intersect_key($d, array_flip(['name', 'state_id', 'status']));
         if ($payload) $districts->update($id, $payload);
@@ -137,29 +169,67 @@ class GeoController extends BaseApiController
 
     public function deleteDistrict(int $id): ResponseInterface
     {
-        if ($r = $this->requireRole(['admin'])) return $r;
+        if ($r = $this->requireRole(['admin', 'state'])) return $r;
+        $row = (new DistrictModel())->find($id);
+        if (! $row) return $this->fail('District not found', 404);
+        $auth = $this->authUser();
+        if ($auth && $auth->role === 'state') {
+            $myState = (new StateModel())->where('user_id', (int) $auth->id)->first();
+            if (! $myState || (int) $row['state_id'] !== (int) $myState['id']) {
+                return $this->fail('District not in your state', 403);
+            }
+        }
         (new DistrictModel())->delete($id);
         return $this->ok(null, 'Deleted');
     }
 
     public function resetDistrictPassword(int $id): ResponseInterface
     {
-        if ($r = $this->requireRole(['admin'])) return $r;
+        if ($r = $this->requireRole(['admin', 'state'])) return $r;
+        $row = (new DistrictModel())->find($id);
+        if (! $row) return $this->fail('District not found', 404);
+        $auth = $this->authUser();
+        if ($auth && $auth->role === 'state') {
+            $myState = (new StateModel())->where('user_id', (int) $auth->id)->first();
+            if (! $myState || (int) $row['state_id'] !== (int) $myState['id']) {
+                return $this->fail('District not in your state', 403);
+            }
+        }
         return $this->resetGeoPassword(new DistrictModel(), $id);
     }
 
     public function taluks(): ResponseInterface
     {
+        $auth = $this->authUser();
         $districtId = (int) $this->request->getGet('district_id');
         $model = new TalukModel();
-        if ($districtId) $model->where('district_id', $districtId);
+
+        // Auto-scope:
+        // - district-role user → only taluks in their own district
+        // - state-role user (no explicit district_id) → taluks across all
+        //   districts in their state
+        if (! $districtId && $auth && $auth->role === 'district') {
+            $myDistrict = (new DistrictModel())->where('user_id', $auth->id)->first();
+            if ($myDistrict) $districtId = (int) $myDistrict['id'];
+            else return $this->ok(['items' => []]);
+        }
+        if (! $districtId && $auth && $auth->role === 'state') {
+            $myState = (new StateModel())->where('user_id', $auth->id)->first();
+            if (! $myState) return $this->ok(['items' => []]);
+            $distIds = (new DistrictModel())->where('state_id', (int) $myState['id'])->findColumn('id') ?: [];
+            if (! $distIds) return $this->ok(['items' => []]);
+            $model->whereIn('district_id', $distIds);
+        } elseif ($districtId) {
+            $model->where('district_id', $districtId);
+        }
+
         $rows = $model->orderBy('name', 'ASC')->findAll();
         return $this->ok(['items' => $this->attachUserInfo($rows, 'taluk')]);
     }
 
     public function createTaluk(): ResponseInterface
     {
-        if ($r = $this->requireRole(['admin', 'taluk'])) return $r;
+        if ($r = $this->requireRole(['admin', 'state', 'district'])) return $r;
         if (! $this->validate([
             'district_id'   => 'required|integer',
             'name'          => 'required|string|max_length[100]',
@@ -168,6 +238,23 @@ class GeoController extends BaseApiController
         ])) return $this->fail('Validation failed', 422, $this->validator->getErrors());
 
         $d = $this->request->getJSON(true) ?? $this->request->getPost();
+        $districtId = (int) $d['district_id'];
+
+        // Scope to caller's territory.
+        $auth = $this->authUser();
+        if ($auth && $auth->role === 'district') {
+            $myDistrict = (new DistrictModel())->where('user_id', (int) $auth->id)->first();
+            if (! $myDistrict) return $this->fail('No district linked to your account', 403);
+            $districtId = (int) $myDistrict['id'];
+        } elseif ($auth && $auth->role === 'state') {
+            $myState = (new StateModel())->where('user_id', (int) $auth->id)->first();
+            if (! $myState) return $this->fail('No state linked to your account', 403);
+            $district = (new DistrictModel())->find($districtId);
+            if (! $district || (int) $district['state_id'] !== (int) $myState['id']) {
+                return $this->fail('District not in your state', 403);
+            }
+        }
+
         $users = new UserModel();
         if ($users->mobileExistsForRole($d['mobile_number'], 'taluk')) {
             return $this->fail('Mobile already used for taluk', 409);
@@ -182,7 +269,7 @@ class GeoController extends BaseApiController
         ], true);
 
         $id = (new TalukModel())->insert([
-            'district_id' => (int) $d['district_id'],
+            'district_id' => $districtId,
             'name'        => $d['name'],
             'user_id'     => $userId,
             'status'      => $d['status'] ?? 'active',
@@ -192,12 +279,27 @@ class GeoController extends BaseApiController
 
     public function updateTaluk(int $id): ResponseInterface
     {
-        if ($r = $this->requireRole(['admin', 'taluk'])) return $r;
+        if ($r = $this->requireRole(['admin', 'state', 'district'])) return $r;
         $d = $this->request->getJSON(true) ?? $this->request->getPost();
 
         $taluks = new TalukModel();
         $row = $taluks->find($id);
         if (! $row) return $this->fail('Taluk not found', 404);
+
+        $auth = $this->authUser();
+        if ($auth && $auth->role === 'district') {
+            $myDistrict = (new DistrictModel())->where('user_id', (int) $auth->id)->first();
+            if (! $myDistrict || (int) $row['district_id'] !== (int) $myDistrict['id']) {
+                return $this->fail('Taluk not in your district', 403);
+            }
+            if (isset($d['district_id'])) $d['district_id'] = (int) $myDistrict['id'];
+        } elseif ($auth && $auth->role === 'state') {
+            $myState = (new StateModel())->where('user_id', (int) $auth->id)->first();
+            $district = (new DistrictModel())->find((int) $row['district_id']);
+            if (! $myState || ! $district || (int) $district['state_id'] !== (int) $myState['id']) {
+                return $this->fail('Taluk not in your state', 403);
+            }
+        }
 
         $payload = array_intersect_key($d, array_flip(['district_id', 'name', 'status']));
         if ($payload) $taluks->update($id, $payload);
@@ -209,15 +311,41 @@ class GeoController extends BaseApiController
 
     public function deleteTaluk(int $id): ResponseInterface
     {
-        if ($r = $this->requireRole(['admin', 'taluk'])) return $r;
+        if ($r = $this->requireRole(['admin', 'state', 'district'])) return $r;
+        $row = (new TalukModel())->find($id);
+        if (! $row) return $this->fail('Taluk not found', 404);
+        if ($r = $this->checkTalukScope($row)) return $r;
         (new TalukModel())->delete($id);
         return $this->ok(null, 'Deleted');
     }
 
     public function resetTalukPassword(int $id): ResponseInterface
     {
-        if ($r = $this->requireRole(['admin', 'taluk'])) return $r;
+        if ($r = $this->requireRole(['admin', 'state', 'district'])) return $r;
+        $row = (new TalukModel())->find($id);
+        if (! $row) return $this->fail('Taluk not found', 404);
+        if ($r = $this->checkTalukScope($row)) return $r;
         return $this->resetGeoPassword(new TalukModel(), $id);
+    }
+
+    /** Ensure current state/district user can act on the given taluk row. */
+    private function checkTalukScope(array $row): ?ResponseInterface
+    {
+        $auth = $this->authUser();
+        if (! $auth || $auth->role === 'admin') return null;
+        if ($auth->role === 'district') {
+            $myDistrict = (new DistrictModel())->where('user_id', (int) $auth->id)->first();
+            if (! $myDistrict || (int) $row['district_id'] !== (int) $myDistrict['id']) {
+                return $this->fail('Taluk not in your district', 403);
+            }
+        } elseif ($auth->role === 'state') {
+            $myState = (new StateModel())->where('user_id', (int) $auth->id)->first();
+            $district = (new DistrictModel())->find((int) $row['district_id']);
+            if (! $myState || ! $district || (int) $district['state_id'] !== (int) $myState['id']) {
+                return $this->fail('Taluk not in your state', 403);
+            }
+        }
+        return null;
     }
 
     /**

@@ -18,7 +18,49 @@ class VendorManagementController extends BaseApiController
         if ($r = $this->requireRole(['vmanager', 'admin', 'taluk', 'district', 'state'])) return $r;
         $auth = $this->authUser();
 
-        $users = (new UserModel())->where('role', 'vendor')->orderBy('id', 'DESC')->findAll(500);
+        // Build the scope from the caller's geo position.
+        // - taluk    → vendors in that taluk only
+        // - district → vendors in any taluk under that district
+        // - state    → vendors in any district under that state
+        // - admin / vmanager → no geo scope (vmanager is further filtered below)
+        $scopeTalukIds = null; // null = no geo restriction; [] = restrict but nothing matches
+        if ($auth->role === 'taluk') {
+            $myTaluk = (new \App\Models\TalukModel())->where('user_id', (int) $auth->id)->first();
+            $scopeTalukIds = $myTaluk ? [(int) $myTaluk['id']] : [];
+        } elseif ($auth->role === 'district') {
+            $myDistrict = (new \App\Models\DistrictModel())->where('user_id', (int) $auth->id)->first();
+            $scopeTalukIds = $myDistrict
+                ? ((new \App\Models\TalukModel())->where('district_id', (int) $myDistrict['id'])->findColumn('id') ?: [])
+                : [];
+            $scopeTalukIds = array_map('intval', $scopeTalukIds);
+        } elseif ($auth->role === 'state') {
+            $myState = (new \App\Models\StateModel())->where('user_id', (int) $auth->id)->first();
+            if (! $myState) {
+                $scopeTalukIds = [];
+            } else {
+                $distIds = (new \App\Models\DistrictModel())->where('state_id', (int) $myState['id'])->findColumn('id') ?: [];
+                $scopeTalukIds = $distIds
+                    ? ((new \App\Models\TalukModel())->whereIn('district_id', $distIds)->findColumn('id') ?: [])
+                    : [];
+                $scopeTalukIds = array_map('intval', $scopeTalukIds);
+            }
+        }
+
+        // When scope is restricted to specific taluks, pre-filter profiles.
+        if (is_array($scopeTalukIds) && empty($scopeTalukIds)) {
+            return $this->ok(['items' => []]); // role linked but no taluks in scope
+        }
+        $userIdsInScope = null;
+        if (is_array($scopeTalukIds)) {
+            $userIdsInScope = (new VendorProfileModel())->whereIn('taluk_id', $scopeTalukIds)->findColumn('user_id') ?: [];
+            $userIdsInScope = array_map('intval', $userIdsInScope);
+            if (empty($userIdsInScope)) return $this->ok(['items' => []]);
+        }
+
+        $userQuery = (new UserModel())->where('role', 'vendor');
+        if ($userIdsInScope !== null) $userQuery->whereIn('id', $userIdsInScope);
+        $users = $userQuery->orderBy('id', 'DESC')->findAll(500);
+
         $ids = array_map(static fn ($u) => (int) $u['id'], $users);
         $profiles = $ids ? (new VendorProfileModel())->whereIn('user_id', $ids)->findAll() : [];
         $profById = [];
@@ -35,7 +77,7 @@ class VendorManagementController extends BaseApiController
         $items = [];
         foreach ($users as $u) {
             $p = $profById[(int) $u['id']] ?? null;
-            // If vmanager, only show vendors managed by me
+            // vmanager extra filter: only vendors managed by me
             if ($auth->role === 'vmanager' && (! $p || (int) ($p['vendor_manager_id'] ?? 0) !== (int) $auth->id)) continue;
             if ($p && ! empty($p['taluk_id'])) {
                 $p['taluk_name'] = $talukNameById[(int) $p['taluk_id']] ?? null;
