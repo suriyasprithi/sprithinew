@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Users, Store, ShoppingCart, Banknote, CreditCard, Wallet, Coins, Package, Building2,
-  Plus, Send, Bell as BellIcon, Settings as SettingsIcon,
+  Plus, Send, Bell as BellIcon, Settings as SettingsIcon, Truck, CheckCircle,
   type LucideIcon,
 } from "lucide-react";
 import { Shimmer } from "@/components/ui/custom/shimmer";
@@ -18,7 +18,7 @@ import { MobileHeader } from "@/components/layout/mobile-nav";
 import { useAuth } from "@/stores/auth";
 import { ROLE_LABEL } from "@/lib/role-menu";
 import { mock, type StaffStats, type ChartPoint, type ActivityRow } from "@/lib/mock";
-import { getAdminDashboard, getVendorDashboard, getStaffDashboard, type AdminDashboard, type VendorDashboard } from "@/lib/admin-stats";
+import { getAdminDashboard, getVendorDashboard, getStaffDashboard, getDriverDashboard, type AdminDashboard, type VendorDashboard } from "@/lib/admin-stats";
 import { api } from "@/lib/api";
 
 const fmtINR = (n: number) =>
@@ -77,6 +77,13 @@ function tilesFor(role: string, s: StaffStats): TileDef[] {
         { label: "Pending top-ups",     value: s.pending_payments ?? 0,    href: "/payments",    icon: CreditCard, tone: "pink",  spark: SPARKS.wave },
         { label: "Pending withdrawals", value: s.pending_withdrawals ?? 0, href: "/withdrawals", icon: Wallet,     tone: "cyan",  spark: SPARKS.wave },
       ];
+    case "driver":
+      return [
+        { label: "Pending deliveries", value: s.pending_deliveries ?? 0, href: "/driver/orders", icon: Truck,       tone: "brand",   spark: SPARKS.wave },
+        { label: "Delivered today",    value: s.delivered_today ?? 0,                            icon: CheckCircle, tone: "emerald", spark: SPARKS.up },
+        { label: "Total delivered",    value: s.total_delivered ?? 0,                            icon: Package,     tone: "amber",   spark: SPARKS.upSm },
+        { label: "Monthly salary",     value: s.monthly_salary ?? 0,                             icon: Banknote,    tone: "violet",  spark: SPARKS.flat, format: fmtINR },
+      ];
     default:
       return [];
   }
@@ -112,6 +119,10 @@ const QUICK_BY_ROLE: Record<string, QuickAction[]> = {
     { label: "Approve top-ups", href: "/payments",     icon: CreditCard, description: "Pending payments" },
     { label: "Approve payouts", href: "/withdrawals",  icon: Banknote, description: "Pending withdrawals" },
     { label: "Settings",        href: "/settings",     icon: SettingsIcon },
+  ],
+  driver: [
+    { label: "My deliveries", href: "/driver/orders", icon: Truck, description: "Orders awaiting delivery" },
+    { label: "Profile",       href: "/profile",       icon: SettingsIcon },
   ],
 };
 
@@ -265,6 +276,29 @@ export default function StaffDashboardPage() {
           });
         } catch {
           setStats(await mock.stats(user.role));
+        }
+      } else if (user.role === "driver") {
+        try {
+          const d = await getDriverDashboard();
+          const chartSeries: ChartPoint[] = d.orders_series.map((p) => ({ label: p.date.slice(5), value: p.orders }));
+          const activityRows: ActivityRow[] = d.recent_orders.map((o) => ({
+            name: o.customer,
+            sub: o.status,
+            amount: fmt.format(o.total),
+          }));
+          setStats({
+            pending_deliveries: d.totals.pending_deliveries,
+            delivered_today:    d.totals.delivered_today,
+            total_delivered:    d.totals.total_delivered,
+            monthly_salary:     d.totals.monthly_salary,
+            chart_title: "Deliveries — last 14 days",
+            chart_unit: "orders",
+            chart_series: chartSeries,
+            activity_title: "Recent orders",
+            activity_rows: activityRows,
+          });
+        } catch {
+          setStats({});
         }
       } else if (user.role === "vendor") {
         try {

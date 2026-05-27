@@ -431,4 +431,93 @@ class AdminStatsController extends BaseApiController
             'recent_orders' => $recentOrders,
         ]);
     }
+
+    public function driverDashboard(): ResponseInterface
+    {
+        $auth = $this->authUser();
+        if (! $auth || $auth->role !== 'driver') return $this->fail('Forbidden', 403);
+
+        $db    = Database::connect();
+        $did   = (int) $auth->id;
+        $today = date('Y-m-d');
+
+        $driver  = $db->query('SELECT assigned_vendor_id, monthly_salary FROM users WHERE id = ?', [$did])->getRow();
+        $vendorId = (int) ($driver->assigned_vendor_id ?? 0);
+        $monthlySalary = (float) ($driver->monthly_salary ?? 0);
+
+        if (! $vendorId) {
+            $emptySeries = [];
+            for ($i = 13; $i >= 0; $i--) {
+                $emptySeries[] = ['date' => date('Y-m-d', strtotime("-{$i} days")), 'orders' => 0];
+            }
+            return $this->ok([
+                'totals' => [
+                    'pending_deliveries' => 0,
+                    'delivered_today'    => 0,
+                    'total_delivered'    => 0,
+                    'monthly_salary'     => $monthlySalary,
+                ],
+                'orders_series' => $emptySeries,
+                'recent_orders' => [],
+            ]);
+        }
+
+        $pending = (int) $db->query(
+            'SELECT COUNT(*) c FROM orders WHERE vendor_id = ? AND status IN ("paid","shipped")',
+            [$vendorId]
+        )->getRow()->c;
+
+        $deliveredToday = (int) $db->query(
+            'SELECT COUNT(*) c FROM orders WHERE vendor_id = ? AND status = "delivered" AND DATE(updated_at) = ?',
+            [$vendorId, $today]
+        )->getRow()->c;
+
+        $totalDelivered = (int) $db->query(
+            'SELECT COUNT(*) c FROM orders WHERE vendor_id = ? AND status = "delivered"',
+            [$vendorId]
+        )->getRow()->c;
+
+        // 14-day delivered count
+        $since = date('Y-m-d', strtotime('-13 days'));
+        $rows  = $db->query(
+            'SELECT DATE(updated_at) d, COUNT(*) c FROM orders
+             WHERE vendor_id = ? AND status = "delivered" AND DATE(updated_at) >= ?
+             GROUP BY DATE(updated_at)',
+            [$vendorId, $since]
+        )->getResultArray();
+        $byDay = [];
+        foreach ($rows as $r) $byDay[$r['d']] = (int) $r['c'];
+        $series = [];
+        for ($i = 13; $i >= 0; $i--) {
+            $d = date('Y-m-d', strtotime("-{$i} days"));
+            $series[] = ['date' => $d, 'orders' => $byDay[$d] ?? 0];
+        }
+
+        // Recent (mixed pending + delivered) for activity feed
+        $recentRows = $db->query(
+            'SELECT o.id, o.total, o.status, o.created_at, cu.name AS customer_name
+             FROM orders o LEFT JOIN users cu ON cu.id = o.customer_id
+             WHERE o.vendor_id = ?
+             ORDER BY o.id DESC LIMIT 8',
+            [$vendorId]
+        )->getResultArray();
+        $recentOrders = array_map(static fn ($r) => [
+            'id'         => (int) $r['id'],
+            'customer'   => $r['customer_name'] ?? '—',
+            'total'      => (float) $r['total'],
+            'status'     => (string) $r['status'],
+            'created_at' => $r['created_at'],
+        ], $recentRows);
+
+        return $this->ok([
+            'totals' => [
+                'pending_deliveries' => $pending,
+                'delivered_today'    => $deliveredToday,
+                'total_delivered'    => $totalDelivered,
+                'monthly_salary'     => $monthlySalary,
+            ],
+            'orders_series' => $series,
+            'recent_orders' => $recentOrders,
+        ]);
+    }
 }

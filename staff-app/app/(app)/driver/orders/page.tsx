@@ -1,50 +1,81 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Loader2, MapPin, Phone, Truck } from "lucide-react";
+import { ChevronRight, Loader2, MapPin, Phone, Truck } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { mock, type DriverOrder } from "@/lib/mock";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { api, apiErrorMessage } from "@/lib/api";
+
+type Status = "paid" | "shipped" | "delivered";
+type DriverOrder = {
+  id: number;
+  status: Status;
+  total: number;
+  pickup_address: string;
+  drop_address: string;
+  customer_name: string;
+  customer_mobile: string;
+};
 
 const formatCurrency = (n: number) =>
   new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(n);
 
-const STATUS_STYLE: Record<DriverOrder["status"], string> = {
-  assigned: "bg-amber-100 text-amber-800",
-  picked_up: "bg-sky-100 text-sky-800",
+const STATUS_STYLE: Record<Status, string> = {
+  paid:      "bg-amber-100 text-amber-800",
+  shipped:   "bg-sky-100 text-sky-800",
   delivered: "bg-emerald-100 text-emerald-800",
 };
+
+function normalize(raw: unknown): DriverOrder {
+  const r = raw as Record<string, unknown>;
+  const s = (r.status as string) === "shipped" ? "shipped" : (r.status as string) === "delivered" ? "delivered" : "paid";
+  return {
+    id:              Number(r.id ?? 0),
+    status:          s,
+    total:           Number(r.total ?? 0),
+    pickup_address:  String(r.pickup_address ?? ""),
+    drop_address:    String(r.drop_address ?? ""),
+    customer_name:   String(r.customer_name ?? ""),
+    customer_mobile: String(r.customer_mobile ?? ""),
+  };
+}
 
 export default function DriverOrdersPage() {
   const [items, setItems] = useState<DriverOrder[]>([]);
   const [loading, setLoading] = useState(true);
-  const [deliverForId, setDeliverForId] = useState<number | null>(null);
-  const [km, setKm] = useState("");
-  const [hours, setHours] = useState("");
+  const [actingId, setActingId] = useState<number | null>(null);
+  const [confirmId, setConfirmId] = useState<number | null>(null);
 
   async function refresh() {
     setLoading(true);
-    // MOCK — replace with api.get("/driver/orders")
-    setItems(await mock.driverOrders());
-    setLoading(false);
+    try {
+      const res = await api.get("/driver/orders");
+      const raw = (Array.isArray(res.data.data?.items) ? res.data.data.items : []) as unknown[];
+      setItems(raw.map(normalize));
+    } catch (err) {
+      toast.error(apiErrorMessage(err, "Could not load orders"));
+    } finally {
+      setLoading(false);
+    }
   }
   useEffect(() => { void refresh(); }, []);
 
-  async function pickup(id: number) {
-    // MOCK — replace with api.patch(`/driver/orders/${id}/pickup`)
-    setItems(items.map((o) => o.id === id ? { ...o, status: "picked_up" } : o));
-    toast.success(`Picked up #${id}`);
-  }
   async function deliver(id: number) {
-    const k = Number(km), h = Number(hours);
-    if (!k || !h) { toast.error("Km + hours required"); return; }
-    // MOCK — replace with api.patch(`/driver/orders/${id}/deliver`, { km, hours })
-    setItems(items.map((o) => o.id === id ? { ...o, status: "delivered" } : o));
-    toast.success(`Delivered #${id}`);
-    setDeliverForId(null); setKm(""); setHours("");
+    setActingId(id);
+    try {
+      await api.patch(`/orders/${id}/status`, { status: "delivered" });
+      toast.success(`Delivered #${id}`);
+      await refresh();
+    } catch (err) {
+      toast.error(apiErrorMessage(err, "Action failed"));
+    } finally {
+      setActingId(null);
+    }
   }
 
   return (
@@ -57,29 +88,75 @@ export default function DriverOrdersPage() {
         <Card key={o.id}><CardContent className="space-y-2 p-4">
           <div className="flex items-center justify-between">
             <p className="font-semibold">Order #{o.id}</p>
-            <span className={"rounded-full px-2 py-0.5 text-[10px] uppercase " + STATUS_STYLE[o.status]}>{o.status.replace("_", " ")}</span>
+            <span className={"rounded-full px-2 py-0.5 text-[10px] uppercase " + STATUS_STYLE[o.status]}>{o.status}</span>
           </div>
-          <p className="text-xs text-muted-foreground flex items-center gap-1"><MapPin className="h-3 w-3" /> Pickup: {o.pickup_address}</p>
-          <p className="text-xs text-muted-foreground flex items-center gap-1"><MapPin className="h-3 w-3" /> Drop: {o.drop_address}</p>
-          <p className="text-xs flex items-center gap-1"><Phone className="h-3 w-3" /> {o.customer_name} · {o.customer_mobile}</p>
-          <p className="text-sm font-bold text-emerald-700">{formatCurrency(o.total)}</p>
+          <a
+            href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(o.pickup_address)}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="-mx-2 flex items-center gap-2 rounded-md px-2 py-2 text-xs text-sky-700 underline-offset-2 hover:underline active:bg-muted"
+          >
+            <MapPin className="h-4 w-4 shrink-0" />
+            <span className="flex-1 truncate"><span className="text-muted-foreground">Pickup:</span> {o.pickup_address}</span>
+            <ChevronRight className="h-4 w-4 shrink-0 opacity-60" />
+          </a>
+          <a
+            href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(o.drop_address)}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="-mx-2 flex items-center gap-2 rounded-md px-2 py-2 text-xs text-sky-700 underline-offset-2 hover:underline active:bg-muted"
+          >
+            <MapPin className="h-4 w-4 shrink-0" />
+            <span className="flex-1 truncate"><span className="text-muted-foreground">Drop:</span> {o.drop_address}</span>
+            <ChevronRight className="h-4 w-4 shrink-0 opacity-60" />
+          </a>
+          {o.customer_mobile && (
+            <a
+              href={`tel:${o.customer_mobile}`}
+              className="-mx-2 flex items-center gap-2 rounded-md px-2 py-2 text-sm text-sky-700 underline-offset-2 hover:underline active:bg-muted"
+            >
+              <Phone className="h-4 w-4 shrink-0" />
+              <span className="flex-1 truncate">{o.customer_name} · {o.customer_mobile}</span>
+              <ChevronRight className="h-4 w-4 shrink-0 opacity-60" />
+            </a>
+          )}
+          <p className="text-base font-bold text-emerald-700">{formatCurrency(o.total)}</p>
 
-          {o.status === "assigned" && <Button size="sm" className="w-full" onClick={() => pickup(o.id)}>Mark picked up</Button>}
-          {o.status === "picked_up" && deliverForId !== o.id && <Button size="sm" className="w-full" onClick={() => setDeliverForId(o.id)}>Mark delivered…</Button>}
-          {o.status === "picked_up" && deliverForId === o.id && (
-            <div className="space-y-2 rounded border p-3">
-              <div className="grid grid-cols-2 gap-2">
-                <div className="space-y-1.5"><Label>Km driven</Label><Input type="number" value={km} onChange={(e) => setKm(e.target.value)} /></div>
-                <div className="space-y-1.5"><Label>Hours</Label><Input type="number" value={hours} onChange={(e) => setHours(e.target.value)} /></div>
-              </div>
-              <div className="flex gap-2">
-                <Button size="sm" variant="outline" className="flex-1" onClick={() => setDeliverForId(null)}>Cancel</Button>
-                <Button size="sm" className="flex-1" onClick={() => deliver(o.id)}>Confirm</Button>
-              </div>
-            </div>
+          {o.status === "shipped" && (
+            <Button size="sm" className="w-full" disabled={actingId === o.id} onClick={() => setConfirmId(o.id)}>
+              {actingId === o.id ? "Saving…" : "Mark delivered"}
+            </Button>
+          )}
+          {o.status === "paid" && (
+            <p className="text-xs text-muted-foreground">Waiting for vendor to ship.</p>
           )}
         </CardContent></Card>
       ))}
+
+      <AlertDialog open={confirmId != null} onOpenChange={(o) => !o && setConfirmId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Mark delivered?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Order #{confirmId} will be marked as delivered. This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={actingId === confirmId}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={actingId === confirmId}
+              onClick={async () => {
+                const id = confirmId;
+                if (id == null) return;
+                setConfirmId(null);
+                await deliver(id);
+              }}
+            >
+              {actingId === confirmId ? "Saving…" : "Confirm"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </section>
   );
 }

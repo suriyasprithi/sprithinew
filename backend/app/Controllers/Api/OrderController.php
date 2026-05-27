@@ -8,6 +8,7 @@ use App\Models\OrderModel;
 use App\Models\ProductModel;
 use App\Models\ProductVariantModel;
 use App\Models\UserModel;
+use App\Models\VendorProfileModel;
 use App\Models\WalletTransactionModel;
 use App\Services\CommissionService;
 use App\Services\NotificationService;
@@ -219,11 +220,73 @@ class OrderController extends BaseApiController
         return $this->ok(['items' => $rows, 'total' => $total, 'page' => $p['page'], 'per_page' => $p['perPage']]);
     }
 
+    /**
+     * Orders awaiting delivery for the current driver's assigned vendor.
+     * Returns shipped + paid orders (paid = upcoming, shipped = ready to deliver).
+     */
+    public function driverOrders(): ResponseInterface
+    {
+        $auth = $this->authUser();
+        if (! $auth) return $this->fail('Unauthorized', 401);
+        if ($auth->role !== 'driver') return $this->fail('Forbidden', 403);
+
+        $users = new UserModel();
+        $driver = $users->find((int) $auth->id);
+        $vendorId = (int) ($driver['assigned_vendor_id'] ?? 0);
+        if (! $vendorId) return $this->ok(['items' => []]);
+
+        $orders = (new OrderModel())
+            ->where('vendor_id', $vendorId)
+            ->whereIn('status', ['paid', 'shipped'])
+            ->orderBy('id', 'DESC')
+            ->findAll(200);
+        if (! $orders) return $this->ok(['items' => []]);
+
+        // Vendor profile for pickup address
+        $vendor = $users->find($vendorId);
+        $vProfile = (new VendorProfileModel())->find($vendorId) ?: [];
+        $pickup = trim(implode(', ', array_filter([
+            $vProfile['shop_name'] ?? null,
+            $vProfile['address'] ?? null,
+            $vProfile['area']    ?? null,
+            $vProfile['pincode'] ?? null,
+        ])));
+
+        // Customer details for drops
+        $custIds = array_values(array_unique(array_map(static fn ($o) => (int) $o['customer_id'], $orders)));
+        $customers = $custIds ? $users->whereIn('id', $custIds)->findAll() : [];
+        $byId = [];
+        foreach ($customers as $c) $byId[(int) $c['id']] = $c;
+
+        $items = [];
+        foreach ($orders as $o) {
+            $c = $byId[(int) $o['customer_id']] ?? null;
+            $dropParts = $c ? array_filter([
+                $c['address_line'] ?? null,
+                ! empty($c['landmark']) ? 'Near ' . $c['landmark'] : null,
+                $c['city']    ?? null,
+                $c['pincode'] ?? null,
+            ]) : [];
+            $drop = $dropParts ? implode(', ', $dropParts) : ($c['name'] ?? '');
+            $items[] = [
+                'id'              => (int) $o['id'],
+                'status'          => $o['status'],
+                'total'           => (float) $o['total'],
+                'pickup_address'  => $pickup ?: ($vendor['name'] ?? 'Vendor'),
+                'drop_address'    => $drop ?: 'Customer',
+                'customer_name'   => $c['name']          ?? '',
+                'customer_mobile' => $c['mobile_number'] ?? '',
+                'created_at'      => $o['created_at'] ?? null,
+            ];
+        }
+        return $this->ok(['items' => $items]);
+    }
+
     public function setStatus(int $id): ResponseInterface
     {
         $auth = $this->authUser();
         if (! $auth) return $this->fail('Unauthorized', 401);
-        if (! in_array($auth->role, ['vendor', 'admin'], true)) return $this->fail('Forbidden', 403);
+        if (! in_array($auth->role, ['vendor', 'admin', 'driver'], true)) return $this->fail('Forbidden', 403);
 
         $d = $this->request->getJSON(true) ?? $this->request->getPost();
         $status = (string) ($d['status'] ?? '');
@@ -235,6 +298,13 @@ class OrderController extends BaseApiController
         $order = $model->find($id);
         if (! $order) return $this->fail('Not found', 404);
         if ($auth->role === 'vendor' && (int) ($order['vendor_id'] ?? 0) !== (int) $auth->id) return $this->fail('Forbidden', 403);
+        if ($auth->role === 'driver') {
+            $driver = (new UserModel())->find((int) $auth->id);
+            if (! $driver || (int) ($driver['assigned_vendor_id'] ?? 0) !== (int) ($order['vendor_id'] ?? 0)) {
+                return $this->fail('Forbidden', 403);
+            }
+            if ($status !== 'delivered') return $this->fail('Drivers can only mark delivered', 403);
+        }
 
         $model->update($id, ['status' => $status]);
         try {

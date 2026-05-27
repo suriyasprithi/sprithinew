@@ -33,7 +33,7 @@ api.interceptors.response.use(
     if (status !== 401 || !original) return Promise.reject(error);
 
     const url = original.url || "";
-    if (url.includes("/auth/login") || url.includes("/auth/refresh")) {
+    if (url.includes("/auth/login") || url.includes("/auth/staff-login") || url.includes("/auth/refresh")) {
       return Promise.reject(error);
     }
     if (original._retry) return Promise.reject(error);
@@ -67,8 +67,8 @@ api.interceptors.response.use(
       flushQueue(err, null);
       storage.remove(STORAGE_KEYS.ACCESS);
       storage.remove(STORAGE_KEYS.REFRESH);
-      if (typeof window !== "undefined" && !window.location.pathname.startsWith("/login")) {
-        window.location.href = "/login";
+      if (typeof window !== "undefined" && !window.location.pathname.startsWith("/admin/login")) {
+        window.location.href = "/admin/login/";
       }
       return Promise.reject(err);
     } finally {
@@ -87,6 +87,9 @@ export type AuthUser = {
   role: "customer" | StaffRole;
   status: "active" | "inactive" | "blocked";
   pincode?: string | null;
+  address_line?: string | null;
+  landmark?: string | null;
+  city?: string | null;
   wallet_balance: number;
   level_wallet?: number;
   level_1_wallet?: number;

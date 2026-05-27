@@ -21,7 +21,7 @@ export function Sidebar() {
 
   const onLogout = async () => {
     await logout();
-    router.replace("/login");
+    window.location.href = "/admin/login/";
   };
 
   return (

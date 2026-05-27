@@ -11,6 +11,7 @@ type AuthState = {
   login: (mobile: string, password: string) => Promise<AuthUser>;
   register: (input: { name: string; mobile: string; password: string; email?: string }) => Promise<AuthUser>;
   logout: () => Promise<void>;
+  setUser: (user: AuthUser) => void;
 };
 
 const persistTokens = (tokens: AuthTokens) => {
@@ -80,6 +81,8 @@ export const useAuth = create<AuthState>((set) => ({
       set({ isLoading: false });
     }
   },
+
+  setUser: (user) => set({ user }),
 
   logout: async () => {
     try {

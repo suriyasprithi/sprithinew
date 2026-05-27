@@ -14,13 +14,15 @@ $routes->options('(:any)', static function () {
 $routes->group('api/v1', ['filter' => 'cors'], static function ($routes) {
     // ===== Auth =====
     $routes->group('auth', static function ($routes) {
-        $routes->post('register', 'Api\AuthController::register', ['filter' => 'rate_limit:auth-register,10,3600']);
-        $routes->post('login',    'Api\AuthController::login',    ['filter' => 'rate_limit:auth-login,10,300']);
-        $routes->post('refresh',  'Api\AuthController::refresh');
+        $routes->post('register',    'Api\AuthController::register',   ['filter' => 'rate_limit:auth-register,10,3600']);
+        $routes->post('login',       'Api\AuthController::login',      ['filter' => 'rate_limit:auth-login,10,300']);
+        $routes->post('staff-login', 'Api\AuthController::staffLogin', ['filter' => 'rate_limit:auth-login,10,300']);
+        $routes->post('refresh',     'Api\AuthController::refresh');
     });
     $routes->group('auth', ['filter' => 'auth'], static function ($routes) {
         $routes->get('me',      'Api\AuthController::me');
         $routes->post('logout', 'Api\AuthController::logout');
+        $routes->patch('me/address', 'Api\AuthController::updateAddress');
     });
 
     // ===== Devices + notifications (Phase 1 + push infra) =====
@@ -69,6 +71,9 @@ $routes->group('api/v1', ['filter' => 'cors'], static function ($routes) {
     // Staff dashboard for taluk/district/state (counters + 14d txns + team below)
     $routes->get('staff/stats/dashboard',  'Api\AdminStatsController::staffDashboard',  ['filter' => 'auth']);
 
+    // Driver dashboard (pending / delivered today / total / monthly salary + 14d series)
+    $routes->get('driver/stats/dashboard', 'Api\AdminStatsController::driverDashboard', ['filter' => 'auth']);
+
     $routes->group('cart', ['filter' => 'auth'], static function ($routes) {
         $routes->get('/',           'Api\CartController::index');
         $routes->post('add',        'Api\CartController::add');
@@ -84,6 +89,11 @@ $routes->group('api/v1', ['filter' => 'cors'], static function ($routes) {
         $routes->get('(:num)',         'Api\OrderController::show/$1');
         $routes->patch('(:num)/status','Api\OrderController::setStatus/$1');
     });
+    // Driver-scoped: orders for the current driver's assigned vendor (awaiting delivery).
+    $routes->get('driver/orders', 'Api\OrderController::driverOrders', ['filter' => 'auth']);
+
+    // Customer-scoped: KM slabs for the current cart's vendor's taluk.
+    $routes->get('customer/delivery-rates/km', 'Api\DeliveryRateController::customerSlabs', ['filter' => 'auth']);
 
     // ===== Wallet + withdrawals (Phase 4 will rebuild) =====
     $routes->group('wallet', ['filter' => 'auth'], static function ($routes) {
@@ -163,6 +173,19 @@ $routes->group('api/v1', ['filter' => 'cors'], static function ($routes) {
         $routes->post('admin/credit',             'Api\TokenController::adminCredit');
     });
 
+    // ===== Driver management =====
+    $routes->group('drivers', ['filter' => 'auth'], static function ($routes) {
+        $routes->get('/',                       'Api\DriverManagementController::index');                // admin
+        $routes->post('/',                      'Api\DriverManagementController::create');               // admin
+        $routes->patch('(:num)',                'Api\DriverManagementController::update/$1');            // admin
+        $routes->post('(:num)/block',           'Api\DriverManagementController::block/$1');             // admin
+        $routes->post('(:num)/unblock',         'Api\DriverManagementController::unblock/$1');           // admin
+        $routes->post('(:num)/reset-password',  'Api\DriverManagementController::resetPassword/$1');     // admin
+        $routes->post('(:num)/assign-vendor',   'Api\DriverManagementController::assignVendor/$1');      // taluk+admin
+    });
+    // Taluk-scoped driver listing
+    $routes->get('staff/drivers', 'Api\DriverManagementController::talukIndex', ['filter' => 'auth']);
+
     // ===== Vendor management (Phase 2/6 will revisit) =====
     $routes->group('vendors', ['filter' => 'auth'], static function ($routes) {
         $routes->get('/',                  'Api\VendorManagementController::index');
@@ -232,6 +255,16 @@ $routes->group('api/v1', ['filter' => 'cors'], static function ($routes) {
 
         // dashboard one-shot payload (counters + 14d series + top cats + recent orders + latest vendors)
         $routes->get('stats/dashboard', 'Api\AdminStatsController::dashboard');
+
+        // delivery rates (KM slabs + time tiers per taluk)
+        $routes->get('delivery-rates/km',               'Api\DeliveryRateController::indexKm');
+        $routes->post('delivery-rates/km',              'Api\DeliveryRateController::createKm');
+        $routes->patch('delivery-rates/km/(:num)',      'Api\DeliveryRateController::updateKm/$1');
+        $routes->delete('delivery-rates/km/(:num)',     'Api\DeliveryRateController::deleteKm/$1');
+        $routes->get('delivery-rates/time',             'Api\DeliveryRateController::indexTime');
+        $routes->post('delivery-rates/time',            'Api\DeliveryRateController::createTime');
+        $routes->patch('delivery-rates/time/(:num)',    'Api\DeliveryRateController::updateTime/$1');
+        $routes->delete('delivery-rates/time/(:num)',   'Api\DeliveryRateController::deleteTime/$1');
 
         // current global pool balance + last 12 months of monthly_global_pools rows
         $routes->get('wallet/global-pool', 'Api\WalletController::adminGlobalPool');

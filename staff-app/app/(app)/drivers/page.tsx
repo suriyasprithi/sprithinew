@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Truck, Plus, Search, MoreHorizontal, Banknote } from "lucide-react";
+import { Truck, Plus, Search, MoreHorizontal, Banknote, Pencil, KeyRound, Ban, RotateCcw } from "lucide-react";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
@@ -22,27 +22,127 @@ import { TableSkeleton } from "@/components/data-table/table-skeleton";
 import { Pagination } from "@/components/data-table/pagination";
 import { MobileHeader } from "@/components/layout/mobile-nav";
 import { PageHeader } from "@/components/layout/page-header";
-import { mock, type Driver } from "@/lib/mock";
+import { api, apiErrorMessage } from "@/lib/api";
 
 const PAGE_SIZE = 10;
 const fmtINR = (n: number) => new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(n);
 
-type NewDriver = { name: string; mobile: string; vehicle: string; salary: string };
+type DriverStatus = "active" | "inactive" | "blocked";
+type Driver = {
+  id: number;
+  name: string;
+  mobile: string;
+  vehicle: string;
+  license: string;
+  salary: number;
+  km_rate: number;
+  hour_rate: number;
+  taluk_id: number | null;
+  taluk_name: string | null;
+  assigned_vendor_name: string | null;
+  status: DriverStatus;
+};
+type TalukOption = { id: number; name: string };
+type KmSlabOption = { id: number; taluk_id: number; taluk_name: string | null; from_km: number; to_km: number; price_per_km: number };
+type TimeRateOption = { id: number; taluk_id: number; taluk_name: string | null; time_min: number; price: number };
+
+type NewDriver = { name: string; mobile: string; password: string; vehicle: string; license: string; salary: string; km_rate: string; hour_rate: string; taluk_id: string };
+type EditDriver = { id: number; name: string; vehicle: string; license: string; salary: string; km_rate: string; hour_rate: string; taluk_id: string; status: DriverStatus };
+type ResetPw = { id: number; name: string; password: string };
+
+function normalize(raw: unknown): Driver {
+  const r = raw as Record<string, unknown>;
+  const status = r.status === "blocked" ? "blocked" : r.status === "inactive" ? "inactive" : "active";
+  return {
+    id: Number(r.id ?? 0),
+    name: (r.name as string | undefined) || "",
+    mobile: (r.mobile_number as string | undefined) || "",
+    vehicle: (r.vehicle_number as string | undefined) || "",
+    license: (r.license_number as string | undefined) || "",
+    salary: Number(r.monthly_salary ?? 0) || 0,
+    km_rate: Number(r.km_rate ?? 0) || 0,
+    hour_rate: Number(r.hour_rate ?? 0) || 0,
+    taluk_id: r.taluk_id ? Number(r.taluk_id) : null,
+    taluk_name: (r.taluk_name as string | null | undefined) ?? null,
+    assigned_vendor_name: (r.assigned_vendor_name as string | null | undefined) ?? null,
+    status,
+  };
+}
 
 export default function AdminDriversPage() {
   const [items, setItems] = useState<Driver[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
-  const [status, setStatus] = useState<"all" | "active" | "inactive">("all");
+  const [status, setStatus] = useState<"all" | DriverStatus>("all");
   const [page, setPage] = useState(1);
   const [adding, setAdding] = useState<NewDriver | null>(null);
+  const [editing, setEditing] = useState<EditDriver | null>(null);
+  const [resetting, setResetting] = useState<ResetPw | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [taluks, setTaluks] = useState<TalukOption[]>([]);
+  const [kmSlabs, setKmSlabs] = useState<KmSlabOption[]>([]);
+  const [timeRates, setTimeRates] = useState<TimeRateOption[]>([]);
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const res = await api.get("/drivers");
+      const raw = (Array.isArray(res.data.data?.items) ? res.data.data.items : []) as unknown[];
+      setItems(raw.map(normalize));
+    } catch (err) {
+      toast.error(apiErrorMessage(err, "Could not load drivers"));
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
+    void load();
     void (async () => {
-      setItems(await mock.drivers());
-      setLoading(false);
+      try {
+        const [tRes, kRes, hrRes] = await Promise.all([
+          api.get("/geo/taluks"),
+          api.get("/admin/delivery-rates/km"),
+          api.get("/admin/delivery-rates/time"),
+        ]);
+        const itemsOf = (r: { data?: { data?: { items?: unknown } } }): unknown[] =>
+          Array.isArray(r.data?.data?.items) ? (r.data!.data!.items as unknown[]) : [];
+        setTaluks(itemsOf(tRes).map((t) => ({ id: Number((t as Record<string, unknown>).id ?? 0), name: String((t as Record<string, unknown>).name ?? "") })));
+        setKmSlabs(itemsOf(kRes).map((s) => {
+          const r = s as Record<string, unknown>;
+          return {
+            id: Number(r.id ?? 0),
+            taluk_id: Number(r.taluk_id ?? 0),
+            taluk_name: (r.taluk_name as string | null | undefined) ?? null,
+            from_km: Number(r.from_km ?? 0),
+            to_km: Number(r.to_km ?? 0),
+            price_per_km: Number(r.price_per_km ?? 0),
+          };
+        }));
+        setTimeRates(itemsOf(hrRes).map((s) => {
+          const r = s as Record<string, unknown>;
+          return {
+            id: Number(r.id ?? 0),
+            taluk_id: Number(r.taluk_id ?? 0),
+            taluk_name: (r.taluk_name as string | null | undefined) ?? null,
+            time_min: Number(r.time_min ?? 0),
+            price: Number(r.price ?? 0),
+          };
+        }));
+      } catch {
+        // optional — non-blocking
+      }
     })();
   }, []);
+
+  function kmOptionsFor(taluk_id: number | null): KmSlabOption[] {
+    if (!taluk_id) return kmSlabs;
+    return kmSlabs.filter((s) => s.taluk_id === taluk_id);
+  }
+  function timeOptionsFor(taluk_id: number | null): TimeRateOption[] {
+    if (!taluk_id) return timeRates;
+    return timeRates.filter((r) => r.taluk_id === taluk_id);
+  }
 
   const filtered = useMemo(() => items.filter((d) => {
     if (search) {
@@ -60,21 +160,94 @@ export default function AdminDriversPage() {
 
   const totalSalary = items.reduce((s, d) => s + d.salary, 0);
 
-  function save() {
+  async function saveNew() {
     if (!adding) return;
-    if (!adding.name || !adding.mobile || !adding.vehicle) { toast.error("Required fields missing"); return; }
-    const id = Math.max(0, ...items.map((i) => i.id)) + 1;
-    setItems((cur) => [...cur, {
-      id, name: adding.name, mobile: adding.mobile, vehicle: adding.vehicle,
-      license: "DL00000", salary: Number(adding.salary || 0),
-      taluk: "Coimbatore South", status: "active",
-    }]);
-    toast.success("Driver added");
-    setAdding(null);
+    if (!adding.name || !adding.mobile || !adding.password) { toast.error("Name, mobile and password required"); return; }
+    setSaving(true);
+    try {
+      await api.post("/drivers", {
+        name: adding.name,
+        mobile_number: adding.mobile,
+        password: adding.password,
+        vehicle_number: adding.vehicle || null,
+        license_number: adding.license || null,
+        monthly_salary: Number(adding.salary || 0),
+        km_rate: Number(adding.km_rate || 0),
+        hour_rate: Number(adding.hour_rate || 0),
+        taluk_id: adding.taluk_id ? Number(adding.taluk_id) : null,
+      });
+      toast.success("Driver added");
+      setAdding(null);
+      await load();
+    } catch (err) {
+      toast.error(apiErrorMessage(err, "Create failed"));
+    } finally {
+      setSaving(false);
+    }
   }
 
-  function paySalary(d: Driver) {
-    toast.success(`Salary of ${fmtINR(d.salary)} processed for ${d.name}`);
+  async function saveEdit() {
+    if (!editing) return;
+    if (!editing.name) { toast.error("Name required"); return; }
+    setSaving(true);
+    try {
+      await api.patch(`/drivers/${editing.id}`, {
+        name: editing.name,
+        vehicle_number: editing.vehicle || null,
+        license_number: editing.license || null,
+        monthly_salary: Number(editing.salary || 0),
+        km_rate: Number(editing.km_rate || 0),
+        hour_rate: Number(editing.hour_rate || 0),
+        taluk_id: editing.taluk_id ? Number(editing.taluk_id) : null,
+        status: editing.status,
+      });
+      toast.success("Driver updated");
+      setEditing(null);
+      await load();
+    } catch (err) {
+      toast.error(apiErrorMessage(err, "Update failed"));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function saveReset() {
+    if (!resetting) return;
+    if (!resetting.password || resetting.password.length < 6) { toast.error("Min 6 characters"); return; }
+    setSaving(true);
+    try {
+      await api.post(`/drivers/${resetting.id}/reset-password`, { password: resetting.password });
+      toast.success("Password updated");
+      setResetting(null);
+    } catch (err) {
+      toast.error(apiErrorMessage(err, "Reset failed"));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function toggleBlock(d: Driver) {
+    try {
+      await api.post(`/drivers/${d.id}/${d.status === "blocked" ? "unblock" : "block"}`);
+      toast.success(d.status === "blocked" ? "Unblocked" : "Blocked");
+      await load();
+    } catch (err) {
+      toast.error(apiErrorMessage(err, "Action failed"));
+    }
+  }
+
+  function openEdit(d: Driver) {
+    setEditing({
+      id: d.id,
+      name: d.name,
+      vehicle: d.vehicle,
+      license: d.license,
+      salary: String(d.salary),
+      km_rate: String(d.km_rate),
+      hour_rate: String(d.hour_rate),
+      taluk_id: d.taluk_id ? String(d.taluk_id) : "",
+      status: d.status,
+    });
   }
 
   return (
@@ -87,16 +260,16 @@ export default function AdminDriversPage() {
           title="Drivers"
           description="Manage delivery drivers, vehicles and monthly payroll."
           action={
-            <GradientButton onClick={() => setAdding({ name: "", mobile: "", vehicle: "", salary: "" })}>
+            <GradientButton onClick={() => setAdding({ name: "", mobile: "", password: "", vehicle: "", license: "", salary: "", km_rate: "", hour_rate: "", taluk_id: "" })}>
               <Plus className="h-4 w-4" /> New driver
             </GradientButton>
           }
         />
 
         <div className="grid gap-3 sm:grid-cols-3">
-          <StatCard label="Total drivers"     value={items.length} icon={Truck}   tone="brand"   spark={[1, 2, 2, 2, 2, 2, 2, 2]} />
-          <StatCard label="Active"            value={items.filter((d) => d.status === "active").length} icon={Truck} tone="emerald" spark={[1, 2, 2, 2, 2, 2, 2, 2]} />
-          <StatCard label="Monthly payroll"   value={totalSalary} icon={Banknote} tone="amber"   spark={[2, 3, 3, 3, 4, 4, 4, 4]} format={fmtINR} />
+          <StatCard label="Total drivers"   value={items.length} icon={Truck}   tone="brand"   spark={[1, 2, 2, 2, 2, 2, 2, 2]} />
+          <StatCard label="Active"          value={items.filter((d) => d.status === "active").length} icon={Truck} tone="emerald" spark={[1, 2, 2, 2, 2, 2, 2, 2]} />
+          <StatCard label="Monthly payroll" value={totalSalary} icon={Banknote} tone="amber"   spark={[2, 3, 3, 3, 4, 4, 4, 4]} format={fmtINR} />
         </div>
 
         <div className="glass rounded-2xl p-3">
@@ -105,12 +278,13 @@ export default function AdminDriversPage() {
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search name, vehicle, mobile…" className="h-10 rounded-xl bg-surface-2/60 pl-9" />
             </div>
-            <Select value={status} onValueChange={(v) => v && setStatus(v as "all" | "active" | "inactive")}>
+            <Select value={status} onValueChange={(v) => v && setStatus(v as typeof status)}>
               <SelectTrigger className="h-10 rounded-xl bg-surface-2/60"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">Any status</SelectItem>
                 <SelectItem value="active">Active</SelectItem>
                 <SelectItem value="inactive">Inactive</SelectItem>
+                <SelectItem value="blocked">Blocked</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -144,10 +318,14 @@ export default function AdminDriversPage() {
                     </span>
                     <div className="min-w-0">
                       <p className="truncate text-sm font-semibold">{d.name}</p>
-                      <p className="truncate text-xs text-muted-foreground">{d.mobile} · {d.taluk}</p>
+                      <p className="truncate text-xs text-muted-foreground">
+                        {d.mobile}
+                        {d.taluk_name && <> · {d.taluk_name}</>}
+                        {d.assigned_vendor_name && <> · → {d.assigned_vendor_name}</>}
+                      </p>
                     </div>
                   </div>
-                  <p className="hidden font-mono text-xs text-muted-foreground md:block">{d.vehicle}</p>
+                  <p className="hidden font-mono text-xs text-muted-foreground md:block">{d.vehicle || "—"}</p>
                   <p className="hidden text-sm font-medium md:block">{fmtINR(d.salary)}</p>
                   <div className="hidden md:block"><StatusBadge status={d.status} /></div>
                   <div className="flex items-center gap-2 justify-self-end">
@@ -161,8 +339,16 @@ export default function AdminDriversPage() {
                         }
                       />
                       <DropdownMenuContent align="end" className="w-44">
-                        <DropdownMenuItem onClick={() => paySalary(d)}>
-                          <Banknote className="h-4 w-4" /> Pay salary
+                        <DropdownMenuItem onClick={() => openEdit(d)}>
+                          <Pencil className="h-4 w-4" /> Edit
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => setResetting({ id: d.id, name: d.name, password: "" })}>
+                          <KeyRound className="h-4 w-4" /> Reset password
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => void toggleBlock(d)}>
+                          {d.status === "blocked"
+                            ? (<><RotateCcw className="h-4 w-4" /> Unblock</>)
+                            : (<><Ban className="h-4 w-4" /> Block</>)}
                         </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
@@ -179,8 +365,9 @@ export default function AdminDriversPage() {
         </div>
       </section>
 
+      {/* New driver dialog */}
       <Dialog open={!!adding} onOpenChange={(o) => !o && setAdding(null)}>
-        <DialogContent className="rounded-2xl border-border bg-popover">
+        <DialogContent className="sm:max-w-3xl rounded-2xl border-border bg-popover">
           <DialogHeader>
             <DialogTitle>New driver</DialogTitle>
             <DialogDescription>Add a delivery driver with monthly salary.</DialogDescription>
@@ -188,12 +375,181 @@ export default function AdminDriversPage() {
           <div className="grid gap-3 md:grid-cols-2">
             <div className="space-y-1.5 md:col-span-2"><Label>Name</Label><Input value={adding?.name ?? ""} onChange={(e) => setAdding((p) => p && ({ ...p, name: e.target.value }))} /></div>
             <div className="space-y-1.5"><Label>Mobile</Label><Input inputMode="numeric" value={adding?.mobile ?? ""} onChange={(e) => setAdding((p) => p && ({ ...p, mobile: e.target.value.replace(/\D/g, "") }))} /></div>
+            <div className="space-y-1.5"><Label>Password</Label><Input type="password" value={adding?.password ?? ""} onChange={(e) => setAdding((p) => p && ({ ...p, password: e.target.value }))} /></div>
             <div className="space-y-1.5"><Label>Vehicle</Label><Input value={adding?.vehicle ?? ""} onChange={(e) => setAdding((p) => p && ({ ...p, vehicle: e.target.value }))} placeholder="TN-37 AB 1234" /></div>
-            <div className="space-y-1.5 md:col-span-2"><Label>Monthly salary (₹)</Label><Input type="number" value={adding?.salary ?? ""} onChange={(e) => setAdding((p) => p && ({ ...p, salary: e.target.value }))} /></div>
+            <div className="space-y-1.5"><Label>License</Label><Input value={adding?.license ?? ""} onChange={(e) => setAdding((p) => p && ({ ...p, license: e.target.value }))} /></div>
+            <div className="space-y-1.5">
+              <Label>Taluk</Label>
+              <Select value={adding?.taluk_id || ""} onValueChange={(v) => setAdding((p) => p && ({ ...p, taluk_id: v || "", km_rate: "", hour_rate: "" }))}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select taluk (optional)">
+                    {(v: string) => taluks.find((t) => String(t.id) === v)?.name ?? null}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  {taluks.map((t) => (<SelectItem key={t.id} value={String(t.id)}>{t.name}</SelectItem>))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5"><Label>Monthly salary (₹)</Label><Input type="number" value={adding?.salary ?? ""} onChange={(e) => setAdding((p) => p && ({ ...p, salary: e.target.value }))} /></div>
+            <div className="space-y-1.5">
+              <Label>Delivery KM rate</Label>
+              <Select value={adding?.km_rate || ""} onValueChange={(v) => setAdding((p) => p && ({ ...p, km_rate: v }))} disabled={!adding?.taluk_id}>
+                <SelectTrigger>
+                  <SelectValue placeholder={adding?.taluk_id ? "Select KM rate" : "Pick a taluk first"}>
+                    {(v: string) => {
+                      if (!v) return null;
+                      const list = kmOptionsFor(adding?.taluk_id ? Number(adding.taluk_id) : null);
+                      const s = list.find((x) => String(x.price_per_km) === v);
+                      return s ? `${s.taluk_name ?? "—"} · ${s.from_km}-${s.to_km} km · ${fmtINR(s.price_per_km)}/km` : `${fmtINR(Number(v))}/km`;
+                    }}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  {kmOptionsFor(adding?.taluk_id ? Number(adding.taluk_id) : null).map((s) => (
+                    <SelectItem key={s.id} value={String(s.price_per_km)}>
+                      {(s.taluk_name ?? "—") + " · " + s.from_km + "-" + s.to_km + " km · " + fmtINR(s.price_per_km) + "/km"}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Delivery Time rate</Label>
+              <Select value={adding?.hour_rate || ""} onValueChange={(v) => setAdding((p) => p && ({ ...p, hour_rate: v }))} disabled={!adding?.taluk_id}>
+                <SelectTrigger>
+                  <SelectValue placeholder={adding?.taluk_id ? "Select Time rate" : "Pick a taluk first"}>
+                    {(v: string) => {
+                      if (!v) return null;
+                      const list = timeOptionsFor(adding?.taluk_id ? Number(adding.taluk_id) : null);
+                      const r = list.find((x) => String(x.price) === v);
+                      return r ? `${r.taluk_name ?? "—"} · ${r.time_min} min · ${fmtINR(r.price)}` : `${fmtINR(Number(v))}`;
+                    }}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  {timeOptionsFor(adding?.taluk_id ? Number(adding.taluk_id) : null).map((r) => (
+                    <SelectItem key={r.id} value={String(r.price)}>
+                      {(r.taluk_name ?? "—") + " · " + r.time_min + " min · " + fmtINR(r.price)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
           <DialogFooter>
-            <Button variant="ghost" onClick={() => setAdding(null)}>Cancel</Button>
-            <GradientButton onClick={save}>Create driver</GradientButton>
+            <Button variant="ghost" onClick={() => setAdding(null)} disabled={saving}>Cancel</Button>
+            <GradientButton onClick={() => void saveNew()} disabled={saving}>{saving ? "Creating…" : "Create driver"}</GradientButton>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit driver dialog */}
+      <Dialog open={!!editing} onOpenChange={(o) => !o && setEditing(null)}>
+        <DialogContent className="sm:max-w-3xl rounded-2xl border-border bg-popover">
+          <DialogHeader>
+            <DialogTitle>Edit driver</DialogTitle>
+            <DialogDescription>Update vehicle, salary or status. Mobile cannot be changed.</DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-3 md:grid-cols-2">
+            <div className="space-y-1.5 md:col-span-2"><Label>Name</Label><Input value={editing?.name ?? ""} onChange={(e) => setEditing((p) => p && ({ ...p, name: e.target.value }))} /></div>
+            <div className="space-y-1.5"><Label>Vehicle</Label><Input value={editing?.vehicle ?? ""} onChange={(e) => setEditing((p) => p && ({ ...p, vehicle: e.target.value }))} placeholder="TN-37 AB 1234" /></div>
+            <div className="space-y-1.5"><Label>License</Label><Input value={editing?.license ?? ""} onChange={(e) => setEditing((p) => p && ({ ...p, license: e.target.value }))} /></div>
+            <div className="space-y-1.5">
+              <Label>Taluk</Label>
+              <Select value={editing?.taluk_id || ""} onValueChange={(v) => setEditing((p) => p && ({ ...p, taluk_id: v || "", km_rate: "", hour_rate: "" }))}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select taluk (optional)">
+                    {(v: string) => taluks.find((t) => String(t.id) === v)?.name ?? null}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  {taluks.map((t) => (<SelectItem key={t.id} value={String(t.id)}>{t.name}</SelectItem>))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5"><Label>Monthly salary (₹)</Label><Input type="number" value={editing?.salary ?? ""} onChange={(e) => setEditing((p) => p && ({ ...p, salary: e.target.value }))} /></div>
+            <div className="space-y-1.5">
+              <Label>Delivery KM rate</Label>
+              <Select value={editing?.km_rate || ""} onValueChange={(v) => setEditing((p) => p && ({ ...p, km_rate: v }))} disabled={!editing?.taluk_id}>
+                <SelectTrigger>
+                  <SelectValue placeholder={editing?.taluk_id ? "Select KM rate" : "Pick a taluk first"}>
+                    {(v: string) => {
+                      if (!v) return null;
+                      const list = kmOptionsFor(editing?.taluk_id ? Number(editing.taluk_id) : null);
+                      const s = list.find((x) => String(x.price_per_km) === v);
+                      return s ? `${s.taluk_name ?? "—"} · ${s.from_km}-${s.to_km} km · ${fmtINR(s.price_per_km)}/km` : `${fmtINR(Number(v))}/km`;
+                    }}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  {kmOptionsFor(editing?.taluk_id ? Number(editing.taluk_id) : null).map((s) => (
+                    <SelectItem key={s.id} value={String(s.price_per_km)}>
+                      {(s.taluk_name ?? "—") + " · " + s.from_km + "-" + s.to_km + " km · " + fmtINR(s.price_per_km) + "/km"}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Delivery Time rate</Label>
+              <Select value={editing?.hour_rate || ""} onValueChange={(v) => setEditing((p) => p && ({ ...p, hour_rate: v }))} disabled={!editing?.taluk_id}>
+                <SelectTrigger>
+                  <SelectValue placeholder={editing?.taluk_id ? "Select Time rate" : "Pick a taluk first"}>
+                    {(v: string) => {
+                      if (!v) return null;
+                      const list = timeOptionsFor(editing?.taluk_id ? Number(editing.taluk_id) : null);
+                      const r = list.find((x) => String(x.price) === v);
+                      return r ? `${r.taluk_name ?? "—"} · ${r.time_min} min · ${fmtINR(r.price)}` : `${fmtINR(Number(v))}`;
+                    }}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  {timeOptionsFor(editing?.taluk_id ? Number(editing.taluk_id) : null).map((r) => (
+                    <SelectItem key={r.id} value={String(r.price)}>
+                      {(r.taluk_name ?? "—") + " · " + r.time_min + " min · " + fmtINR(r.price)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5 md:col-span-2">
+              <Label>Status</Label>
+              <Select value={editing?.status ?? "active"} onValueChange={(v) => v && setEditing((p) => p && ({ ...p, status: v as DriverStatus }))}>
+                <SelectTrigger>
+                  <SelectValue>
+                    {(v: string) => v === "active" ? "Active" : v === "inactive" ? "Inactive" : v === "blocked" ? "Blocked" : null}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="active">Active</SelectItem>
+                  <SelectItem value="inactive">Inactive</SelectItem>
+                  <SelectItem value="blocked">Blocked</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setEditing(null)} disabled={saving}>Cancel</Button>
+            <GradientButton onClick={() => void saveEdit()} disabled={saving}>{saving ? "Saving…" : "Save changes"}</GradientButton>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Reset password dialog */}
+      <Dialog open={!!resetting} onOpenChange={(o) => !o && setResetting(null)}>
+        <DialogContent className="rounded-2xl border-border bg-popover">
+          <DialogHeader>
+            <DialogTitle>Reset password</DialogTitle>
+            <DialogDescription>Set a new password for {resetting?.name}.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-1.5">
+            <Label>New password</Label>
+            <Input type="password" value={resetting?.password ?? ""} onChange={(e) => setResetting((p) => p && ({ ...p, password: e.target.value }))} />
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setResetting(null)} disabled={saving}>Cancel</Button>
+            <GradientButton onClick={() => void saveReset()} disabled={saving}>{saving ? "Saving…" : "Update password"}</GradientButton>
           </DialogFooter>
         </DialogContent>
       </Dialog>

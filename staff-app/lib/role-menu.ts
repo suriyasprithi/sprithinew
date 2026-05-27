@@ -58,6 +58,7 @@ export const ROLE_MENU: Record<StaffRole, MenuItem[]> = {
   taluk: [
     { href: "/dashboard",       label: "Dashboard",        icon: LayoutDashboard },
     { href: "/manage-vendors",  label: "Vendors",          icon: Store },
+    { href: "/my-drivers",      label: "Drivers",          icon: Truck },
     { href: "/distribute-token",label: "Distribute Token", icon: Coins },
     { href: "/token-request",   label: "Token Requests",   icon: ArrowDownToLine },
     { href: "/activity",        label: "Activity",         icon: Activity },
@@ -80,6 +81,7 @@ export const ROLE_MENU: Record<StaffRole, MenuItem[]> = {
     { href: "/profile",           label: "Profile",          icon: User },
   ],
   driver: [
+    { href: "/dashboard",     label: "Dashboard",     icon: LayoutDashboard },
     { href: "/driver/orders", label: "My Deliveries", icon: Truck },
     { href: "/profile",       label: "Profile",       icon: User },
   ],

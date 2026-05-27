@@ -34,6 +34,16 @@ class UserModel extends Model
         'buyback_next_slot',
         'global_wallet',
         'token_balance',
+        'vehicle_number',
+        'license_number',
+        'monthly_salary',
+        'km_rate',
+        'hour_rate',
+        'taluk_id',
+        'assigned_vendor_id',
+        'address_line',
+        'landmark',
+        'city',
     ];
 
     protected $useTimestamps = true;
@@ -64,5 +74,13 @@ class UserModel extends Model
         return (bool) $this->where('mobile_number', $mobile)
             ->where('role', $role)
             ->first();
+    }
+
+    public function findActiveStaffByMobile(string $mobile): array
+    {
+        return $this->where('mobile_number', $mobile)
+            ->where('role !=', 'customer')
+            ->where('status', 'active')
+            ->findAll();
     }
 }

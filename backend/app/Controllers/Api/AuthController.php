@@ -107,6 +107,35 @@ class AuthController extends BaseApiController
         return $this->issueTokens((int) $user['id'], $user['role'], $user, 200, 'Logged in');
     }
 
+    public function staffLogin(): ResponseInterface
+    {
+        $rules = [
+            'mobile_number' => 'required|string',
+            'password'      => 'required|string',
+        ];
+        if (! $this->validate($rules)) {
+            return $this->fail('Validation failed', 422, $this->validator->getErrors());
+        }
+
+        $data    = $this->request->getJSON(true) ?? $this->request->getPost();
+        $users   = new UserModel();
+        $matches = $users->findActiveStaffByMobile($data['mobile_number']);
+
+        if (count($matches) === 0) {
+            return $this->fail('Invalid credentials', 401);
+        }
+        if (count($matches) > 1) {
+            return $this->fail('Multiple staff accounts found — please use the role-specific login URL', 409);
+        }
+
+        $user = $matches[0];
+        if (! password_verify($data['password'], $user['password_hash'])) {
+            return $this->fail('Invalid credentials', 401);
+        }
+
+        return $this->issueTokens((int) $user['id'], $user['role'], $user, 200, 'Logged in');
+    }
+
     public function refresh(): ResponseInterface
     {
         $data = $this->request->getJSON(true) ?? $this->request->getPost();
@@ -153,6 +182,27 @@ class AuthController extends BaseApiController
         return $this->ok(null, 'Logged out');
     }
 
+    public function updateAddress(): ResponseInterface
+    {
+        $auth = $this->authUser();
+        if (! $auth) return $this->fail('Unauthorized', 401);
+        if (! $this->validate([
+            'address_line' => 'permit_empty|string|max_length[255]',
+            'landmark'     => 'permit_empty|string|max_length[100]',
+            'city'         => 'permit_empty|string|max_length[80]',
+            'pincode'      => 'permit_empty|string|max_length[10]',
+        ])) return $this->fail('Validation failed', 422, $this->validator->getErrors());
+
+        $d = $this->request->getJSON(true) ?? $this->request->getPost();
+        $payload = [];
+        foreach (['address_line', 'landmark', 'city', 'pincode'] as $k) {
+            if (array_key_exists($k, $d)) $payload[$k] = $d[$k] === '' ? null : $d[$k];
+        }
+        if ($payload) (new UserModel())->update((int) $auth->id, $payload);
+        $user = (new UserModel())->find((int) $auth->id);
+        return $this->ok($this->publicUser($user), 'Updated');
+    }
+
     private function issueTokens(int $userId, string $role, array $user, int $status, string $message): ResponseInterface
     {
         $jwt = new JwtService();
@@ -175,6 +225,9 @@ class AuthController extends BaseApiController
             'role'           => $user['role'],
             'status'         => $user['status'],
             'pincode'        => $user['pincode'] ?? null,
+            'address_line'   => $user['address_line'] ?? null,
+            'landmark'       => $user['landmark'] ?? null,
+            'city'           => $user['city'] ?? null,
             'wallet_balance' => (float) ($user['wallet_balance'] ?? 0),
             'level_wallet'   => (float) ($user['level_wallet'] ?? 0),
             'level_1_wallet' => (float) ($user['level_1_wallet'] ?? 0),

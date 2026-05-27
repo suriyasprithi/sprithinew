@@ -47,7 +47,7 @@ export function MobileHeader({ title }: { title?: string }) {
   const onLogout = async () => {
     setOpen(false);
     await logout();
-    router.replace("/login");
+    window.location.href = "/admin/login/";
   };
 
   return (

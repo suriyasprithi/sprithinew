@@ -9,7 +9,9 @@ type AuthState = {
   isLoading: boolean;
   hydrate: () => Promise<void>;
   login: (mobile: string, password: string, role: StaffRole) => Promise<AuthUser>;
+  staffLogin: (mobile: string, password: string) => Promise<AuthUser>;
   logout: () => Promise<void>;
+  setUser: (user: AuthUser) => void;
 };
 
 const persistTokens = (tokens: AuthTokens) => {
@@ -66,6 +68,25 @@ export const useAuth = create<AuthState>((set) => ({
       set({ isLoading: false });
     }
   },
+
+  staffLogin: async (mobile, password) => {
+    set({ isLoading: true });
+    try {
+      const res = await api.post("/auth/staff-login", {
+        mobile_number: mobile,
+        password,
+      });
+      const tokens = res.data.data as AuthTokens;
+      persistTokens(tokens);
+      set({ user: tokens.user });
+      void registerDeviceToken();
+      return tokens.user;
+    } finally {
+      set({ isLoading: false });
+    }
+  },
+
+  setUser: (user) => set({ user }),
 
   logout: async () => {
     try {

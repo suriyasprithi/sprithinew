@@ -19,6 +19,10 @@ export type StaffStats = {
   active_products?: number;
   wallet?: number;
   team_below?: number;
+  pending_deliveries?: number;
+  delivered_today?: number;
+  total_delivered?: number;
+  monthly_salary?: number;
   chart_title?: string;
   chart_unit?: string;
   chart_series?: ChartPoint[];

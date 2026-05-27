@@ -1,15 +1,22 @@
 "use client";
 
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
-import { LogOut, Mail, MapPin, Phone, Shield, User as UserIcon, Pencil, Settings as SettingsIcon, type LucideIcon } from "lucide-react";
+import { LogOut, Mail, MapPin, Phone, Shield, User as UserIcon, Pencil, Settings as SettingsIcon, Home, type LucideIcon } from "lucide-react";
+import { toast } from "sonner";
 import { LuxuryCard } from "@/components/ui/custom/luxury-card";
 import { GradientButton } from "@/components/ui/custom/gradient-button";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { StatusBadge } from "@/components/data-table/status-badge";
 import { MobileHeader } from "@/components/layout/mobile-nav";
 import { PageHeader } from "@/components/layout/page-header";
 import { useAuth } from "@/stores/auth";
 import { ROLE_LABEL } from "@/lib/role-menu";
+import { api, apiErrorMessage, AuthUser } from "@/lib/api";
 
 function InfoRow({ icon: Icon, label, value, mono }: { icon: LucideIcon; label: string; value: React.ReactNode; mono?: boolean }) {
   return (
@@ -25,13 +32,43 @@ function InfoRow({ icon: Icon, label, value, mono }: { icon: LucideIcon; label: 
   );
 }
 
+type AddressForm = { address_line: string; landmark: string; city: string; pincode: string };
+
 export default function ProfilePage() {
-  const { user, logout } = useAuth();
+  const { user, logout, setUser } = useAuth();
   const router = useRouter();
+
+  const [editingAddr, setEditingAddr] = useState(false);
+  const [savingAddr, setSavingAddr] = useState(false);
+  const [addrForm, setAddrForm] = useState<AddressForm>({ address_line: "", landmark: "", city: "", pincode: "" });
 
   async function onLogout() {
     await logout();
-    router.replace("/login");
+    window.location.href = "/admin/login/";
+  }
+
+  function openAddrEdit() {
+    setAddrForm({
+      address_line: user?.address_line ?? "",
+      landmark:     user?.landmark ?? "",
+      city:         user?.city ?? "",
+      pincode:      user?.pincode ?? "",
+    });
+    setEditingAddr(true);
+  }
+
+  async function saveAddr() {
+    setSavingAddr(true);
+    try {
+      const res = await api.patch("/auth/me/address", addrForm);
+      setUser(res.data.data as AuthUser);
+      toast.success("Address updated");
+      setEditingAddr(false);
+    } catch (err) {
+      toast.error(apiErrorMessage(err, "Save failed"));
+    } finally {
+      setSavingAddr(false);
+    }
   }
 
   const roleLabel = user ? (ROLE_LABEL[user.role as keyof typeof ROLE_LABEL] ?? user.role) : "";
@@ -89,9 +126,78 @@ export default function ProfilePage() {
               <div className="divide-y divide-border">
                 <InfoRow icon={Phone}  label="Mobile"  value={user?.mobile_number} mono />
                 <InfoRow icon={Mail}   label="Email"   value={user?.email} />
-                <InfoRow icon={MapPin} label="Pincode" value={user?.pincode} mono />
                 <InfoRow icon={Shield} label="Status"  value={user?.status} />
               </div>
+            </LuxuryCard>
+
+            <LuxuryCard className="mt-4 p-5">
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <Home className="h-4 w-4 text-brand" />
+                  <p className="text-sm font-semibold">Address</p>
+                </div>
+                {!editingAddr && (
+                  <Button size="sm" variant="ghost" onClick={openAddrEdit} className="-mr-2 h-7 gap-1.5 text-xs">
+                    <Pencil className="h-3.5 w-3.5" /> {user?.address_line || user?.city || user?.pincode ? "Edit" : "Add"}
+                  </Button>
+                )}
+              </div>
+
+              {editingAddr ? (
+                <div className="space-y-3 pt-1">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="addr_line">Full address</Label>
+                    <Textarea
+                      id="addr_line"
+                      rows={2}
+                      value={addrForm.address_line}
+                      onChange={(e) => setAddrForm({ ...addrForm, address_line: e.target.value })}
+                      placeholder="House no, street, area"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="addr_landmark">Landmark</Label>
+                    <Input
+                      id="addr_landmark"
+                      value={addrForm.landmark}
+                      onChange={(e) => setAddrForm({ ...addrForm, landmark: e.target.value })}
+                      placeholder="Near…"
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1.5">
+                      <Label htmlFor="addr_city">City</Label>
+                      <Input
+                        id="addr_city"
+                        value={addrForm.city}
+                        onChange={(e) => setAddrForm({ ...addrForm, city: e.target.value })}
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="addr_pin">Pincode</Label>
+                      <Input
+                        id="addr_pin"
+                        inputMode="numeric"
+                        value={addrForm.pincode}
+                        onChange={(e) => setAddrForm({ ...addrForm, pincode: e.target.value.replace(/\D/g, "").slice(0, 10) })}
+                      />
+                    </div>
+                  </div>
+                  <div className="flex gap-2 pt-1">
+                    <Button variant="ghost" className="flex-1" disabled={savingAddr} onClick={() => setEditingAddr(false)}>Cancel</Button>
+                    <GradientButton className="flex-1" disabled={savingAddr} onClick={() => void saveAddr()}>
+                      {savingAddr ? "Saving…" : "Save address"}
+                    </GradientButton>
+                  </div>
+                </div>
+              ) : (
+                <div className="divide-y divide-border">
+                  <InfoRow icon={Home}   label="Full address" value={user?.address_line} />
+                  <InfoRow icon={MapPin} label="Landmark"     value={user?.landmark} />
+                  <InfoRow icon={MapPin} label="City"         value={user?.city} />
+                  <InfoRow icon={MapPin} label="Pincode"      value={user?.pincode} mono />
+                </div>
+              )}
             </LuxuryCard>
           </motion.div>
 

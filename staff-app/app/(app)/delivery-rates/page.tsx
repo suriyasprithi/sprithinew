@@ -24,53 +24,129 @@ import { EmptyState } from "@/components/data-table/empty-state";
 import { TableSkeleton } from "@/components/data-table/table-skeleton";
 import { MobileHeader } from "@/components/layout/mobile-nav";
 import { PageHeader } from "@/components/layout/page-header";
-import { mock, type DeliveryKmSlab, type DeliveryTimeRate, type GeoRow } from "@/lib/mock";
+import { api, apiErrorMessage } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 const fmtINR = (n: number) =>
   new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 2 }).format(n);
 
-type KmDraft = Partial<DeliveryKmSlab>;
-type TimeDraft = Partial<DeliveryTimeRate>;
+type GeoState    = { id: number; name: string };
+type GeoDistrict = { id: number; name: string; state_id: number };
+type GeoTaluk    = { id: number; name: string; district_id: number };
 
-type GeoFields = { state?: string; district?: string; taluk?: string };
+type KmRow = {
+  id: number;
+  taluk_id: number;
+  from_km: number;
+  to_km: number;
+  price_per_km: number;
+  state_name: string | null;
+  district_name: string | null;
+  taluk_name: string | null;
+};
+type TimeRow = {
+  id: number;
+  taluk_id: number;
+  time_min: number;
+  price: number;
+  state_name: string | null;
+  district_name: string | null;
+  taluk_name: string | null;
+};
 
-function GeoSelects<T extends GeoFields>({ value, onChange, states, districts, taluks }: {
+type KmDraft = {
+  id?: number;
+  state_id?: number;
+  district_id?: number;
+  taluk_id?: number;
+  from_km?: number;
+  to_km?: number;
+  price_per_km?: number;
+};
+type TimeDraft = {
+  id?: number;
+  state_id?: number;
+  district_id?: number;
+  taluk_id?: number;
+  time_min?: number;
+  price?: number;
+};
+
+function normalizeKm(raw: unknown): KmRow {
+  const r = raw as Record<string, unknown>;
+  return {
+    id:            Number(r.id ?? 0),
+    taluk_id:      Number(r.taluk_id ?? 0),
+    from_km:       Number(r.from_km ?? 0),
+    to_km:         Number(r.to_km ?? 0),
+    price_per_km:  Number(r.price_per_km ?? 0),
+    state_name:    (r.state_name as string | null | undefined) ?? null,
+    district_name: (r.district_name as string | null | undefined) ?? null,
+    taluk_name:    (r.taluk_name as string | null | undefined) ?? null,
+  };
+}
+function normalizeTime(raw: unknown): TimeRow {
+  const r = raw as Record<string, unknown>;
+  return {
+    id:            Number(r.id ?? 0),
+    taluk_id:      Number(r.taluk_id ?? 0),
+    time_min:      Number(r.time_min ?? 0),
+    price:         Number(r.price ?? 0),
+    state_name:    (r.state_name as string | null | undefined) ?? null,
+    district_name: (r.district_name as string | null | undefined) ?? null,
+    taluk_name:    (r.taluk_name as string | null | undefined) ?? null,
+  };
+}
+
+function GeoSelects<T extends { state_id?: number; district_id?: number; taluk_id?: number }>({
+  value, onChange, states, districts, taluks,
+}: {
   value: T;
   onChange: (next: T) => void;
-  states: GeoRow[];
-  districts: GeoRow[];
-  taluks: GeoRow[];
+  states: GeoState[];
+  districts: GeoDistrict[];
+  taluks: GeoTaluk[];
 }) {
-  const districtOpts = districts.filter((d) => !value.state || d.parent_name === value.state);
-  const talukOpts    = taluks.filter((t) => !value.district || t.parent_name === value.district);
+  const districtOpts = districts.filter((d) => !value.state_id || d.state_id === value.state_id);
+  const talukOpts    = taluks.filter((t) => !value.district_id || t.district_id === value.district_id);
 
   return (
     <>
       <div className="space-y-1.5">
         <Label>State</Label>
-        <Select value={value.state ?? ""} onValueChange={(v) => v && onChange({ ...value, state: v, district: undefined, taluk: undefined })}>
+        <Select
+          value={value.state_id ? String(value.state_id) : ""}
+          onValueChange={(v) => v && onChange({ ...value, state_id: Number(v), district_id: undefined, taluk_id: undefined })}
+        >
           <SelectTrigger><SelectValue placeholder="--Select State--" /></SelectTrigger>
           <SelectContent>
-            {states.map((s) => <SelectItem key={s.id} value={s.name}>{s.name}</SelectItem>)}
+            {states.map((s) => <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>)}
           </SelectContent>
         </Select>
       </div>
       <div className="space-y-1.5">
         <Label>District</Label>
-        <Select value={value.district ?? ""} onValueChange={(v) => v && onChange({ ...value, district: v, taluk: undefined })} disabled={!value.state}>
+        <Select
+          value={value.district_id ? String(value.district_id) : ""}
+          onValueChange={(v) => v && onChange({ ...value, district_id: Number(v), taluk_id: undefined })}
+          disabled={!value.state_id}
+        >
           <SelectTrigger><SelectValue placeholder="--Select District--" /></SelectTrigger>
           <SelectContent>
-            {districtOpts.map((d) => <SelectItem key={d.id} value={d.name}>{d.name}</SelectItem>)}
+            {districtOpts.map((d) => <SelectItem key={d.id} value={String(d.id)}>{d.name}</SelectItem>)}
           </SelectContent>
         </Select>
       </div>
       <div className="space-y-1.5">
         <Label>Taluk</Label>
-        <Select value={value.taluk ?? ""} onValueChange={(v) => v && onChange({ ...value, taluk: v })} disabled={!value.district}>
+        <Select
+          value={value.taluk_id ? String(value.taluk_id) : ""}
+          onValueChange={(v) => v && onChange({ ...value, taluk_id: Number(v) })}
+          disabled={!value.district_id}
+        >
           <SelectTrigger><SelectValue placeholder={talukOpts.length ? "--Select Taluk--" : "No taluks"} /></SelectTrigger>
           <SelectContent>
-            {talukOpts.map((t) => <SelectItem key={t.id} value={t.name}>{t.name}</SelectItem>)}
+            {talukOpts.map((t) => <SelectItem key={t.id} value={String(t.id)}>{t.name}</SelectItem>)}
           </SelectContent>
         </Select>
       </div>
@@ -80,12 +156,13 @@ function GeoSelects<T extends GeoFields>({ value, onChange, states, districts, t
 
 export default function DeliveryRatesPage() {
   const [tab, setTab] = useState<"km" | "time">("km");
-  const [kmRows, setKmRows] = useState<DeliveryKmSlab[]>([]);
-  const [timeRows, setTimeRows] = useState<DeliveryTimeRate[]>([]);
-  const [states, setStates] = useState<GeoRow[]>([]);
-  const [districts, setDistricts] = useState<GeoRow[]>([]);
-  const [taluks, setTaluks] = useState<GeoRow[]>([]);
+  const [kmRows, setKmRows] = useState<KmRow[]>([]);
+  const [timeRows, setTimeRows] = useState<TimeRow[]>([]);
+  const [states, setStates] = useState<GeoState[]>([]);
+  const [districts, setDistricts] = useState<GeoDistrict[]>([]);
+  const [taluks, setTaluks] = useState<GeoTaluk[]>([]);
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
 
   const [search, setSearch] = useState("");
   const [kmEditing, setKmEditing] = useState<KmDraft | null>(null);
@@ -93,85 +170,146 @@ export default function DeliveryRatesPage() {
   const [deleteKmId, setDeleteKmId] = useState<number | null>(null);
   const [deleteTimeId, setDeleteTimeId] = useState<number | null>(null);
 
-  useEffect(() => {
-    void (async () => {
+  async function loadAll() {
+    setLoading(true);
+    try {
       const [km, tm, st, di, ta] = await Promise.all([
-        mock.deliveryKmSlabs(), mock.deliveryTimeRates(),
-        mock.states(), mock.districts(), mock.taluks(),
+        api.get("/admin/delivery-rates/km"),
+        api.get("/admin/delivery-rates/time"),
+        api.get("/geo/states"),
+        api.get("/geo/districts"),
+        api.get("/geo/taluks"),
       ]);
-      setKmRows(km); setTimeRows(tm);
-      setStates(st); setDistricts(di); setTaluks(ta);
+      const asArray = (r: unknown): unknown[] =>
+        Array.isArray((r as { data?: { data?: { items?: unknown } } })?.data?.data?.items)
+          ? ((r as { data: { data: { items: unknown[] } } }).data.data.items)
+          : [];
+      setKmRows(asArray(km).map(normalizeKm));
+      setTimeRows(asArray(tm).map(normalizeTime));
+      setStates(asArray(st).map((s) => ({ id: Number((s as Record<string, unknown>).id ?? 0), name: String((s as Record<string, unknown>).name ?? "") })));
+      setDistricts(asArray(di).map((d) => {
+        const r = d as Record<string, unknown>;
+        return { id: Number(r.id ?? 0), name: String(r.name ?? ""), state_id: Number(r.state_id ?? 0) };
+      }));
+      setTaluks(asArray(ta).map((t) => {
+        const r = t as Record<string, unknown>;
+        return { id: Number(r.id ?? 0), name: String(r.name ?? ""), district_id: Number(r.district_id ?? 0) };
+      }));
+    } catch (err) {
+      toast.error(apiErrorMessage(err, "Could not load delivery rates"));
+    } finally {
       setLoading(false);
-    })();
-  }, []);
+    }
+  }
 
+  useEffect(() => { void loadAll(); }, []);
   useEffect(() => setSearch(""), [tab]);
 
   const filteredKm = useMemo(() => kmRows.filter((r) => {
     if (!search) return true;
     const q = search.toLowerCase();
-    return r.state.toLowerCase().includes(q) || r.district.toLowerCase().includes(q) || r.taluk.toLowerCase().includes(q);
+    return (r.state_name ?? "").toLowerCase().includes(q)
+      || (r.district_name ?? "").toLowerCase().includes(q)
+      || (r.taluk_name ?? "").toLowerCase().includes(q);
   }), [kmRows, search]);
 
   const filteredTime = useMemo(() => timeRows.filter((r) => {
     if (!search) return true;
     const q = search.toLowerCase();
-    return r.state.toLowerCase().includes(q) || r.district.toLowerCase().includes(q) || r.taluk.toLowerCase().includes(q);
+    return (r.state_name ?? "").toLowerCase().includes(q)
+      || (r.district_name ?? "").toLowerCase().includes(q)
+      || (r.taluk_name ?? "").toLowerCase().includes(q);
   }), [timeRows, search]);
 
-  function saveKm() {
+  /** When opening Edit, pre-fill state/district/taluk IDs by walking the taluk → district → state chain. */
+  function chainFor(taluk_id: number): { state_id?: number; district_id?: number; taluk_id?: number } {
+    const taluk = taluks.find((t) => t.id === taluk_id);
+    if (!taluk) return { taluk_id };
+    const district = districts.find((d) => d.id === taluk.district_id);
+    return {
+      taluk_id,
+      district_id: district?.id,
+      state_id: district?.state_id,
+    };
+  }
+
+  async function saveKm() {
     if (!kmEditing) return;
-    const { from_km, to_km, state, district, taluk, price_per_km } = kmEditing;
+    const { from_km, to_km, taluk_id, price_per_km } = kmEditing;
     if (from_km == null || to_km == null) { toast.error("From & To KM required"); return; }
     if (Number(to_km) <= Number(from_km)) { toast.error("To KM must be greater than From KM"); return; }
-    if (!state || !district || !taluk) { toast.error("Select state, district & taluk"); return; }
+    if (!taluk_id) { toast.error("Select state, district & taluk"); return; }
     if (price_per_km == null || Number(price_per_km) < 0) { toast.error("Invalid per-km price"); return; }
-    if (kmEditing.id) {
-      setKmRows((cur) => cur.map((r) => (r.id === kmEditing.id ? { ...r, ...kmEditing } as DeliveryKmSlab : r)));
-      toast.success("Slab updated");
-    } else {
-      const id = Math.max(0, ...kmRows.map((r) => r.id)) + 1;
-      setKmRows((cur) => [...cur, {
-        id, from_km: Number(from_km), to_km: Number(to_km),
-        state, district, taluk, price_per_km: Number(price_per_km),
-      }]);
-      toast.success("Slab added");
+
+    setSaving(true);
+    try {
+      const payload = {
+        taluk_id, from_km: Number(from_km), to_km: Number(to_km), price_per_km: Number(price_per_km),
+      };
+      if (kmEditing.id) {
+        await api.patch(`/admin/delivery-rates/km/${kmEditing.id}`, payload);
+        toast.success("Slab updated");
+      } else {
+        await api.post("/admin/delivery-rates/km", payload);
+        toast.success("Slab added");
+      }
+      setKmEditing(null);
+      await loadAll();
+    } catch (err) {
+      toast.error(apiErrorMessage(err, "Save failed"));
+    } finally {
+      setSaving(false);
     }
-    setKmEditing(null);
   }
 
-  function saveTime() {
+  async function saveTime() {
     if (!timeEditing) return;
-    const { time_min, state, district, taluk, price } = timeEditing;
+    const { time_min, taluk_id, price } = timeEditing;
     if (time_min == null || Number(time_min) <= 0) { toast.error("Time (minutes) required"); return; }
-    if (!state || !district || !taluk) { toast.error("Select state, district & taluk"); return; }
+    if (!taluk_id) { toast.error("Select state, district & taluk"); return; }
     if (price == null || Number(price) < 0) { toast.error("Invalid price"); return; }
-    if (timeEditing.id) {
-      setTimeRows((cur) => cur.map((r) => (r.id === timeEditing.id ? { ...r, ...timeEditing } as DeliveryTimeRate : r)));
-      toast.success("Time rate updated");
-    } else {
-      const id = Math.max(0, ...timeRows.map((r) => r.id)) + 1;
-      setTimeRows((cur) => [...cur, {
-        id, time_min: Number(time_min),
-        state, district, taluk, price: Number(price),
-      }]);
-      toast.success("Time rate added");
+
+    setSaving(true);
+    try {
+      const payload = { taluk_id, time_min: Number(time_min), price: Number(price) };
+      if (timeEditing.id) {
+        await api.patch(`/admin/delivery-rates/time/${timeEditing.id}`, payload);
+        toast.success("Time rate updated");
+      } else {
+        await api.post("/admin/delivery-rates/time", payload);
+        toast.success("Time rate added");
+      }
+      setTimeEditing(null);
+      await loadAll();
+    } catch (err) {
+      toast.error(apiErrorMessage(err, "Save failed"));
+    } finally {
+      setSaving(false);
     }
-    setTimeEditing(null);
   }
 
-  function deleteKm() {
+  async function doDeleteKm() {
     if (deleteKmId == null) return;
-    setKmRows((cur) => cur.filter((r) => r.id !== deleteKmId));
-    toast.success("Slab removed");
-    setDeleteKmId(null);
+    try {
+      await api.delete(`/admin/delivery-rates/km/${deleteKmId}`);
+      toast.success("Slab removed");
+      setDeleteKmId(null);
+      await loadAll();
+    } catch (err) {
+      toast.error(apiErrorMessage(err, "Delete failed"));
+    }
   }
 
-  function deleteTime() {
+  async function doDeleteTime() {
     if (deleteTimeId == null) return;
-    setTimeRows((cur) => cur.filter((r) => r.id !== deleteTimeId));
-    toast.success("Time rate removed");
-    setDeleteTimeId(null);
+    try {
+      await api.delete(`/admin/delivery-rates/time/${deleteTimeId}`);
+      toast.success("Time rate removed");
+      setDeleteTimeId(null);
+      await loadAll();
+    } catch (err) {
+      toast.error(apiErrorMessage(err, "Delete failed"));
+    }
   }
 
   const avgKm   = kmRows.length   ? kmRows.reduce((s, r) => s + r.price_per_km, 0) / kmRows.length : 0;
@@ -188,7 +326,7 @@ export default function DeliveryRatesPage() {
           description="Per-geography KM slabs and time tiers used to compute driver payouts."
           action={
             tab === "km"
-              ? <GradientButton onClick={() => setKmEditing({ from_km: undefined, to_km: undefined })}><Plus className="h-4 w-4" /> Add Delivery KM</GradientButton>
+              ? <GradientButton onClick={() => setKmEditing({})}><Plus className="h-4 w-4" /> Add Delivery KM</GradientButton>
               : <GradientButton onClick={() => setTimeEditing({})}><Plus className="h-4 w-4" /> Add Delivery Time</GradientButton>
           }
         />
@@ -265,10 +403,10 @@ export default function DeliveryRatesPage() {
                       <p className="hidden text-sm font-medium md:block">{r.from_km} km</p>
                       <p className="hidden text-sm font-medium md:block">{r.to_km} km</p>
                       <p className="text-sm font-semibold md:text-sm md:font-medium">
-                        <span className="md:hidden">{r.from_km}–{r.to_km} km · </span>{r.state}
+                        <span className="md:hidden">{r.from_km}–{r.to_km} km · </span>{r.state_name ?? "—"}
                       </p>
-                      <p className="hidden text-sm text-muted-foreground md:block">{r.district}</p>
-                      <p className="hidden text-sm text-muted-foreground md:block">{r.taluk}</p>
+                      <p className="hidden text-sm text-muted-foreground md:block">{r.district_name ?? "—"}</p>
+                      <p className="hidden text-sm text-muted-foreground md:block">{r.taluk_name ?? "—"}</p>
                       <p className="hidden text-sm font-semibold text-brand md:block">{fmtINR(r.price_per_km)} / km</p>
                     </div>
                     <div className="flex items-center gap-2 justify-self-end">
@@ -282,7 +420,15 @@ export default function DeliveryRatesPage() {
                           }
                         />
                         <DropdownMenuContent align="end" className="w-40">
-                          <DropdownMenuItem onClick={() => setKmEditing(r)}><Pencil className="h-4 w-4" /> Edit</DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => setKmEditing({
+                            id: r.id,
+                            from_km: r.from_km,
+                            to_km: r.to_km,
+                            price_per_km: r.price_per_km,
+                            ...chainFor(r.taluk_id),
+                          })}>
+                            <Pencil className="h-4 w-4" /> Edit
+                          </DropdownMenuItem>
                           <DropdownMenuSeparator />
                           <DropdownMenuItem onClick={() => setDeleteKmId(r.id)} className="text-rose-400 focus:text-rose-400">
                             <Trash2 className="h-4 w-4" /> Delete
@@ -330,10 +476,10 @@ export default function DeliveryRatesPage() {
                       </span>
                       <p className="hidden text-sm font-medium md:block">{r.time_min} min</p>
                       <p className="text-sm font-semibold md:text-sm md:font-medium">
-                        <span className="md:hidden">{r.time_min} min · </span>{r.state}
+                        <span className="md:hidden">{r.time_min} min · </span>{r.state_name ?? "—"}
                       </p>
-                      <p className="hidden text-sm text-muted-foreground md:block">{r.district}</p>
-                      <p className="hidden text-sm text-muted-foreground md:block">{r.taluk}</p>
+                      <p className="hidden text-sm text-muted-foreground md:block">{r.district_name ?? "—"}</p>
+                      <p className="hidden text-sm text-muted-foreground md:block">{r.taluk_name ?? "—"}</p>
                       <p className="hidden text-sm font-semibold text-brand md:block">{fmtINR(r.price)}</p>
                     </div>
                     <div className="flex items-center gap-2 justify-self-end">
@@ -347,7 +493,14 @@ export default function DeliveryRatesPage() {
                           }
                         />
                         <DropdownMenuContent align="end" className="w-40">
-                          <DropdownMenuItem onClick={() => setTimeEditing(r)}><Pencil className="h-4 w-4" /> Edit</DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => setTimeEditing({
+                            id: r.id,
+                            time_min: r.time_min,
+                            price: r.price,
+                            ...chainFor(r.taluk_id),
+                          })}>
+                            <Pencil className="h-4 w-4" /> Edit
+                          </DropdownMenuItem>
                           <DropdownMenuSeparator />
                           <DropdownMenuItem onClick={() => setDeleteTimeId(r.id)} className="text-rose-400 focus:text-rose-400">
                             <Trash2 className="h-4 w-4" /> Delete
@@ -394,8 +547,8 @@ export default function DeliveryRatesPage() {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="ghost" onClick={() => setKmEditing(null)}>Cancel</Button>
-            <GradientButton onClick={saveKm}>{kmEditing?.id ? "Save changes" : "Save"}</GradientButton>
+            <Button variant="ghost" onClick={() => setKmEditing(null)} disabled={saving}>Cancel</Button>
+            <GradientButton onClick={() => void saveKm()} disabled={saving}>{saving ? "Saving…" : (kmEditing?.id ? "Save changes" : "Save")}</GradientButton>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -427,8 +580,8 @@ export default function DeliveryRatesPage() {
             />
           </div>
           <DialogFooter>
-            <Button variant="ghost" onClick={() => setTimeEditing(null)}>Cancel</Button>
-            <GradientButton onClick={saveTime}>{timeEditing?.id ? "Save changes" : "Save"}</GradientButton>
+            <Button variant="ghost" onClick={() => setTimeEditing(null)} disabled={saving}>Cancel</Button>
+            <GradientButton onClick={() => void saveTime()} disabled={saving}>{saving ? "Saving…" : (timeEditing?.id ? "Save changes" : "Save")}</GradientButton>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -441,7 +594,7 @@ export default function DeliveryRatesPage() {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={deleteKm} className="bg-brand text-brand-foreground hover:bg-brand/90">Delete</AlertDialogAction>
+            <AlertDialogAction onClick={() => void doDeleteKm()} className="bg-brand text-brand-foreground hover:bg-brand/90">Delete</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
@@ -454,7 +607,7 @@ export default function DeliveryRatesPage() {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={deleteTime} className="bg-brand text-brand-foreground hover:bg-brand/90">Delete</AlertDialogAction>
+            <AlertDialogAction onClick={() => void doDeleteTime()} className="bg-brand text-brand-foreground hover:bg-brand/90">Delete</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

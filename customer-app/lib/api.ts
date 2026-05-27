@@ -92,6 +92,9 @@ export type AuthUser = {
   role: "customer" | "vendor" | "taluk" | "district" | "state" | "driver" | "admin";
   status: "active" | "inactive" | "blocked";
   pincode: string | null;
+  address_line: string | null;
+  landmark: string | null;
+  city: string | null;
   wallet_balance: number;
   level_wallet: number;
   level_1_wallet: number;

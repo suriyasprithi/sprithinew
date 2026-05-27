@@ -19,6 +19,7 @@ composer.phar
 backend/public/admin/
 backend/public/customer/
 backend/public/district/
+backend/public/driver/
 backend/public/state/
 backend/public/taluk/
 backend/public/vendor/
@@ -41,6 +42,8 @@ staff-app/.next/
 # Per-role staff-app build outputs (deployed via robocopy to backend/public/{role}/)
 staff-app/out-admin/
 staff-app/out-district/
+staff-app/out-driver/
+staff-app/out-staff-roll/
 staff-app/out-state/
 staff-app/out-taluk/
 staff-app/out-vendor/

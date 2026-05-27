@@ -9,7 +9,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
   const { user, isHydrated } = useAuth();
 
   useEffect(() => {
-    if (isHydrated && !user) router.replace("/login");
+    if (isHydrated && !user) window.location.href = "/admin/login/";
   }, [isHydrated, user, router]);
 
   if (!isHydrated || !user) {

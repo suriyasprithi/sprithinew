@@ -74,3 +74,25 @@ export async function getStaffDashboard(): Promise<StaffDashboard> {
   const res = await api.get<{ data: StaffDashboard }>("/staff/stats/dashboard");
   return res.data.data;
 }
+
+export type DriverDashboard = {
+  totals: {
+    pending_deliveries: number;
+    delivered_today: number;
+    total_delivered: number;
+    monthly_salary: number;
+  };
+  orders_series: { date: string; orders: number }[];
+  recent_orders: {
+    id: number;
+    customer: string;
+    total: number;
+    status: string;
+    created_at: string;
+  }[];
+};
+
+export async function getDriverDashboard(): Promise<DriverDashboard> {
+  const res = await api.get<{ data: DriverDashboard }>("/driver/stats/dashboard");
+  return res.data.data;
+}
