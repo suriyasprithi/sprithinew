@@ -1,0 +1,9 @@
+1:"$Sreact.fragment"
+2:I[61304,[],"ClientPageRoot"]
+3:I[85386,["6539","static/chunks/6539-4064a55afedf71e0.js","9873","static/chunks/9873-4736d5d47cd59496.js","6609","static/chunks/6609-078a8cdc853f87c6.js","6729","static/chunks/6729-d3e552cb63cba8ff.js","5050","static/chunks/5050-75c7bbb61810ffdd.js","8500","static/chunks/8500-f62a38ff68ab7f42.js","5315","static/chunks/5315-1fd4fadae805c594.js","2738","static/chunks/2738-871d102c54f9de4e.js","9050","static/chunks/9050-d49221a5e4fd8bcc.js","9710","static/chunks/9710-1591eab7e5a39d73.js","1691","static/chunks/1691-321f54d9fe9080d5.js","3755","static/chunks/3755-a3d28ebc77535e9a.js","1830","static/chunks/1830-9c264d99176ecb2e.js","2072","static/chunks/2072-cec5eafa74ea0a18.js","925","static/chunks/app/(app)/manage-districts/page-0172b6e02f77ef6d.js"],"default"]
+6:I[90484,[],"OutletBoundary"]
+7:"$Sreact.suspense"
+0:{"rsc":["$","$1","c",{"children":[["$","$L2",null,{"Component":"$3","serverProvidedParams":{"searchParams":{},"params":{},"promises":["$@4","$@5"]}}],null,["$","$L6",null,{"children":["$","$7",null,{"name":"Next.MetadataOutlet","children":"$@8"}]}]]}],"isPartial":false,"staleTime":300,"varyParams":null,"buildId":"oIEEXKKGijd_NOFl1yGmo"}
+4:{}
+5:"$0:rsc:props:children:0:props:serverProvidedParams:params"
+8:null
