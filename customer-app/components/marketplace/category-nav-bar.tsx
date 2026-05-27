@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Home, ShoppingBag, Package, Newspaper, LayoutGrid, ChevronDown, X } from "lucide-react";
 import { api } from "@/lib/api";
+import { readSavedLocation } from "./location-picker";
 
 const PRIMARY = [
   { label: "Home",     href: "/home",         icon: Home },
@@ -47,15 +48,27 @@ export function CategoryNavBar() {
   const wrapperRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
-    void (async () => {
+    const fetchCats = async () => {
       try {
-        const res = await api.get("/vendor-categories");
+        const loc = readSavedLocation();
+        const params: Record<string, string> = {};
+        if (loc?.taluk_id)    params.taluk_id    = String(loc.taluk_id);
+        else if (loc?.district_id) params.district_id = String(loc.district_id);
+        else if (loc?.state_id)    params.state_id    = String(loc.state_id);
+        const res = await api.get("/vendor-categories", { params });
         const items = (res.data.data?.items ?? []) as VendorCategory[];
         setCats(items);
       } catch {
         setCats([]);
       }
-    })();
+    };
+    void fetchCats();
+    // Re-fetch whenever the customer picks a new delivery location.
+    if (typeof window !== "undefined") {
+      const onChange = () => { void fetchCats(); };
+      window.addEventListener("epey-location-changed", onChange);
+      return () => window.removeEventListener("epey-location-changed", onChange);
+    }
   }, []);
 
   // Close menu on browser navigation (popstate fires on back/forward; pushState

@@ -12,22 +12,49 @@ class VendorCategoryController extends BaseApiController
     /** Public list — used by registration form and customer home page. */
     public function index(): ResponseInterface
     {
+        // Optional location filter (chosen by customer via location picker).
+        // When present, product_count reflects only products whose vendor
+        // is in the chosen taluk/district/state.
+        $talukId    = (int) $this->request->getGet('taluk_id');
+        $districtId = (int) $this->request->getGet('district_id');
+        $stateId    = (int) $this->request->getGet('state_id');
+
+        $locJoin = '';
+        $locWhere = '';
+        if ($talukId > 0 || $districtId > 0 || $stateId > 0) {
+            $locJoin = ' JOIN vendor_profiles vp ON vp.user_id = p.vendor_id';
+            $clauses = [];
+            if ($talukId > 0)    $clauses[] = 'vp.taluk_id = ' . $talukId;
+            elseif ($districtId > 0) $clauses[] = 'vp.district_id = ' . $districtId;
+            elseif ($stateId > 0)    $clauses[] = 'vp.state_id = ' . $stateId;
+            $locWhere = ' AND ' . implode(' AND ', $clauses);
+        }
+
         // Count active, non-deleted products either linked directly via
         // products.vendor_category_id OR via products.category_id → categories.vendor_category_id.
-        // Use UNION/DISTINCT semantics by counting unique product ids so a row pointed at by
-        // both paths isn't double-counted.
+        // Use COUNT(DISTINCT p.id) so a row matched by both paths isn't double-counted.
         $countExpr = '('
             . 'SELECT COUNT(DISTINCT p.id) FROM products p '
-            . 'LEFT JOIN categories c ON c.id = p.category_id '
+            . 'LEFT JOIN categories c ON c.id = p.category_id'
+            . $locJoin . ' '
             . 'WHERE (p.vendor_category_id = vendor_categories.id OR c.vendor_category_id = vendor_categories.id) '
             . 'AND p.status = "active" AND p.deleted_at IS NULL'
+            . $locWhere
             . ') AS product_count';
+
         $rows = (new VendorCategoryModel())
             ->select('vendor_categories.*, ' . $countExpr)
             ->where('status', 'active')
             ->orderBy('display_order', 'ASC')
             ->orderBy('id', 'ASC')
             ->findAll();
+
+        // When a location is set, hide categories with 0 matching products so
+        // the customer doesn't see empty options for their area.
+        if ($talukId > 0 || $districtId > 0 || $stateId > 0) {
+            $rows = array_values(array_filter($rows, static fn ($r) => (int) $r['product_count'] > 0));
+        }
+
         return $this->ok(['items' => $rows]);
     }
 
