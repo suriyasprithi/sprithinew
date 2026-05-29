@@ -77,6 +77,20 @@ if [ ! -d "android" ]; then
   npx cap add android
 fi
 
+# Generate launcher icons + splash from resources/icon.png (1024x1024 PNG).
+# Only runs if a source icon is present in the repo.
+if [ -f "resources/icon.png" ]; then
+  if [ ! -d "node_modules/@capacitor/assets" ]; then
+    echo "==> Installing @capacitor/assets for icon generation…"
+    npm install --no-audit --no-fund -D @capacitor/assets
+  fi
+  echo "==> Generating Android launcher icons from resources/icon.png…"
+  npx capacitor-assets generate --android --iconBackgroundColor "#FFFFFF" || \
+    echo "    ⚠ icon generation failed — continuing with previous icons"
+else
+  echo "==> No resources/icon.png found — keeping default icons."
+fi
+
 echo "==> cap sync android…"
 npx cap sync android
 
