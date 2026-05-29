@@ -67,8 +67,15 @@ api.interceptors.response.use(
       flushQueue(err, null);
       storage.remove(STORAGE_KEYS.ACCESS);
       storage.remove(STORAGE_KEYS.REFRESH);
-      if (typeof window !== "undefined" && !window.location.pathname.startsWith("/admin/login")) {
-        window.location.href = "/admin/login/";
+      if (typeof window !== "undefined") {
+        const basePath = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
+        const onLogin = basePath === ""
+          ? window.location.pathname.endsWith("/login/") || window.location.pathname.endsWith("/login")
+          : window.location.pathname.startsWith("/admin/login");
+        if (! onLogin) {
+          if (basePath === "") window.location.assign("/login/");
+          else window.location.href = "/admin/login/";
+        }
       }
       return Promise.reject(err);
     } finally {

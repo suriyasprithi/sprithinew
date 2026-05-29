@@ -3,13 +3,14 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/stores/auth";
+import { goToLogin } from "@/lib/login-redirect";
 
 export function AuthGuard({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const { user, isHydrated } = useAuth();
 
   useEffect(() => {
-    if (isHydrated && !user) window.location.href = "/admin/login/";
+    if (isHydrated && !user) goToLogin(router);
   }, [isHydrated, user, router]);
 
   if (!isHydrated || !user) {

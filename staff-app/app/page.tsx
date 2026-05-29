@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/stores/auth";
 import { StaffLoginForm } from "@/components/staff-login-form";
+import { goToLogin } from "@/lib/login-redirect";
 
 // Unified staff login builds (basePath /staff or /staff-roll) render the
 // login form at the root URL instead of redirecting to /login.
@@ -18,7 +19,7 @@ export default function Home() {
     if (IS_STAFF_BUILD) return;
     if (!isHydrated) return;
     if (user) router.replace("/dashboard");
-    else window.location.href = "/admin/login/";
+    else goToLogin(router);
   }, [user, isHydrated, router]);
 
   if (IS_STAFF_BUILD) return <StaffLoginForm />;

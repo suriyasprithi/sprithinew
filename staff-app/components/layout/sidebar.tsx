@@ -21,7 +21,9 @@ export function Sidebar() {
 
   const onLogout = async () => {
     await logout();
-    window.location.href = "/admin/login/";
+    const basePath = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
+    if (basePath === "") window.location.assign("/login/");
+    else window.location.href = "/admin/login/";
   };
 
   return (

@@ -1,0 +1,26 @@
+"use client";
+
+/**
+ * Where to send the user when their session is unauthenticated.
+ *
+ * Per-role web builds (basePath=/admin /vendor /state /district /taluk /driver)
+ *   → cross-role URL "/admin/login/" works because Apache serves all of them
+ *     under the same domain on app.sprithi.com.
+ *
+ * Capacitor APK builds (CAPACITOR_BUILD=1 → basePath="")
+ *   → there is no /admin/login/ path in the asset bundle. window.location.href
+ *     would either show a blank screen or stay stuck on the splash. We use the
+ *     in-app /login route via the Next.js router instead.
+ */
+export function goToLogin(router?: { replace: (href: string) => void }): void {
+  if (typeof window === "undefined") return;
+  const basePath = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
+  if (basePath === "") {
+    // Capacitor APK: navigate within the SPA
+    if (router) router.replace("/login");
+    else window.location.assign("/login/");
+    return;
+  }
+  // Web per-role build: unified login lives at /admin/login/ on the same origin
+  window.location.href = "/admin/login/";
+}
