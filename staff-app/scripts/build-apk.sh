@@ -133,6 +133,55 @@ if [ -f "firebase/google-services.json" ]; then
   echo "    classpath in project gradle: $(grep -c "com.google.gms:google-services" "$PROJECT_GRADLE") line(s)"
   echo "    plugin in app gradle:        $(grep -c "com.google.gms.google-services" "$APP_GRADLE") line(s)"
   echo "    package_name match for com.epey.staff: $(grep -c "com.epey.staff" android/app/google-services.json) match(es)"
+
+  # ---------------------------------------------------------------------------
+  # Generate notification status-bar icon (monochrome silhouette).
+  # Android API 21+ strips color from status bar icons, so a color launcher
+  # icon shows as a white square. We make a proper silhouette from the
+  # existing launcher icon by converting all non-transparent pixels to white.
+  # ---------------------------------------------------------------------------
+  NOTIF_SRC=""
+  if [ -f "resources/notification-icon.png" ]; then
+    NOTIF_SRC="resources/notification-icon.png"   # custom one if user provided
+  elif [ -f "resources/icon.png" ]; then
+    NOTIF_SRC="resources/icon.png"                # fall back to launcher icon
+  fi
+
+  if [ -n "$NOTIF_SRC" ] && command -v convert >/dev/null 2>&1; then
+    echo "==> Generating notification icons from $NOTIF_SRC (silhouette)"
+    # 24/36/48/72/96 dp at each density
+    declare -A NOTIF_SIZES=(
+      [mdpi]=24
+      [hdpi]=36
+      [xhdpi]=48
+      [xxhdpi]=72
+      [xxxhdpi]=96
+    )
+    for density in "${!NOTIF_SIZES[@]}"; do
+      size="${NOTIF_SIZES[$density]}"
+      target_dir="android/app/src/main/res/drawable-$density"
+      mkdir -p "$target_dir"
+      # Force all RGB channels to white, keep original alpha for silhouette
+      convert "$NOTIF_SRC" \
+        -channel RGB -evaluate set 255 +channel \
+        -resize "${size}x${size}" \
+        "$target_dir/ic_stat_notification.png" 2>/dev/null
+    done
+
+    # Patch AndroidManifest.xml to set the default FCM notification icon.
+    MANIFEST="android/app/src/main/AndroidManifest.xml"
+    if ! grep -q "default_notification_icon" "$MANIFEST"; then
+      echo "==> Patching $MANIFEST to register ic_stat_notification"
+      # Insert meta-data right before </application>
+      sed -i 's|</application>|        <meta-data android:name="com.google.firebase.messaging.default_notification_icon" android:resource="@drawable/ic_stat_notification" />\n    </application>|' "$MANIFEST"
+    fi
+    echo "    Notification icon: drawable-mdpi/ic_stat_notification.png $(test -f android/app/src/main/res/drawable-mdpi/ic_stat_notification.png && echo YES || echo NO)"
+    echo "    Manifest meta-data registered: $(grep -c "default_notification_icon" "$MANIFEST") line(s)"
+  elif [ -n "$NOTIF_SRC" ]; then
+    echo "    ⚠ ImageMagick (convert) not available — skipping notification icon"
+    echo "      generation. The status bar icon will fall back to the launcher"
+    echo "      icon (Android will render it as a white square)."
+  fi
 else
   echo ""
   echo "    ⚠ firebase/google-services.json not found. Push notifications will"
