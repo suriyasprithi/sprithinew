@@ -159,12 +159,16 @@ if [ -f "firebase/google-services.json" ]; then
     )
     for density in "${!NOTIF_SIZES[@]}"; do
       size="${NOTIF_SIZES[$density]}"
+      inner=$(( size * 65 / 100 ))    # ~35% padding so shape is readable at 24dp
       target_dir="android/app/src/main/res/drawable-$density"
       mkdir -p "$target_dir"
-      # Force all RGB channels to white, keep original alpha for silhouette
+      # Force all RGB channels to white, keep original alpha for silhouette,
+      # then resize smaller and pad with transparent border so Android's
+      # notification frame doesn't crop into the shape.
       convert "$NOTIF_SRC" \
         -channel RGB -evaluate set 255 +channel \
-        -resize "${size}x${size}" \
+        -resize "${inner}x${inner}" \
+        -background none -gravity center -extent "${size}x${size}" \
         "$target_dir/ic_stat_notification.png" 2>/dev/null
     done
 
