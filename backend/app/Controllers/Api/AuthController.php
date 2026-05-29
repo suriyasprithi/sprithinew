@@ -58,25 +58,45 @@ class AuthController extends BaseApiController
             return $this->fail('Could not create user', 500, $users->errors());
         }
 
-        // Update referrer chain counts (L1, L2, L3) and award welcome bonus.
-        // (ReferralModel insert deferred to Phase 3 when migration 14 lands.)
+        // Update referrer chain (counts + referrals table rows) and award the
+        // L1 welcome bonus. The activity feed reads from the referrals table,
+        // so without those rows the new signup wouldn't appear there.
         if ($referrerId) {
-            $this->bumpUplineLevelCounts($referrerId);
+            $welcomeAmount = (float) (new \App\Models\SystemSettingsModel())
+                ->get('welcome.bonus_amount', '15');
+            $this->bumpUplineLevelCounts($referrerId, (int) $userId, $welcomeAmount);
             (new WelcomeBonusService())->award($referrerId, (int) $userId);
         }
 
         return $this->issueTokens((int) $userId, $role, $users->find($userId), 201, 'Registered');
     }
 
-    /** Walk up to 3 levels and increment level_*_count on each ancestor. */
-    private function bumpUplineLevelCounts(int $referrerId): void
+    /**
+     * Walk up to 3 levels and: (a) bump level_*_count on each ancestor,
+     * (b) insert a referrals row for each ancestor so the activity feed
+     * shows the signup. L1 carries the welcome bonus amount; L2/L3 carry 0.
+     */
+    private function bumpUplineLevelCounts(int $referrerId, int $newCustomerId = 0, float $welcomeAmount = 15.0): void
     {
-        $users   = new UserModel();
-        $current = $users->find($referrerId);
+        $users    = new UserModel();
+        $current  = $users->find($referrerId);
+        $refModel = new \App\Models\ReferralModel();
         for ($level = 1; $level <= 3; $level++) {
             if (! $current) break;
             $col = "level_{$level}_count";
             $users->update($current['id'], [$col => (int) ($current[$col] ?? 0) + 1]);
+            if ($newCustomerId > 0) {
+                try {
+                    $refModel->insert([
+                        'referrer_id'  => (int) $current['id'],
+                        'referred_id'  => $newCustomerId,
+                        'level'        => $level,
+                        'bonus_amount' => $level === 1 ? $welcomeAmount : 0,
+                    ]);
+                } catch (\Throwable $e) {
+                    log_message('error', 'Referral insert failed: ' . $e->getMessage());
+                }
+            }
             if (empty($current['referrer_id'])) break;
             $current = $users->find((int) $current['referrer_id']);
         }
