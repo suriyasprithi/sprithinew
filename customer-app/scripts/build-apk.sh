@@ -96,6 +96,23 @@ if [ ! -d "android" ]; then
   npx cap add android
 fi
 
+# Wire Firebase Android config (same file works for both apps if both Android
+# apps are registered in the same Firebase project). android/ is gitignored
+# so the source of truth lives in customer-app/firebase/.
+if [ -f "firebase/google-services.json" ]; then
+  echo "==> Copying firebase/google-services.json → android/app/"
+  cp firebase/google-services.json android/app/google-services.json
+else
+  echo ""
+  echo "    ⚠ firebase/google-services.json not found. Push notifications will"
+  echo "      crash the APK on permission grant. To fix:"
+  echo "      1. Firebase Console → Add Android app with package com.epey.customer"
+  echo "      2. Download google-services.json"
+  echo "      3. Save to customer-app/firebase/google-services.json"
+  echo "      4. Re-run this build"
+  echo ""
+fi
+
 # ---------------------------------------------------------------------------
 # 5. Copy web assets into native project
 # ---------------------------------------------------------------------------
