@@ -77,20 +77,36 @@ if [ ! -d "android" ]; then
   npx cap add android
 fi
 
-# Wire Firebase Android config. We can't track android/app/google-services.json
-# directly (the whole android/ folder is gitignored), so the source of truth
-# lives in staff-app/firebase/ and we copy it in each build.
+# Generate launcher icons + splash from resources/icon.png (1024x1024 PNG).
+# Only runs if a source icon is present in the repo.
+if [ -f "resources/icon.png" ]; then
+  if [ ! -d "node_modules/@capacitor/assets" ]; then
+    echo "==> Installing @capacitor/assets for icon generation…"
+    npm install --no-audit --no-fund -D @capacitor/assets
+  fi
+  echo "==> Generating Android launcher icons from resources/icon.png…"
+  npx capacitor-assets generate --android --iconBackgroundColor "#FFFFFF" || \
+    echo "    ⚠ icon generation failed — continuing with previous icons"
+else
+  echo "==> No resources/icon.png found — keeping default icons."
+fi
+
+echo "==> cap sync android…"
+npx cap sync android
+
+# Wire Firebase Android config AFTER cap sync so our changes survive any
+# overwrite Capacitor may do during sync. android/ is gitignored so the
+# source of truth lives in staff-app/firebase/.
 if [ -f "firebase/google-services.json" ]; then
   echo "==> Copying firebase/google-services.json → android/app/"
   cp firebase/google-services.json android/app/google-services.json
 
   # Patch project-level android/build.gradle to add the google-services
-  # classpath. cap sync does NOT do this; without it the JSON is ignored at
-  # build time and FCM init crashes the app on launch.
+  # classpath. Without it, the JSON is ignored at build time and FCM init
+  # crashes the app on launch ("keep stopping").
   PROJECT_GRADLE="android/build.gradle"
   if ! grep -q "com.google.gms:google-services" "$PROJECT_GRADLE"; then
     echo "==> Patching $PROJECT_GRADLE to add google-services classpath"
-    # Insert classpath line right after the first 'dependencies {' inside buildscript
     awk '
       /buildscript[[:space:]]*\{/ { in_bs = 1 }
       in_bs && /dependencies[[:space:]]*\{/ && !done {
@@ -110,6 +126,13 @@ if [ -f "firebase/google-services.json" ]; then
     echo "" >> "$APP_GRADLE"
     echo "apply plugin: 'com.google.gms.google-services'" >> "$APP_GRADLE"
   fi
+
+  # Diagnostic — make sure the patches actually landed
+  echo "==> Verifying Firebase wiring:"
+  echo "    google-services.json exists: $(test -f android/app/google-services.json && echo YES || echo NO)"
+  echo "    classpath in project gradle: $(grep -c "com.google.gms:google-services" "$PROJECT_GRADLE") line(s)"
+  echo "    plugin in app gradle:        $(grep -c "com.google.gms.google-services" "$APP_GRADLE") line(s)"
+  echo "    package_name match for com.epey.staff: $(grep -c "com.epey.staff" android/app/google-services.json) match(es)"
 else
   echo ""
   echo "    ⚠ firebase/google-services.json not found. Push notifications will"
@@ -120,23 +143,6 @@ else
   echo "      4. Re-run this build"
   echo ""
 fi
-
-# Generate launcher icons + splash from resources/icon.png (1024x1024 PNG).
-# Only runs if a source icon is present in the repo.
-if [ -f "resources/icon.png" ]; then
-  if [ ! -d "node_modules/@capacitor/assets" ]; then
-    echo "==> Installing @capacitor/assets for icon generation…"
-    npm install --no-audit --no-fund -D @capacitor/assets
-  fi
-  echo "==> Generating Android launcher icons from resources/icon.png…"
-  npx capacitor-assets generate --android --iconBackgroundColor "#FFFFFF" || \
-    echo "    ⚠ icon generation failed — continuing with previous icons"
-else
-  echo "==> No resources/icon.png found — keeping default icons."
-fi
-
-echo "==> cap sync android…"
-npx cap sync android
 
 echo "==> Gradle assembleDebug…"
 cd android

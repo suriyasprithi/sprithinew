@@ -96,14 +96,20 @@ if [ ! -d "android" ]; then
   npx cap add android
 fi
 
-# Wire Firebase Android config (same file works for both apps if both Android
-# apps are registered in the same Firebase project). android/ is gitignored
-# so the source of truth lives in customer-app/firebase/.
+# ---------------------------------------------------------------------------
+# 5. Copy web assets into native project
+# ---------------------------------------------------------------------------
+echo "==> cap sync android…"
+npx cap sync android
+
+# ---------------------------------------------------------------------------
+# 5b. Wire Firebase Android config AFTER cap sync (cap sync may rewrite gradle
+#     files, so we patch after). Source of truth: customer-app/firebase/.
+# ---------------------------------------------------------------------------
 if [ -f "firebase/google-services.json" ]; then
   echo "==> Copying firebase/google-services.json → android/app/"
   cp firebase/google-services.json android/app/google-services.json
 
-  # Patch gradle to apply the google-services plugin (cap sync doesn't).
   PROJECT_GRADLE="android/build.gradle"
   if ! grep -q "com.google.gms:google-services" "$PROJECT_GRADLE"; then
     echo "==> Patching $PROJECT_GRADLE to add google-services classpath"
@@ -124,6 +130,12 @@ if [ -f "firebase/google-services.json" ]; then
     echo "" >> "$APP_GRADLE"
     echo "apply plugin: 'com.google.gms.google-services'" >> "$APP_GRADLE"
   fi
+
+  echo "==> Verifying Firebase wiring:"
+  echo "    google-services.json exists: $(test -f android/app/google-services.json && echo YES || echo NO)"
+  echo "    classpath in project gradle: $(grep -c "com.google.gms:google-services" "$PROJECT_GRADLE") line(s)"
+  echo "    plugin in app gradle:        $(grep -c "com.google.gms.google-services" "$APP_GRADLE") line(s)"
+  echo "    package_name match for com.epey.customer: $(grep -c "com.epey.customer" android/app/google-services.json) match(es)"
 else
   echo ""
   echo "    ⚠ firebase/google-services.json not found. Push notifications will"
@@ -134,12 +146,6 @@ else
   echo "      4. Re-run this build"
   echo ""
 fi
-
-# ---------------------------------------------------------------------------
-# 5. Copy web assets into native project
-# ---------------------------------------------------------------------------
-echo "==> cap sync android…"
-npx cap sync android
 
 # ---------------------------------------------------------------------------
 # 6. Build debug APK
