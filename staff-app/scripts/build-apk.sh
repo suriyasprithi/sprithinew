@@ -77,6 +77,23 @@ if [ ! -d "android" ]; then
   npx cap add android
 fi
 
+# Wire Firebase Android config. We can't track android/app/google-services.json
+# directly (the whole android/ folder is gitignored), so the source of truth
+# lives in staff-app/firebase/ and we copy it in each build.
+if [ -f "firebase/google-services.json" ]; then
+  echo "==> Copying firebase/google-services.json → android/app/"
+  cp firebase/google-services.json android/app/google-services.json
+else
+  echo ""
+  echo "    ⚠ firebase/google-services.json not found. Push notifications will"
+  echo "      crash the APK on permission grant. To fix:"
+  echo "      1. Firebase Console → Add Android app with package com.epey.staff"
+  echo "      2. Download google-services.json"
+  echo "      3. Save to staff-app/firebase/google-services.json"
+  echo "      4. Re-run this build"
+  echo ""
+fi
+
 # Generate launcher icons + splash from resources/icon.png (1024x1024 PNG).
 # Only runs if a source icon is present in the repo.
 if [ -f "resources/icon.png" ]; then
