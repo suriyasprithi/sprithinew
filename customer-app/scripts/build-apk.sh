@@ -102,6 +102,28 @@ fi
 if [ -f "firebase/google-services.json" ]; then
   echo "==> Copying firebase/google-services.json → android/app/"
   cp firebase/google-services.json android/app/google-services.json
+
+  # Patch gradle to apply the google-services plugin (cap sync doesn't).
+  PROJECT_GRADLE="android/build.gradle"
+  if ! grep -q "com.google.gms:google-services" "$PROJECT_GRADLE"; then
+    echo "==> Patching $PROJECT_GRADLE to add google-services classpath"
+    awk '
+      /buildscript[[:space:]]*\{/ { in_bs = 1 }
+      in_bs && /dependencies[[:space:]]*\{/ && !done {
+        print
+        print "        classpath '\''com.google.gms:google-services:4.4.2'\''"
+        done = 1
+        next
+      }
+      { print }
+    ' "$PROJECT_GRADLE" > "$PROJECT_GRADLE.tmp" && mv "$PROJECT_GRADLE.tmp" "$PROJECT_GRADLE"
+  fi
+  APP_GRADLE="android/app/build.gradle"
+  if ! grep -q "com.google.gms.google-services" "$APP_GRADLE"; then
+    echo "==> Patching $APP_GRADLE to apply google-services plugin"
+    echo "" >> "$APP_GRADLE"
+    echo "apply plugin: 'com.google.gms.google-services'" >> "$APP_GRADLE"
+  fi
 else
   echo ""
   echo "    ⚠ firebase/google-services.json not found. Push notifications will"
