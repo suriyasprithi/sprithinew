@@ -96,6 +96,20 @@ if [ ! -d "android" ]; then
   npx cap add android
 fi
 
+# Generate launcher icons + splash from resources/icon.png (1024x1024 PNG).
+# Only runs if a source icon is present in the repo.
+if [ -f "resources/icon.png" ]; then
+  if [ ! -d "node_modules/@capacitor/assets" ]; then
+    echo "==> Installing @capacitor/assets for icon generation…"
+    npm install --no-audit --no-fund -D @capacitor/assets
+  fi
+  echo "==> Generating Android launcher icons from resources/icon.png…"
+  npx capacitor-assets generate --android --iconBackgroundColor "#FFFFFF" || \
+    echo "    ⚠ icon generation failed — continuing with previous icons"
+else
+  echo "==> No resources/icon.png found — keeping default icons."
+fi
+
 # ---------------------------------------------------------------------------
 # 5. Copy web assets into native project
 # ---------------------------------------------------------------------------
@@ -136,6 +150,44 @@ if [ -f "firebase/google-services.json" ]; then
   echo "    classpath in project gradle: $(grep -c "com.google.gms:google-services" "$PROJECT_GRADLE") line(s)"
   echo "    plugin in app gradle:        $(grep -c "com.google.gms.google-services" "$APP_GRADLE") line(s)"
   echo "    package_name match for com.epey.customer: $(grep -c "com.epey.customer" android/app/google-services.json) match(es)"
+
+  # Generate monochrome notification status-bar icon — Android API 21+ strips
+  # color from status bar icons, so the launcher icon shows as a white square.
+  NOTIF_SRC=""
+  if [ -f "resources/notification-icon.png" ]; then
+    NOTIF_SRC="resources/notification-icon.png"
+  elif [ -f "resources/icon.png" ]; then
+    NOTIF_SRC="resources/icon.png"
+  fi
+
+  if [ -n "$NOTIF_SRC" ] && command -v convert >/dev/null 2>&1; then
+    echo "==> Generating notification icons from $NOTIF_SRC (silhouette)"
+    declare -A NOTIF_SIZES=(
+      [mdpi]=24
+      [hdpi]=36
+      [xhdpi]=48
+      [xxhdpi]=72
+      [xxxhdpi]=96
+    )
+    for density in "${!NOTIF_SIZES[@]}"; do
+      size="${NOTIF_SIZES[$density]}"
+      inner=$(( size * 65 / 100 ))
+      target_dir="android/app/src/main/res/drawable-$density"
+      mkdir -p "$target_dir"
+      convert "$NOTIF_SRC" \
+        -channel RGB -evaluate set 255 +channel \
+        -resize "${inner}x${inner}" \
+        -background none -gravity center -extent "${size}x${size}" \
+        "$target_dir/ic_stat_notification.png" 2>/dev/null
+    done
+    MANIFEST="android/app/src/main/AndroidManifest.xml"
+    if ! grep -q "default_notification_icon" "$MANIFEST"; then
+      echo "==> Patching $MANIFEST to register ic_stat_notification"
+      sed -i 's|</application>|        <meta-data android:name="com.google.firebase.messaging.default_notification_icon" android:resource="@drawable/ic_stat_notification" />\n    </application>|' "$MANIFEST"
+    fi
+    echo "    Notification icon: drawable-mdpi/ic_stat_notification.png $(test -f android/app/src/main/res/drawable-mdpi/ic_stat_notification.png && echo YES || echo NO)"
+    echo "    Manifest meta-data registered: $(grep -c "default_notification_icon" "$MANIFEST") line(s)"
+  fi
 else
   echo ""
   echo "    ⚠ firebase/google-services.json not found. Push notifications will"
