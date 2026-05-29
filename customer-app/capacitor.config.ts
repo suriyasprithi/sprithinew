@@ -2,7 +2,7 @@ import type { CapacitorConfig } from "@capacitor/cli";
 
 const config: CapacitorConfig = {
   appId: "com.epey.customer",
-  appName: "Epey",
+  appName: "SPRITHI",
   webDir: "out",
   android: {
     allowMixedContent: false,
