@@ -121,7 +121,13 @@ class OrderController extends BaseApiController
         // Clear cart
         (new CartItemModel())->where('user_id', $auth->id)->delete();
 
-        // Notify customer + vendor + all admins
+        // Build the success response. Push it to the client NOW (before
+        // notifications + commission cascade) so the customer doesn't wait
+        // for FCM round-trips. The slow work happens after the response.
+        $response = $this->ok(['order_id' => (int) $orderId], 'Order placed');
+        $this->sendEarly($response);
+
+        // Notify customer + vendor + all admins (slow — runs after response)
         $svc = new NotificationService();
         try {
             $svc->sendTyped((int) $auth->id, 'order_created', (int) $orderId, '/orders', 'Order placed', "Total ₹{$total}");
@@ -133,10 +139,43 @@ class OrderController extends BaseApiController
             log_message('error', 'Order push failed: ' . $e->getMessage());
         }
 
-        // MLM commission cascade
+        // MLM commission cascade — also slow; runs in background
         (new CommissionService())->distributeForOrder((int) $orderId, (int) $auth->id, (float) $total, $vendorId);
 
-        return $this->ok(['order_id' => (int) $orderId], 'Order placed');
+        return $response;
+    }
+
+    /**
+     * Send the response to the client immediately and keep PHP running so
+     * post-response work (notifications, commission cascade) doesn't block
+     * the customer.
+     *
+     * Works under PHP-FPM via fastcgi_finish_request; falls back to
+     * Content-Length + flush trick for Apache mod_php.
+     */
+    private function sendEarly(ResponseInterface $response): void
+    {
+        ignore_user_abort(true);
+        set_time_limit(0);
+
+        $body = (string) $response->getBody();
+        $response->setHeader('Content-Length', (string) strlen($body));
+        // Send headers + body now
+        $response->pretend(false)->send();
+
+        if (function_exists('fastcgi_finish_request')) {
+            fastcgi_finish_request();
+        } else {
+            // mod_php: flush output buffers so the client gets the body now.
+            while (ob_get_level() > 0) {
+                @ob_end_flush();
+            }
+            @flush();
+        }
+
+        // Empty the body so the framework's later $response->send() doesn't
+        // duplicate output. Headers already sent → sendHeaders is a no-op.
+        $response->setBody('');
     }
 
     /** Customer: my orders, enriched with vendor + area. */

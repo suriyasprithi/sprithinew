@@ -42,21 +42,32 @@ class FirebaseService
             && $this->loadCredentials() !== null;
     }
 
+    public const SENT         = 'sent';
+    public const UNREGISTERED = 'unregistered'; // stale token — caller should delete it
+    public const FAILED       = 'failed';
+
+    /** Back-compat wrapper. Returns true only when delivery succeeded. */
     public function sendToToken(string $deviceToken, string $title, ?string $body, ?array $data = null): bool
+    {
+        return $this->sendToTokenWithStatus($deviceToken, $title, $body, $data) === self::SENT;
+    }
+
+    /** @return string one of self::SENT|UNREGISTERED|FAILED. */
+    public function sendToTokenWithStatus(string $deviceToken, string $title, ?string $body, ?array $data = null): string
     {
         if (! $this->isConfigured()) {
             log_message('info', 'FCM not configured — skipping send');
-            return false;
+            return self::FAILED;
         }
 
         $accessToken = $this->getAccessToken();
-        if (! $accessToken) return false;
+        if (! $accessToken) return self::FAILED;
 
         $creds     = $this->loadCredentials();
         $projectId = $creds['project_id'] ?? null;
         if (! $projectId) {
             log_message('error', 'FCM: project_id missing from service-account JSON');
-            return false;
+            return self::FAILED;
         }
 
         $payload = [
@@ -82,9 +93,13 @@ class FirebaseService
             "Authorization: Bearer {$accessToken}",
             'Content-Type: application/json',
         ], json_encode($payload));
-        if ($res['code'] >= 200 && $res['code'] < 300) return true;
+        if ($res['code'] >= 200 && $res['code'] < 300) return self::SENT;
         log_message('error', 'FCM send failed: ' . $res['code'] . ' ' . $res['body'] . ($res['error'] ? ' curl_err=' . $res['error'] : ''));
-        return false;
+        // 404 or "UNREGISTERED" in body → token is dead; caller should prune.
+        if ($res['code'] === 404 || stripos((string) $res['body'], 'UNREGISTERED') !== false) {
+            return self::UNREGISTERED;
+        }
+        return self::FAILED;
     }
 
     /**

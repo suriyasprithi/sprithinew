@@ -23,10 +23,20 @@ class NotificationService
             return ['notification_id' => $notifId, 'sent' => 0, 'tokens' => 0];
         }
 
-        $fcm  = new FirebaseService();
-        $sent = 0;
+        $fcm     = new FirebaseService();
+        $sent    = 0;
+        $deadIds = [];
         foreach ($tokens as $t) {
-            if ($fcm->sendToToken($t['token'], $title, $body, $data)) $sent++;
+            $status = $fcm->sendToTokenWithStatus($t['token'], $title, $body, $data);
+            if ($status === FirebaseService::SENT)              $sent++;
+            elseif ($status === FirebaseService::UNREGISTERED)  $deadIds[] = (int) $t['id'];
+        }
+        // Auto-prune dead tokens so future sends stay fast. Live devices keep
+        // working; only stale ones get cleaned up.
+        if ($deadIds) {
+            try { (new DeviceTokenModel())->whereIn('id', $deadIds)->delete(); } catch (\Throwable $e) {
+                log_message('error', 'Failed pruning dead device tokens: ' . $e->getMessage());
+            }
         }
         return ['notification_id' => $notifId, 'sent' => $sent, 'tokens' => count($tokens)];
     }
