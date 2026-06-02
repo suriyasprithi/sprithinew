@@ -92,7 +92,9 @@ php_errors.log
 #-------------------------
 # Composer
 #-------------------------
-vendor/
+# Anchored to backend/ so it only ignores the Composer deps dir, NOT the
+# deployed vendor portal at backend/public/vendor/.
+/vendor/
 
 #-------------------------
 # IDE / Development Files
