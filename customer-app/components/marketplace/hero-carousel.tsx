@@ -111,6 +111,20 @@ function SlideContent({ slide, active }: { slide: Banner; active: boolean }) {
       className="relative flex h-full min-w-0 flex-[0_0_100%] flex-col justify-center overflow-hidden px-7 py-8 text-white md:px-14 md:py-12"
       style={{ backgroundImage: bannerGradient(slide) }}
     >
+      {slide.image_url && (
+        <>
+          <img
+            src={slide.image_url}
+            alt=""
+            className="absolute inset-0 z-0 h-full w-full object-contain"
+            loading="lazy"
+            referrerPolicy="no-referrer"
+          />
+          {(slide.eyebrow || slide.title || slide.highlight || slide.subtitle || slide.cta_label) && (
+            <span className="absolute inset-0 z-0 bg-black/35" aria-hidden />
+          )}
+        </>
+      )}
       <span className="pointer-events-none absolute -right-24 -top-24 h-72 w-72 rounded-full bg-white/10 blur-2xl" aria-hidden />
       <span className="pointer-events-none absolute -bottom-32 -left-12 h-72 w-72 rounded-full bg-black/15 blur-3xl" aria-hidden />
       <span className="pointer-events-none absolute right-10 top-10 h-20 w-20 rotate-12 rounded-3xl bg-white/10 ring-1 ring-white/20 md:h-28 md:w-28" aria-hidden />
@@ -166,17 +180,33 @@ function SideTallBanner({ banner }: { banner: Banner }) {
       className="group relative flex h-[200px] flex-col justify-end overflow-hidden rounded-3xl p-6 text-white shadow-[0_24px_60px_-20px_rgba(120,20,20,.45)] transition-transform hover:-translate-y-1 md:h-[480px] lg:h-[520px]"
       style={{ backgroundImage: bannerGradient(banner) }}
     >
+      {banner.image_url && (
+        <>
+          <img
+            src={banner.image_url}
+            alt=""
+            className="absolute inset-0 z-0 h-full w-full object-contain"
+            loading="lazy"
+            referrerPolicy="no-referrer"
+          />
+          {(banner.eyebrow || banner.title || banner.subtitle || banner.cta_label) && (
+            <span className="absolute inset-0 z-0 bg-black/35" aria-hidden />
+          )}
+        </>
+      )}
       <span className="pointer-events-none absolute -top-16 -right-16 h-56 w-56 rounded-full bg-white/10 blur-2xl" aria-hidden />
       <span className="pointer-events-none absolute top-10 right-6 h-14 w-14 rounded-2xl bg-white/10 ring-1 ring-white/15" aria-hidden />
       <Icon className="pointer-events-none absolute -top-4 -right-2 h-48 w-48 text-white/20 transition-transform group-hover:rotate-6" strokeWidth={1.1} />
-      {banner.eyebrow && <p className="text-[10px] font-semibold uppercase tracking-[0.18em] opacity-90">{banner.eyebrow}</p>}
-      {banner.title && <h3 className="mt-2 text-2xl font-bold leading-tight md:text-3xl">{banner.title}</h3>}
-      {banner.subtitle && <p className="mt-2 max-w-[18ch] text-sm opacity-90">{banner.subtitle}</p>}
-      {banner.cta_label && (
-        <span className="mt-4 inline-flex w-fit items-center gap-1.5 rounded-full bg-white/15 px-4 py-2 text-xs font-semibold backdrop-blur-md ring-1 ring-white/25 transition group-hover:bg-white/25">
-          {banner.cta_label} <ChevronRight className="h-3.5 w-3.5" />
-        </span>
-      )}
+      <div className="relative z-10 flex flex-col">
+        {banner.eyebrow && <p className="text-[10px] font-semibold uppercase tracking-[0.18em] opacity-90">{banner.eyebrow}</p>}
+        {banner.title && <h3 className="mt-2 text-2xl font-bold leading-tight md:text-3xl">{banner.title}</h3>}
+        {banner.subtitle && <p className="mt-2 max-w-[18ch] text-sm opacity-90">{banner.subtitle}</p>}
+        {banner.cta_label && (
+          <span className="mt-4 inline-flex w-fit items-center gap-1.5 rounded-full bg-white/15 px-4 py-2 text-xs font-semibold backdrop-blur-md ring-1 ring-white/25 transition group-hover:bg-white/25">
+            {banner.cta_label} <ChevronRight className="h-3.5 w-3.5" />
+          </span>
+        )}
+      </div>
     </Link>
   );
 }
@@ -189,16 +219,32 @@ function SideShortBanner({ banner }: { banner: Banner }) {
       className="group relative flex flex-col justify-end overflow-hidden rounded-3xl p-5 text-white shadow-[0_18px_40px_-16px_rgba(120,20,20,.45)] transition-transform hover:-translate-y-1"
       style={{ backgroundImage: bannerGradient(banner) }}
     >
+      {banner.image_url && (
+        <>
+          <img
+            src={banner.image_url}
+            alt=""
+            className="absolute inset-0 z-0 h-full w-full object-contain"
+            loading="lazy"
+            referrerPolicy="no-referrer"
+          />
+          {(banner.eyebrow || banner.title || banner.subtitle || banner.cta_label) && (
+            <span className="absolute inset-0 z-0 bg-black/35" aria-hidden />
+          )}
+        </>
+      )}
       <span className="pointer-events-none absolute -top-10 -right-10 h-36 w-36 rounded-full bg-white/15 blur-2xl" aria-hidden />
       <Icon className="pointer-events-none absolute -top-2 -right-2 h-28 w-28 text-white/20 transition-transform group-hover:rotate-6" strokeWidth={1.2} />
-      {banner.eyebrow && <p className="text-[9px] font-semibold uppercase tracking-[0.18em] opacity-90">{banner.eyebrow}</p>}
-      {banner.title && <h3 className="mt-1 text-lg font-bold leading-tight md:text-xl">{banner.title}</h3>}
-      {banner.subtitle && <p className="mt-1 text-xs opacity-90">{banner.subtitle}</p>}
-      {banner.cta_label && (
-        <span className="mt-3 inline-flex w-fit items-center gap-1.5 rounded-full bg-white/15 px-3 py-1.5 text-[11px] font-semibold backdrop-blur-md ring-1 ring-white/25 transition group-hover:bg-white/25">
-          {banner.cta_label} <ChevronRight className="h-3 w-3" />
-        </span>
-      )}
+      <div className="relative z-10 flex flex-col">
+        {banner.eyebrow && <p className="text-[9px] font-semibold uppercase tracking-[0.18em] opacity-90">{banner.eyebrow}</p>}
+        {banner.title && <h3 className="mt-1 text-lg font-bold leading-tight md:text-xl">{banner.title}</h3>}
+        {banner.subtitle && <p className="mt-1 text-xs opacity-90">{banner.subtitle}</p>}
+        {banner.cta_label && (
+          <span className="mt-3 inline-flex w-fit items-center gap-1.5 rounded-full bg-white/15 px-3 py-1.5 text-[11px] font-semibold backdrop-blur-md ring-1 ring-white/25 transition group-hover:bg-white/25">
+            {banner.cta_label} <ChevronRight className="h-3 w-3" />
+          </span>
+        )}
+      </div>
     </Link>
   );
 }

@@ -273,6 +273,7 @@ $routes->group('api/v1', ['filter' => 'cors'], static function ($routes) {
 
         // lucky draw pools (3% slot from every order; admin picks winner)
         $routes->get('lucky-draw/pools',                       'Api\LuckyDrawController::pools');
+        $routes->get('lucky-draw/entries',                     'Api\LuckyDrawController::entries');
         $routes->post('lucky-draw/pools/(:num)/pick-winner',   'Api\LuckyDrawController::pickWinner/$1');
 
         // blog posts (admin CRUD)

@@ -81,6 +81,32 @@ export default function StaffWalletPage() {
           </LuxuryCard>
         </motion.div>
 
+        {/* Sub-wallet breakdown — global, monthly, referral, etc. */}
+        {(() => {
+          const breakdown = [
+            { label: "Global wallet",   value: user?.global_wallet  ?? 0 },
+            { label: "Monthly wallet",  value: user?.monthly_wallet ?? 0 },
+            { label: "Lucky wallet",    value: user?.lucky_wallet   ?? 0 },
+            { label: "Referral wallet", value: (user?.level_wallet ?? 0) + (user?.level_1_wallet ?? 0) + (user?.level_2_wallet ?? 0) + (user?.level_3_wallet ?? 0) },
+            { label: "Buyback wallet",  value: user?.buyback_wallet ?? 0 },
+          ];
+          return (
+            <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
+              <LuxuryCard hoverLift={false} className="p-5">
+                <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Wallet breakdown</p>
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+                  {breakdown.map((w) => (
+                    <div key={w.label} className="rounded-xl bg-surface-2/50 p-3">
+                      <p className="truncate text-[11px] uppercase tracking-wider text-muted-foreground">{w.label}</p>
+                      <p className="mt-1 text-base font-bold tracking-tight">{fmtINR(w.value)}</p>
+                    </div>
+                  ))}
+                </div>
+              </LuxuryCard>
+            </motion.div>
+          );
+        })()}
+
         {/* Admin-only: global pool snapshot + monthly history */}
         {isAdmin && (
           <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>

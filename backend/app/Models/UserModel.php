@@ -46,6 +46,15 @@ class UserModel extends Model
         'city',
         'password_reset_token',
         'password_reset_expires_at',
+        'legacy_password',
+        // Legacy import (2026-05-29 LegacyFieldsAndTables migration)
+        'dob','image','aadhar','aadhar_image','pan','pan_image','bank_passbook',
+        'license_image','rc_image',
+        'bank_name','account_number','ifsc_code',
+        'gpay','phonepe','paytm','upi','payment_link',
+        'monthly_wallet','lucky_wallet','gift','qr_wallet',
+        'state_id','district_id',
+        'bill_address','bill_landmark',
     ];
 
     protected $useTimestamps = true;

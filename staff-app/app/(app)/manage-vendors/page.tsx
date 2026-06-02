@@ -281,8 +281,8 @@ export default function ManageVendorsPage() {
                   transition={{ delay: i * 0.02 }}
                   className="grid grid-cols-[1fr_auto] items-center gap-3 px-4 py-3 transition-colors hover:bg-surface-2/40 md:grid-cols-[1.4fr_1fr_140px_90px_120px_56px]"
                 >
-                  <div className="flex items-center gap-3">
-                    <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-brand/10 text-xs font-semibold text-brand">
+                  <div className="flex min-w-0 items-center gap-3">
+                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brand/10 text-xs font-semibold text-brand">
                       {(v.shop_name || v.name || "?").charAt(0).toUpperCase()}
                     </span>
                     <div className="min-w-0">
@@ -290,8 +290,8 @@ export default function ManageVendorsPage() {
                       <p className="truncate text-xs text-muted-foreground">{v.name}</p>
                     </div>
                   </div>
-                  <p className="hidden text-sm text-muted-foreground md:block">{v.taluk || "—"}</p>
-                  <p className="hidden text-sm text-muted-foreground md:block">{v.mobile}</p>
+                  <p className="hidden min-w-0 truncate text-sm text-muted-foreground md:block">{v.taluk || "—"}</p>
+                  <p className="hidden min-w-0 truncate text-sm text-muted-foreground md:block">{v.mobile}</p>
                   <p className="hidden text-sm font-medium md:block">{Number(v.commission_pct ?? 0).toFixed(2)}%</p>
                   <div className="hidden md:block"><StatusBadge status={v.status} /></div>
                   <div className="flex items-center gap-2 justify-self-end">

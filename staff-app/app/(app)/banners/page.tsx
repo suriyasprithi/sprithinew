@@ -109,8 +109,8 @@ export default function BannersPage() {
   async function save() {
     if (!editing) return;
     if (!editing.slot) { toast.error("Slot required"); return; }
-    if (!editing.title && !editing.eyebrow) {
-      toast.error("At least one of Title or Eyebrow is required");
+    if (!editing.image_url) {
+      toast.error("Image is required");
       return;
     }
     setBusy(true);
@@ -166,7 +166,7 @@ export default function BannersPage() {
           description="Manage banners that show on the customer home page across all 7 slots."
           action={
             <GradientButton
-              onClick={() => { setImageMode("url"); setEditing(emptyDraft()); }}
+              onClick={() => { setImageMode("upload"); setEditing(emptyDraft()); }}
               className="gap-2"
             >
               <Plus className="h-4 w-4" /> New banner
@@ -202,7 +202,7 @@ export default function BannersPage() {
             title="No banners yet"
             description="Create your first home page banner."
             action={
-              <GradientButton onClick={() => { setImageMode("url"); setEditing(emptyDraft()); }} className="gap-2">
+              <GradientButton onClick={() => { setImageMode("upload"); setEditing(emptyDraft()); }} className="gap-2">
                 <Plus className="h-4 w-4" /> New banner
               </GradientButton>
             }
@@ -224,11 +224,20 @@ export default function BannersPage() {
                 {filtered.map((b) => (
                   <tr key={b.id} className="border-t border-border hover:bg-popover/60">
                     <td className="px-4 py-3">
-                      <div
-                        className="h-12 w-20 rounded-lg ring-1 ring-border"
-                        style={{ backgroundImage: gradientCss(b) }}
-                        title={b.gradient_from ?? ""}
-                      />
+                      {b.image_url ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={b.image_url}
+                          alt={b.title ?? ""}
+                          className="h-12 w-20 rounded-lg object-cover ring-1 ring-border"
+                        />
+                      ) : (
+                        <div
+                          className="h-12 w-20 rounded-lg ring-1 ring-border"
+                          style={{ backgroundImage: gradientCss(b) }}
+                          title={b.gradient_from ?? ""}
+                        />
+                      )}
                     </td>
                     <td className="px-4 py-3 font-mono text-xs">{b.slot}</td>
                     <td className="px-4 py-3">
@@ -341,27 +350,10 @@ export default function BannersPage() {
                 </Select>
               </div>
 
-              {/* Gradient */}
-              <div className="md:col-span-2 grid grid-cols-3 gap-3 rounded-xl border border-border bg-background/40 p-3">
-                <div className="space-y-1.5">
-                  <Label className="text-xs">Gradient from</Label>
-                  <ColorInput value={editing.gradient_from ?? ""} onChange={(v) => setEditing({ ...editing, gradient_from: v })} />
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-xs">Gradient mid (optional)</Label>
-                  <ColorInput value={editing.gradient_mid ?? ""} onChange={(v) => setEditing({ ...editing, gradient_mid: v })} />
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-xs">Gradient to</Label>
-                  <ColorInput value={editing.gradient_to ?? ""} onChange={(v) => setEditing({ ...editing, gradient_to: v })} />
-                </div>
-                <div className="col-span-3 h-12 rounded-lg ring-1 ring-border" style={{ backgroundImage: gradientCss(editing) }} />
-              </div>
-
               {/* Image */}
               <div className="md:col-span-2 space-y-2 rounded-xl border border-border bg-background/40 p-3">
                 <div className="flex items-center justify-between gap-2">
-                  <Label>Image (optional)</Label>
+                  <Label>Image</Label>
                   <div className="flex gap-1 rounded-lg bg-popover p-0.5 text-xs">
                     <button
                       type="button"
@@ -416,25 +408,6 @@ export default function BannersPage() {
         </AlertDialogContent>
       </AlertDialog>
     </>
-  );
-}
-
-function ColorInput({ value, onChange }: { value: string; onChange: (v: string) => void }) {
-  return (
-    <div className="flex items-center gap-2 rounded-lg border border-border bg-background px-2 py-1.5">
-      <input
-        type="color"
-        value={/^#[0-9a-f]{6}$/i.test(value) ? value : "#ff7a18"}
-        onChange={(e) => onChange(e.target.value)}
-        className="h-6 w-7 cursor-pointer rounded border border-border bg-transparent"
-      />
-      <input
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder="#ff7a18"
-        className="w-full bg-transparent text-sm outline-none"
-      />
-    </div>
   );
 }
 

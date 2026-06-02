@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { Users, Search, MoreHorizontal, Ban, CheckCircle2, Wallet as WalletIcon } from "lucide-react";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
@@ -19,8 +19,10 @@ import { PageHeader } from "@/components/layout/page-header";
 import { api, apiErrorMessage } from "@/lib/api";
 import { mock, type ManagedCustomer } from "@/lib/mock";
 
-const PAGE_SIZE = 10;
+const PAGE_SIZE = 20;
 const fmtINR = (n: number) => new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(n);
+
+type CustomerStats = { total: number; active: number; blocked: number; wallet_sum: number };
 
 // Normalize backend payload to ManagedCustomer — the backend may use mobile_number / wallet
 function normalizeCustomer(raw: unknown): ManagedCustomer {
@@ -41,50 +43,74 @@ export default function AdminCustomersPage() {
   const [items, setItems] = useState<ManagedCustomer[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [status, setStatus] = useState<"all" | "active" | "blocked">("all");
   const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const [stats, setStats] = useState<CustomerStats>({ total: 0, active: 0, blocked: 0, wallet_sum: 0 });
 
+  // Debounce the search box — it drives a server-side query, not local filtering.
   useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search.trim()), 350);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  // A new query or status filter always restarts at page 1.
+  useEffect(() => { setPage(1); }, [debouncedSearch, status]);
+
+  // Fetch one server page at a time; the backend owns filtering, paging and the
+  // aggregate stat counts (there are far more customers than fit on one page).
+  useEffect(() => {
+    let cancelled = false;
     void (async () => {
+      setLoading(true);
       try {
-        const res = await api.get("/admin/customers");
+        const res = await api.get("/admin/customers", {
+          params: {
+            q: debouncedSearch || undefined,
+            status: status !== "all" ? status : undefined,
+            page,
+            per_page: PAGE_SIZE,
+          },
+        });
+        if (cancelled) return;
         const payload = res.data.data;
         const raw = (Array.isArray(payload?.items) ? payload.items
                    : Array.isArray(payload) ? payload
                    : []) as unknown[];
         setItems(raw.map(normalizeCustomer));
+        setTotal(Number(payload?.total ?? raw.length));
+        const s = payload?.stats;
+        if (s) {
+          setStats({
+            total: Number(s.total ?? 0),
+            active: Number(s.active ?? 0),
+            blocked: Number(s.blocked ?? 0),
+            wallet_sum: Number(s.wallet_sum ?? 0),
+          });
+        }
       } catch (err) {
+        if (cancelled) return;
         // Network or backend not reachable — fall back to mock so the page stays usable
         toast.error(apiErrorMessage(err, "Could not load customers, showing offline sample"));
-        setItems(await mock.customers());
+        const m = await mock.customers();
+        setItems(m);
+        setTotal(m.length);
+        setStats({
+          total: m.length,
+          active: m.filter((c) => c.status === "active").length,
+          blocked: m.filter((c) => c.status === "blocked").length,
+          wallet_sum: m.reduce((sum, c) => sum + c.wallet_balance, 0),
+        });
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     })();
-  }, []);
+    return () => { cancelled = true; };
+  }, [debouncedSearch, status, page]);
 
-  const filtered = useMemo(() => items.filter((c) => {
-    if (search) {
-      const q = search.toLowerCase();
-      const name = (c.name ?? "").toLowerCase();
-      const mobile = c.mobile ?? "";
-      const pincode = c.pincode ?? "";
-      const idStr = String(c.id ?? "");
-      if (!name.includes(q) && !mobile.includes(q) && !pincode.includes(q) && !idStr.includes(q)) return false;
-    }
-    if (status !== "all" && c.status !== status) return false;
-    return true;
-  }), [items, search, status]);
-
-  useEffect(() => setPage(1), [search, status]);
-
-  const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const safePage = Math.min(page, pageCount);
-  const paged = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
-
-  const totalActive = items.filter((c) => c.status === "active").length;
-  const totalBlocked = items.filter((c) => c.status === "blocked").length;
-  const totalWallet = items.reduce((s, c) => s + c.wallet_balance, 0);
 
   async function toggle(c: ManagedCustomer) {
     const next = c.status === "active" ? "blocked" : "active";
@@ -92,6 +118,11 @@ export default function AdminCustomersPage() {
     try {
       await api.post(`/admin/customers/${c.id}/${action}`);
       setItems((cur) => cur.map((x) => (x.id === c.id ? { ...x, status: next } : x)));
+      setStats((s) => ({
+        ...s,
+        active: s.active + (next === "active" ? 1 : -1),
+        blocked: s.blocked + (next === "blocked" ? 1 : -1),
+      }));
       toast.success(`${c.name} ${next}`);
     } catch (err) {
       toast.error(apiErrorMessage(err, `Could not ${action} ${c.name}`));
@@ -105,10 +136,10 @@ export default function AdminCustomersPage() {
         <PageHeader eyebrow="Users" icon={Users} title="Customers" description="Manage customer accounts, wallet balances and access." />
 
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <StatCard label="Total customers" value={items.length}  icon={Users}        tone="brand"   spark={[4, 5, 5, 6, 6, 7, 7, 8]} />
-          <StatCard label="Active"          value={totalActive}   icon={CheckCircle2} tone="emerald" spark={[4, 5, 5, 6, 6, 7, 7, 8]} />
-          <StatCard label="Blocked"         value={totalBlocked}  icon={Ban}          tone="amber"   spark={[1, 1, 1, 1, 1, 1, 1, 1]} />
-          <StatCard label="Wallet held"     value={totalWallet}   icon={WalletIcon}   tone="violet"  spark={[3, 4, 5, 5, 6, 6, 7, 7]} format={fmtINR} />
+          <StatCard label="Total customers" value={stats.total}      icon={Users}        tone="brand"   spark={[4, 5, 5, 6, 6, 7, 7, 8]} />
+          <StatCard label="Active"          value={stats.active}     icon={CheckCircle2} tone="emerald" spark={[4, 5, 5, 6, 6, 7, 7, 8]} />
+          <StatCard label="Blocked"         value={stats.blocked}    icon={Ban}          tone="amber"   spark={[1, 1, 1, 1, 1, 1, 1, 1]} />
+          <StatCard label="Wallet held"     value={stats.wallet_sum} icon={WalletIcon}   tone="violet"  spark={[3, 4, 5, 5, 6, 6, 7, 7]} format={fmtINR} />
         </div>
 
         <div className="glass rounded-2xl p-3">
@@ -139,11 +170,11 @@ export default function AdminCustomersPage() {
           </div>
           {loading ? (
             <div className="p-3"><TableSkeleton rows={6} cols={5} /></div>
-          ) : paged.length === 0 ? (
+          ) : items.length === 0 ? (
             <EmptyState icon={Users} title="No customers match your filters" description="Try a different search or status filter." />
           ) : (
             <div className="divide-y divide-border">
-              {paged.map((c, i) => (
+              {items.map((c, i) => (
                 <motion.div
                   key={c.id}
                   initial={{ opacity: 0, y: 4 }}
@@ -188,9 +219,9 @@ export default function AdminCustomersPage() {
               ))}
             </div>
           )}
-          {!loading && filtered.length > 0 && (
+          {!loading && total > 0 && (
             <div className="border-t border-border bg-surface-2/40 px-4 py-3">
-              <Pagination page={safePage} pageCount={pageCount} onPageChange={setPage} total={filtered.length} pageSize={PAGE_SIZE} />
+              <Pagination page={safePage} pageCount={pageCount} onPageChange={setPage} total={total} pageSize={PAGE_SIZE} />
             </div>
           )}
         </div>

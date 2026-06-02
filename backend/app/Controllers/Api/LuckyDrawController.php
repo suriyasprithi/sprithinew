@@ -56,6 +56,46 @@ class LuckyDrawController extends BaseApiController
         return $this->ok(['items' => $items]);
     }
 
+    /**
+     * Imported legacy lucky-draw raffle entries (from the old `lucky_draw` table),
+     * newest first, paginated. Separate from the V2 monthly pools above.
+     */
+    public function entries(): ResponseInterface
+    {
+        if ($r = $this->requireAdmin()) return $r;
+        $p  = $this->paging(20);
+        $db = db_connect();
+
+        $total = $db->table('lucky_draw_entries')->countAllResults();
+        $rows  = $db->table('lucky_draw_entries')->orderBy('id', 'DESC')
+            ->get($p['perPage'], $p['offset'])->getResultArray();
+
+        // Resolve vendor + taluk names where the legacy ids mapped.
+        $vendorIds = array_values(array_unique(array_filter(array_map(static fn ($r) => (int) ($r['vendor_id'] ?? 0), $rows))));
+        $talukIds  = array_values(array_unique(array_filter(array_map(static fn ($r) => (int) ($r['taluk_id'] ?? 0), $rows))));
+        $vById = [];
+        $tById = [];
+        if ($vendorIds) { foreach ($db->table('users')->whereIn('id', $vendorIds)->get()->getResultArray() as $u) $vById[(int) $u['id']] = $u['name']; }
+        if ($talukIds)  { foreach ($db->table('taluks')->whereIn('id', $talukIds)->get()->getResultArray() as $t) $tById[(int) $t['id']] = $t['name']; }
+
+        $items = array_map(static fn ($r) => [
+            'id'            => (int) $r['id'],
+            'refer_code'    => $r['refer_code'],
+            'mobile_number' => $r['mobile_number'],
+            'vendor_name'   => $vById[(int) ($r['vendor_id'] ?? 0)] ?? null,
+            'taluk_name'    => $tById[(int) ($r['taluk_id'] ?? 0)] ?? null,
+            'status'        => (int) ($r['status'] ?? 0),
+            'created_at'    => $r['created_at'],
+        ], $rows);
+
+        return $this->ok([
+            'items'    => $items,
+            'total'    => $total,
+            'page'     => $p['page'],
+            'per_page' => $p['perPage'],
+        ]);
+    }
+
     /** Pick a winner for a specific pool row. Idempotent — errors if already distributed. */
     public function pickWinner(int $id): ResponseInterface
     {

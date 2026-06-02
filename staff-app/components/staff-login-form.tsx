@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { GuestGuard } from "@/components/auth-guard";
 import { useAuth } from "@/stores/auth";
-import { apiErrorMessage, StaffRole } from "@/lib/api";
+import { apiErrorMessage, StaffRole, STAFF_ROLES } from "@/lib/api";
 
 // After /staff login, redirect to the role-specific deployment so the existing
 // per-role build serves the dashboard. Same-origin localStorage carries tokens.
@@ -21,8 +21,18 @@ const ROLE_HOME: Record<StaffRole, string> = {
   driver:   "/driver/dashboard/",
 };
 
+// This deployment is built per-role (BASE_PATH = /admin, /state, …). When the
+// role is known we log in role-specifically (/auth/login) — that matches by the
+// unique (mobile, role) key, so it works even when several staff in different
+// roles share a placeholder mobile like 0000000000. Only the unified build with
+// no base path falls back to the mobile-only staff login.
+const BASE_ROLE: StaffRole | null = (() => {
+  const bp = (process.env.NEXT_PUBLIC_BASE_PATH ?? "").replace(/^\/+|\/+$/g, "");
+  return STAFF_ROLES.some((r) => r.value === bp) ? (bp as StaffRole) : null;
+})();
+
 export function StaffLoginForm() {
-  const { staffLogin, isLoading } = useAuth();
+  const { login, staffLogin, isLoading } = useAuth();
 
   const [mobile, setMobile] = useState("");
   const [password, setPassword] = useState("");
@@ -31,7 +41,9 @@ export function StaffLoginForm() {
     e.preventDefault();
     if (!mobile || !password) return toast.error("Enter mobile and password");
     try {
-      const user = await staffLogin(mobile.trim(), password);
+      const user = BASE_ROLE
+        ? await login(mobile.trim(), password, BASE_ROLE)
+        : await staffLogin(mobile.trim(), password);
       toast.success("Welcome");
       const dest = ROLE_HOME[user.role as StaffRole] ?? "/login/";
       window.location.href = dest;

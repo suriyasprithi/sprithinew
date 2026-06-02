@@ -117,7 +117,7 @@ class AuthController extends BaseApiController
         $users = new UserModel();
         $user  = $users->findByMobileAndRole($data['mobile_number'], $data['role']);
 
-        if (! $user || ! password_verify($data['password'], $user['password_hash'])) {
+        if (! $user || ! $this->verifyPassword($data['password'], $user, $users)) {
             return $this->fail('Invalid credentials', 401);
         }
         if ($user['status'] !== 'active') {
@@ -149,11 +149,35 @@ class AuthController extends BaseApiController
         }
 
         $user = $matches[0];
-        if (! password_verify($data['password'], $user['password_hash'])) {
+        if (! $this->verifyPassword($data['password'], $user, $users)) {
             return $this->fail('Invalid credentials', 401);
         }
 
         return $this->issueTokens((int) $user['id'], $user['role'], $user, 200, 'Logged in');
+    }
+
+    /**
+     * Verify a password against the new bcrypt hash, falling back to the legacy
+     * value imported from the old site (MD5 or plaintext). On a successful
+     * legacy match the password is rehashed to bcrypt and the legacy value is
+     * cleared, so each migrated user upgrades transparently on first login.
+     */
+    private function verifyPassword(string $plain, array $user, UserModel $users): bool
+    {
+        if (! empty($user['password_hash']) && password_verify($plain, $user['password_hash'])) {
+            return true;
+        }
+
+        $legacy = $user['legacy_password'] ?? null;
+        if ($legacy !== null && $legacy !== '' && (md5($plain) === $legacy || $plain === $legacy)) {
+            $users->update($user['id'], [
+                'password_hash'   => password_hash($plain, PASSWORD_BCRYPT),
+                'legacy_password' => null,
+            ]);
+            return true;
+        }
+
+        return false;
     }
 
     public function refresh(): ResponseInterface
@@ -340,6 +364,8 @@ class AuthController extends BaseApiController
             'level_3_wallet' => (float) ($user['level_3_wallet'] ?? 0),
             'buyback_wallet' => (float) ($user['buyback_wallet'] ?? 0),
             'global_wallet'  => (float) ($user['global_wallet'] ?? 0),
+            'monthly_wallet' => (float) ($user['monthly_wallet'] ?? 0),
+            'lucky_wallet'   => (float) ($user['lucky_wallet'] ?? 0),
             'token_balance'  => (int) ($user['token_balance'] ?? 0),
             'level_1_count'  => (int) ($user['level_1_count'] ?? 0),
             'level_2_count'  => (int) ($user['level_2_count'] ?? 0),
