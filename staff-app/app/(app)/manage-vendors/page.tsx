@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Store, Search, Plus, MoreHorizontal, Pencil, KeyRound } from "lucide-react";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
@@ -68,19 +68,21 @@ export default function ManageVendorsPage() {
   const [saving, setSaving] = useState(false);
   const [categories, setCategories] = useState<VendorCategoryOption[]>([]);
 
+  const loadVendors = useCallback(async () => {
+    try {
+      const res = await api.get("/vendors");
+      const payload = res.data.data;
+      const raw = (Array.isArray(payload?.items) ? payload.items : []) as unknown[];
+      setItems(raw.map(normalizeVendor));
+    } catch (err) {
+      toast.error(apiErrorMessage(err, "Could not load vendors"));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
-    void (async () => {
-      try {
-        const res = await api.get("/vendors");
-        const payload = res.data.data;
-        const raw = (Array.isArray(payload?.items) ? payload.items : []) as unknown[];
-        setItems(raw.map(normalizeVendor));
-      } catch (err) {
-        toast.error(apiErrorMessage(err, "Could not load vendors"));
-      } finally {
-        setLoading(false);
-      }
-    })();
+    void loadVendors();
     void (async () => {
       try {
         const res = await api.get("/vendor-categories");
@@ -90,7 +92,7 @@ export default function ManageVendorsPage() {
         toast.error(apiErrorMessage(err, "Could not load vendor categories"));
       }
     })();
-  }, []);
+  }, [loadVendors]);
 
   const filtered = useMemo(() => items.filter((v) => {
     if (search) {
@@ -125,7 +127,7 @@ export default function ManageVendorsPage() {
     }
     setSaving(true);
     try {
-      const res = await api.post("/vendors", {
+      await api.post("/vendors", {
         name: adding.name,
         mobile_number: adding.mobile,
         password: adding.password,
@@ -133,13 +135,10 @@ export default function ManageVendorsPage() {
         vendor_category_id: Number(adding.vendor_category_id),
         commission_pct: commissionPct,
       });
-      const newId = Number(res.data?.data?.id ?? 0);
-      setItems((cur) => [
-        { id: newId, name: adding.name, mobile: adding.mobile, shop_name: adding.shop_name, taluk: "", status: "active", vendor_category_id: Number(adding.vendor_category_id), commission_pct: commissionPct },
-        ...cur,
-      ]);
       toast.success("Vendor created");
       setAdding(null);
+      // Re-fetch so the new row shows its server-stamped taluk (the form doesn't ask for one).
+      void loadVendors();
     } catch (err) {
       toast.error(apiErrorMessage(err, "Could not create vendor"));
     } finally {

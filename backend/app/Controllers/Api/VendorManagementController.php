@@ -120,6 +120,36 @@ class VendorManagementController extends BaseApiController
             'status'        => 'active',
         ], true);
 
+        // Stamp geo from the creator's own position so the vendor is scoped to the
+        // taluk/district/state that onboarded it. The onboarding form doesn't ask for
+        // a taluk — it's implied by who is logged in. Admin/vmanager have no geo of
+        // their own, so they fall back to the request payload.
+        $geoTalukId    = isset($d['taluk_id'])    ? (int) $d['taluk_id']    : null;
+        $geoDistrictId = isset($d['district_id']) ? (int) $d['district_id'] : null;
+        $geoStateId    = isset($d['state_id'])    ? (int) $d['state_id']    : null;
+        if ($auth->role === 'taluk') {
+            $myTaluk = (new TalukModel())->where('user_id', (int) $auth->id)->first();
+            if ($myTaluk) {
+                $geoTalukId    = (int) $myTaluk['id'];
+                $geoDistrictId = (int) ($myTaluk['district_id'] ?? 0) ?: null;
+                if ($geoDistrictId) {
+                    $dist       = (new \App\Models\DistrictModel())->find($geoDistrictId);
+                    $geoStateId = $dist ? ((int) ($dist['state_id'] ?? 0) ?: null) : null;
+                }
+            }
+        } elseif ($auth->role === 'district') {
+            $myDistrict = (new \App\Models\DistrictModel())->where('user_id', (int) $auth->id)->first();
+            if ($myDistrict) {
+                $geoDistrictId = (int) $myDistrict['id'];
+                $geoStateId    = (int) ($myDistrict['state_id'] ?? 0) ?: null;
+            }
+        } elseif ($auth->role === 'state') {
+            $myState = (new \App\Models\StateModel())->where('user_id', (int) $auth->id)->first();
+            if ($myState) {
+                $geoStateId = (int) $myState['id'];
+            }
+        }
+
         $profile = [
             'user_id'            => (int) $userId,
             'vendor_category_id' => (int) $d['vendor_category_id'],
@@ -127,8 +157,9 @@ class VendorManagementController extends BaseApiController
             'shop_name'          => $d['shop_name'] ?? null,
             'address'            => $d['address'] ?? null,
             'area'               => $d['area'] ?? null,
-            'district_id'        => $d['district_id'] ?? null,
-            'taluk_id'           => $d['taluk_id'] ?? null,
+            'state_id'           => $geoStateId,
+            'district_id'        => $geoDistrictId,
+            'taluk_id'           => $geoTalukId,
             'vendor_manager_id'  => $auth->role === 'vmanager' ? $auth->id : ($d['vendor_manager_id'] ?? null),
             'gst'                => $d['gst'] ?? null,
         ];

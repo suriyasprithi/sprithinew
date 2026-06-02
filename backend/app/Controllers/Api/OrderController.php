@@ -133,6 +133,15 @@ class OrderController extends BaseApiController
             $svc->sendTyped((int) $auth->id, 'order_created', (int) $orderId, '/orders', 'Order placed', "Total ₹{$total}");
             if ($vendorId) {
                 $svc->sendTyped($vendorId, 'order_created', (int) $orderId, '/orders', 'New order', "Order #{$orderId} — ₹{$total}");
+                // Notify driver(s) assigned to this vendor — the order is theirs to deliver.
+                $drivers = (new UserModel())
+                    ->where('assigned_vendor_id', $vendorId)
+                    ->where('role', 'driver')
+                    ->where('status', 'active')
+                    ->findAll();
+                foreach ($drivers as $d) {
+                    $svc->sendTyped((int) $d['id'], 'order_created', (int) $orderId, '/driver/orders', 'New delivery', "Order #{$orderId} — ₹{$total} ready to deliver");
+                }
             }
             $svc->sendTypedToRole('admin', 'order_created', (int) $orderId, '/orders', 'New order', "Order #{$orderId} — ₹{$total}");
         } catch (\Throwable $e) {
