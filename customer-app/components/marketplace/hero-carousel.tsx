@@ -65,10 +65,14 @@ function MainCarousel({ slides }: { slides: Banner[] }) {
   const prev = useCallback(() => emblaApi?.scrollPrev(), [emblaApi]);
   const next = useCallback(() => emblaApi?.scrollNext(), [emblaApi]);
 
+  // On mobile, image slides set their own height (no letterbox); gradient-only
+  // carousels keep a fixed mobile height. Desktop always uses the grid height.
+  const anyImg = slides.some((s) => Boolean(s.image_url));
+
   return (
-    <div className="relative h-[300px] overflow-hidden rounded-3xl shadow-[0_24px_60px_-20px_rgba(180,40,20,.45)] md:h-[480px] lg:h-[520px]">
-      <div ref={emblaRef} className="h-full overflow-hidden">
-        <div className="flex h-full">
+    <div className={`relative overflow-hidden rounded-3xl shadow-[0_24px_60px_-20px_rgba(180,40,20,.45)] md:h-[480px] lg:h-[520px] ${anyImg ? "min-h-[160px]" : "h-[300px]"}`}>
+      <div ref={emblaRef} className="overflow-hidden md:h-full">
+        <div className="flex md:h-full">
           {slides.map((s, i) => (
             <SlideContent key={s.id} slide={s} active={i === idx} />
           ))}
@@ -106,9 +110,12 @@ function MainCarousel({ slides }: { slides: Banner[] }) {
 
 function SlideContent({ slide, active }: { slide: Banner; active: boolean }) {
   const Icon = lucideOrFallback(slide.icon_name);
+  const hasImg = Boolean(slide.image_url);
   return (
     <div
-      className="relative flex h-full min-w-0 flex-[0_0_100%] flex-col justify-center overflow-hidden px-7 py-8 text-white md:px-14 md:py-12"
+      className={hasImg
+        ? "relative flex min-w-0 flex-[0_0_100%] flex-col overflow-hidden text-white md:h-full md:justify-center md:px-14 md:py-12"
+        : "relative flex h-full min-w-0 flex-[0_0_100%] flex-col justify-center overflow-hidden px-7 py-8 text-white md:px-14 md:py-12"}
       style={{ backgroundImage: bannerGradient(slide) }}
     >
       {slide.image_url && (
@@ -116,7 +123,7 @@ function SlideContent({ slide, active }: { slide: Banner; active: boolean }) {
           <img
             src={slide.image_url}
             alt=""
-            className="absolute inset-0 z-0 h-full w-full object-contain"
+            className="z-0 block h-auto w-full md:absolute md:inset-0 md:h-full md:w-full md:object-contain"
             loading="lazy"
             referrerPolicy="no-referrer"
           />
@@ -174,10 +181,11 @@ function SlideContent({ slide, active }: { slide: Banner; active: boolean }) {
 
 function SideTallBanner({ banner }: { banner: Banner }) {
   const Icon = lucideOrFallback(banner.icon_name);
+  const hasImg = Boolean(banner.image_url);
   return (
     <Link
       href={banner.cta_href ?? "#"}
-      className="group relative flex h-[200px] flex-col justify-end overflow-hidden rounded-3xl p-6 text-white shadow-[0_24px_60px_-20px_rgba(120,20,20,.45)] transition-transform hover:-translate-y-1 md:h-[480px] lg:h-[520px]"
+      className={`group relative flex flex-col justify-end overflow-hidden rounded-3xl text-white shadow-[0_24px_60px_-20px_rgba(120,20,20,.45)] transition-transform hover:-translate-y-1 md:h-[480px] lg:h-[520px] md:p-6 ${hasImg ? "" : "h-[200px] p-6"}`}
       style={{ backgroundImage: bannerGradient(banner) }}
     >
       {banner.image_url && (
@@ -185,7 +193,7 @@ function SideTallBanner({ banner }: { banner: Banner }) {
           <img
             src={banner.image_url}
             alt=""
-            className="absolute inset-0 z-0 h-full w-full object-contain"
+            className="z-0 block h-auto w-full md:absolute md:inset-0 md:h-full md:w-full md:object-contain"
             loading="lazy"
             referrerPolicy="no-referrer"
           />
@@ -213,10 +221,11 @@ function SideTallBanner({ banner }: { banner: Banner }) {
 
 function SideShortBanner({ banner }: { banner: Banner }) {
   const Icon = lucideOrFallback(banner.icon_name);
+  const hasImg = Boolean(banner.image_url);
   return (
     <Link
       href={banner.cta_href ?? "#"}
-      className="group relative flex flex-col justify-end overflow-hidden rounded-3xl p-5 text-white shadow-[0_18px_40px_-16px_rgba(120,20,20,.45)] transition-transform hover:-translate-y-1"
+      className={`group relative flex flex-col justify-end overflow-hidden rounded-3xl text-white shadow-[0_18px_40px_-16px_rgba(120,20,20,.45)] transition-transform hover:-translate-y-1 md:h-full md:p-5 ${hasImg ? "" : "p-5"}`}
       style={{ backgroundImage: bannerGradient(banner) }}
     >
       {banner.image_url && (
@@ -224,7 +233,7 @@ function SideShortBanner({ banner }: { banner: Banner }) {
           <img
             src={banner.image_url}
             alt=""
-            className="absolute inset-0 z-0 h-full w-full object-contain"
+            className="z-0 block h-auto w-full md:absolute md:inset-0 md:h-full md:w-full md:object-contain"
             loading="lazy"
             referrerPolicy="no-referrer"
           />
