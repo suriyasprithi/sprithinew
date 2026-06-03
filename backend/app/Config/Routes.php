@@ -198,6 +198,11 @@ $routes->group('api/v1', ['filter' => 'cors'], static function ($routes) {
         $routes->post('(:num)/reset-password', 'Api\VendorManagementController::resetPassword/$1');
     });
 
+    // ===== Vendor templates (admin-only) — reusable category+commission presets =====
+    $routes->get('vendor-templates',           'Api\VendorTemplateController::index',      ['filter' => 'auth']);
+    $routes->post('vendor-templates',          'Api\VendorTemplateController::store',      ['filter' => 'auth']);
+    $routes->delete('vendor-templates/(:num)', 'Api\VendorTemplateController::destroy/$1', ['filter' => 'auth']);
+
     // ===== Admin (Phase 4 will rebuild payments + withdrawals admin; Phase 7 stats + exports) =====
     $routes->group('admin', ['filter' => 'auth'], static function ($routes) {
         // customers

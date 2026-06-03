@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Store, Search, Plus, MoreHorizontal, Pencil, KeyRound } from "lucide-react";
+import { Store, Search, Plus, MoreHorizontal, Pencil, KeyRound, Copy, Trash2 } from "lucide-react";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
@@ -31,6 +31,7 @@ type NewVendor = { name: string; mobile: string; shop_name: string; password: st
 type EditVendor = { id: number; name: string; shop_name: string; vendor_category_id: string; commission_pct: string };
 type ResetPw = { id: number; shop_name: string; password: string };
 type VendorCategoryOption = { id: number; name: string };
+type VendorTemplate = { id: number; name: string; vendor_category_id: number | null; commission_pct: number };
 type Vendor = ManagedVendor & { vendor_category_id: number | null; commission_pct: number };
 
 function normalizeVendor(raw: unknown): Vendor {
@@ -67,6 +68,10 @@ export default function ManageVendorsPage() {
   const [resetting, setResetting] = useState<ResetPw | null>(null);
   const [saving, setSaving] = useState(false);
   const [categories, setCategories] = useState<VendorCategoryOption[]>([]);
+  const [templates, setTemplates] = useState<VendorTemplate[]>([]);
+  const [tplOpen, setTplOpen] = useState(false);
+  const [newTpl, setNewTpl] = useState({ name: "", vendor_category_id: "", commission_pct: "10" });
+  const [tplSaving, setTplSaving] = useState(false);
 
   const loadVendors = useCallback(async () => {
     try {
@@ -81,8 +86,24 @@ export default function ManageVendorsPage() {
     }
   }, []);
 
+  const loadTemplates = useCallback(async () => {
+    try {
+      const res = await api.get("/vendor-templates");
+      const raw = (res.data?.data?.items ?? []) as Array<Record<string, unknown>>;
+      setTemplates(raw.map((r) => ({
+        id: Number(r.id ?? 0),
+        name: String(r.name ?? ""),
+        vendor_category_id: r.vendor_category_id != null ? Number(r.vendor_category_id) : null,
+        commission_pct: Number(r.commission_pct ?? 0) || 0,
+      })));
+    } catch {
+      // optional — non-blocking
+    }
+  }, []);
+
   useEffect(() => {
     void loadVendors();
+    void loadTemplates();
     void (async () => {
       try {
         const res = await api.get("/vendor-categories");
@@ -92,7 +113,7 @@ export default function ManageVendorsPage() {
         toast.error(apiErrorMessage(err, "Could not load vendor categories"));
       }
     })();
-  }, [loadVendors]);
+  }, [loadVendors, loadTemplates]);
 
   const filtered = useMemo(() => items.filter((v) => {
     if (search) {
@@ -217,6 +238,44 @@ export default function ManageVendorsPage() {
     }
   }
 
+  async function saveTemplate() {
+    if (!newTpl.name || !newTpl.vendor_category_id) { toast.error("Name and category required"); return; }
+    const pct = newTpl.commission_pct === "" ? 10 : Number(newTpl.commission_pct);
+    if (Number.isNaN(pct) || pct < 0 || pct > 100) { toast.error("Commission must be 0–100"); return; }
+    setTplSaving(true);
+    try {
+      await api.post("/vendor-templates", { name: newTpl.name, vendor_category_id: Number(newTpl.vendor_category_id), commission_pct: pct });
+      toast.success("Template saved");
+      setNewTpl({ name: "", vendor_category_id: "", commission_pct: "10" });
+      void loadTemplates();
+    } catch (err) {
+      toast.error(apiErrorMessage(err, "Could not save template"));
+    } finally {
+      setTplSaving(false);
+    }
+  }
+
+  async function deleteTemplate(id: number) {
+    try {
+      await api.delete(`/vendor-templates/${id}`);
+      setTemplates((cur) => cur.filter((t) => t.id !== id));
+      toast.success("Template deleted");
+    } catch (err) {
+      toast.error(apiErrorMessage(err, "Could not delete template"));
+    }
+  }
+
+  function applyTemplate(tplId: string) {
+    const t = templates.find((x) => String(x.id) === tplId);
+    if (!t) return;
+    setAdding((p) => p && ({
+      ...p,
+      vendor_category_id: t.vendor_category_id ? String(t.vendor_category_id) : "",
+      commission_pct: String(t.commission_pct ?? 10),
+    }));
+    toast.success(`Applied “${t.name}”`);
+  }
+
   return (
     <>
       <MobileHeader title="Vendors" />
@@ -227,9 +286,14 @@ export default function ManageVendorsPage() {
           title="Vendors"
           description="Onboard, manage and monitor shop owners in your area."
           action={
-            <GradientButton onClick={() => setAdding({ name: "", mobile: "", shop_name: "", password: "", vendor_category_id: "", commission_pct: "10" })}>
-              <Plus className="h-4 w-4" /> New vendor
-            </GradientButton>
+            <div className="flex items-center gap-2">
+              <Button variant="outline" onClick={() => setTplOpen(true)}>
+                <Copy className="h-4 w-4" /> Templates
+              </Button>
+              <GradientButton onClick={() => setAdding({ name: "", mobile: "", shop_name: "", password: "", vendor_category_id: "", commission_pct: "10" })}>
+                <Plus className="h-4 w-4" /> New vendor
+              </GradientButton>
+            </div>
           }
         />
 
@@ -335,6 +399,19 @@ export default function ManageVendorsPage() {
             <DialogDescription>Onboard a shop owner under your taluk.</DialogDescription>
           </DialogHeader>
           <div className="grid gap-3">
+            {templates.length > 0 && (
+              <div className="space-y-1.5">
+                <Label>Use template <span className="text-muted-foreground">(optional)</span></Label>
+                <Select value="" onValueChange={(v) => v && applyTemplate(v)}>
+                  <SelectTrigger className="h-10 rounded-xl bg-surface-2/60">
+                    <SelectValue placeholder="Pre-fill category + commission from a saved template" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {templates.map((t) => (<SelectItem key={t.id} value={String(t.id)}>{t.name}</SelectItem>))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
             <div className="space-y-1.5"><Label>Owner name</Label><Input value={adding?.name ?? ""} onChange={(e) => setAdding((p) => p && ({ ...p, name: e.target.value }))} /></div>
             <div className="space-y-1.5"><Label>Mobile</Label><Input inputMode="numeric" value={adding?.mobile ?? ""} onChange={(e) => setAdding((p) => p && ({ ...p, mobile: e.target.value.replace(/\D/g, "") }))} /></div>
             <div className="space-y-1.5"><Label>Shop name</Label><Input value={adding?.shop_name ?? ""} onChange={(e) => setAdding((p) => p && ({ ...p, shop_name: e.target.value }))} /></div>
@@ -436,6 +513,61 @@ export default function ManageVendorsPage() {
           <DialogFooter>
             <Button variant="ghost" onClick={() => setResetting(null)} disabled={saving}>Cancel</Button>
             <GradientButton onClick={saveResetPw} disabled={saving}>{saving ? "Saving…" : "Reset password"}</GradientButton>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={tplOpen} onOpenChange={setTplOpen}>
+        <DialogContent className="rounded-2xl border-border bg-popover">
+          <DialogHeader>
+            <DialogTitle>Vendor templates</DialogTitle>
+            <DialogDescription>Save category + commission presets to re-use when creating vendors.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="grid gap-3 rounded-xl border border-border p-3">
+              <div className="space-y-1.5"><Label>Template name</Label><Input value={newTpl.name} onChange={(e) => setNewTpl((p) => ({ ...p, name: e.target.value }))} placeholder="e.g. Grocery · 10%" /></div>
+              <div className="space-y-1.5">
+                <Label>Vendor category</Label>
+                <Select value={newTpl.vendor_category_id} onValueChange={(v) => v && setNewTpl((p) => ({ ...p, vendor_category_id: v }))}>
+                  <SelectTrigger className="h-10 rounded-xl bg-surface-2/60">
+                    <SelectValue placeholder={categories.length ? "Choose a category" : "Loading…"}>
+                      {(value: unknown) => { const c = categories.find((c) => c.id === Number(value)); return c ? c.name : ""; }}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    {categories.map((c) => (<SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5"><Label>Commission %</Label><Input type="number" step="0.01" min={0} max={100} value={newTpl.commission_pct} onChange={(e) => setNewTpl((p) => ({ ...p, commission_pct: e.target.value }))} placeholder="10" /></div>
+              <GradientButton onClick={saveTemplate} disabled={tplSaving}>{tplSaving ? "Saving…" : "Save template"}</GradientButton>
+            </div>
+            <div className="space-y-2">
+              {templates.length === 0 ? (
+                <p className="py-2 text-center text-sm text-muted-foreground">No templates yet.</p>
+              ) : templates.map((t) => {
+                const catName = categories.find((c) => c.id === t.vendor_category_id)?.name ?? "—";
+                return (
+                  <div key={t.id} className="flex items-center justify-between rounded-lg border border-border px-3 py-2">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium">{t.name}</p>
+                      <p className="truncate text-xs text-muted-foreground">{catName} · {t.commission_pct.toFixed(2)}%</p>
+                    </div>
+                    <button
+                      type="button"
+                      aria-label="Delete template"
+                      onClick={() => void deleteTemplate(t.id)}
+                      className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-destructive"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setTplOpen(false)}>Close</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
