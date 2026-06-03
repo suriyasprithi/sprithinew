@@ -67,8 +67,13 @@ api.interceptors.response.use(
       flushQueue(err, null);
       storage.remove(STORAGE_KEYS.ACCESS);
       storage.remove(STORAGE_KEYS.REFRESH);
-      if (typeof window !== "undefined" && !window.location.pathname.startsWith("/login")) {
-        window.location.href = "/login";
+      if (typeof window !== "undefined") {
+        // Keep the deployment's base path (web build = "/customer", APK = "") so we
+        // land on the real login form instead of a bare root "/login" that 404s.
+        const bp = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
+        if (!window.location.pathname.startsWith(`${bp}/login`)) {
+          window.location.href = `${bp}/login/`;
+        }
       }
       return Promise.reject(err);
     } finally {
