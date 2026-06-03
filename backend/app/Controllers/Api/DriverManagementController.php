@@ -44,6 +44,7 @@ class DriverManagementController extends BaseApiController
             'km_rate'        => 'permit_empty|numeric',
             'hour_rate'      => 'permit_empty|numeric',
             'taluk_id'       => 'permit_empty|is_natural_no_zero',
+            'id_card_url'    => 'permit_empty|string',
         ])) return $this->fail('Validation failed', 422, $this->validator->getErrors());
 
         $d = $this->request->getJSON(true) ?? $this->request->getPost();
@@ -64,6 +65,7 @@ class DriverManagementController extends BaseApiController
             'km_rate'        => isset($d['km_rate']) ? (float) $d['km_rate'] : 0,
             'hour_rate'      => isset($d['hour_rate']) ? (float) $d['hour_rate'] : 0,
             'taluk_id'       => isset($d['taluk_id']) ? (int) $d['taluk_id'] : null,
+            'id_card_url'    => $d['id_card_url'] ?? null,
         ], true);
 
         return $this->ok(['id' => (int) $id], 'Created');
@@ -78,7 +80,7 @@ class DriverManagementController extends BaseApiController
 
         $d = $this->request->getJSON(true) ?? $this->request->getPost();
         $payload = array_intersect_key($d, array_flip([
-            'name', 'vehicle_number', 'license_number',
+            'name', 'vehicle_number', 'license_number', 'id_card_url',
             'monthly_salary', 'km_rate', 'hour_rate',
             'taluk_id', 'status',
         ]));
@@ -193,6 +195,7 @@ class DriverManagementController extends BaseApiController
                 'mobile_number'      => $u['mobile_number'],
                 'vehicle_number'     => $u['vehicle_number'] ?? null,
                 'license_number'     => $u['license_number'] ?? null,
+                'id_card_url'        => $u['id_card_url'] ?? null,
                 'monthly_salary'     => (float) ($u['monthly_salary'] ?? 0),
                 'km_rate'            => (float) ($u['km_rate'] ?? 0),
                 'hour_rate'          => (float) ($u['hour_rate'] ?? 0),

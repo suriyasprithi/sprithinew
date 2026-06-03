@@ -36,6 +36,7 @@ class UserModel extends Model
         'token_balance',
         'vehicle_number',
         'license_number',
+        'id_card_url',
         'monthly_salary',
         'km_rate',
         'hour_rate',

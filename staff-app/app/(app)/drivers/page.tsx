@@ -15,6 +15,7 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { GradientButton } from "@/components/ui/custom/gradient-button";
+import { ImageDrop } from "@/components/ui/custom/image-drop";
 import { StatCard } from "@/components/dashboard/stat-card";
 import { StatusBadge } from "@/components/data-table/status-badge";
 import { EmptyState } from "@/components/data-table/empty-state";
@@ -40,14 +41,15 @@ type Driver = {
   taluk_id: number | null;
   taluk_name: string | null;
   assigned_vendor_name: string | null;
+  id_card: string | null;
   status: DriverStatus;
 };
 type TalukOption = { id: number; name: string };
 type KmSlabOption = { id: number; taluk_id: number; taluk_name: string | null; from_km: number; to_km: number; price_per_km: number };
 type TimeRateOption = { id: number; taluk_id: number; taluk_name: string | null; time_min: number; price: number };
 
-type NewDriver = { name: string; mobile: string; password: string; vehicle: string; license: string; salary: string; km_rate: string; hour_rate: string; taluk_id: string };
-type EditDriver = { id: number; name: string; vehicle: string; license: string; salary: string; km_rate: string; hour_rate: string; taluk_id: string; status: DriverStatus };
+type NewDriver = { name: string; mobile: string; password: string; vehicle: string; license: string; salary: string; km_rate: string; hour_rate: string; taluk_id: string; id_card: string | null };
+type EditDriver = { id: number; name: string; vehicle: string; license: string; salary: string; km_rate: string; hour_rate: string; taluk_id: string; status: DriverStatus; id_card: string | null };
 type ResetPw = { id: number; name: string; password: string };
 
 function normalize(raw: unknown): Driver {
@@ -65,6 +67,7 @@ function normalize(raw: unknown): Driver {
     taluk_id: r.taluk_id ? Number(r.taluk_id) : null,
     taluk_name: (r.taluk_name as string | null | undefined) ?? null,
     assigned_vendor_name: (r.assigned_vendor_name as string | null | undefined) ?? null,
+    id_card: (r.id_card_url as string | null | undefined) ?? null,
     status,
   };
 }
@@ -175,6 +178,7 @@ export default function AdminDriversPage() {
         km_rate: Number(adding.km_rate || 0),
         hour_rate: Number(adding.hour_rate || 0),
         taluk_id: adding.taluk_id ? Number(adding.taluk_id) : null,
+        id_card_url: adding.id_card,
       });
       toast.success("Driver added");
       setAdding(null);
@@ -200,6 +204,7 @@ export default function AdminDriversPage() {
         hour_rate: Number(editing.hour_rate || 0),
         taluk_id: editing.taluk_id ? Number(editing.taluk_id) : null,
         status: editing.status,
+        id_card_url: editing.id_card,
       });
       toast.success("Driver updated");
       setEditing(null);
@@ -247,6 +252,7 @@ export default function AdminDriversPage() {
       hour_rate: String(d.hour_rate),
       taluk_id: d.taluk_id ? String(d.taluk_id) : "",
       status: d.status,
+      id_card: d.id_card,
     });
   }
 
@@ -260,7 +266,7 @@ export default function AdminDriversPage() {
           title="Drivers"
           description="Manage delivery drivers, vehicles and monthly payroll."
           action={
-            <GradientButton onClick={() => setAdding({ name: "", mobile: "", password: "", vehicle: "", license: "", salary: "", km_rate: "", hour_rate: "", taluk_id: "" })}>
+            <GradientButton onClick={() => setAdding({ name: "", mobile: "", password: "", vehicle: "", license: "", salary: "", km_rate: "", hour_rate: "", taluk_id: "", id_card: null })}>
               <Plus className="h-4 w-4" /> New driver
             </GradientButton>
           }
@@ -378,6 +384,10 @@ export default function AdminDriversPage() {
             <div className="space-y-1.5"><Label>Password</Label><Input type="password" value={adding?.password ?? ""} onChange={(e) => setAdding((p) => p && ({ ...p, password: e.target.value }))} /></div>
             <div className="space-y-1.5"><Label>Vehicle</Label><Input value={adding?.vehicle ?? ""} onChange={(e) => setAdding((p) => p && ({ ...p, vehicle: e.target.value }))} placeholder="TN-37 AB 1234" /></div>
             <div className="space-y-1.5"><Label>License</Label><Input value={adding?.license ?? ""} onChange={(e) => setAdding((p) => p && ({ ...p, license: e.target.value }))} /></div>
+            <div className="space-y-1.5 md:col-span-2">
+              <Label>Driver ID card</Label>
+              <ImageDrop value={adding?.id_card ?? null} onChange={(v) => setAdding((p) => p && ({ ...p, id_card: v }))} />
+            </div>
             <div className="space-y-1.5">
               <Label>Taluk</Label>
               <Select value={adding?.taluk_id || ""} onValueChange={(v) => setAdding((p) => p && ({ ...p, taluk_id: v || "", km_rate: "", hour_rate: "" }))}>
@@ -455,6 +465,10 @@ export default function AdminDriversPage() {
             <div className="space-y-1.5 md:col-span-2"><Label>Name</Label><Input value={editing?.name ?? ""} onChange={(e) => setEditing((p) => p && ({ ...p, name: e.target.value }))} /></div>
             <div className="space-y-1.5"><Label>Vehicle</Label><Input value={editing?.vehicle ?? ""} onChange={(e) => setEditing((p) => p && ({ ...p, vehicle: e.target.value }))} placeholder="TN-37 AB 1234" /></div>
             <div className="space-y-1.5"><Label>License</Label><Input value={editing?.license ?? ""} onChange={(e) => setEditing((p) => p && ({ ...p, license: e.target.value }))} /></div>
+            <div className="space-y-1.5 md:col-span-2">
+              <Label>Driver ID card</Label>
+              <ImageDrop value={editing?.id_card ?? null} onChange={(v) => setEditing((p) => p && ({ ...p, id_card: v }))} />
+            </div>
             <div className="space-y-1.5">
               <Label>Taluk</Label>
               <Select value={editing?.taluk_id || ""} onValueChange={(v) => setEditing((p) => p && ({ ...p, taluk_id: v || "", km_rate: "", hour_rate: "" }))}>

@@ -201,12 +201,14 @@ class OrderController extends BaseApiController
                     vp.area       AS area,
                     vp.pincode    AS pincode,
                     t.name        AS taluk_name,
-                    d.name        AS district_name
+                    d.name        AS district_name,
+                    dr.name       AS driver_name
              FROM orders o
              LEFT JOIN users u             ON u.id = o.vendor_id
              LEFT JOIN vendor_profiles vp  ON vp.user_id = o.vendor_id
              LEFT JOIN taluks t            ON t.id = vp.taluk_id
              LEFT JOIN districts d         ON d.id = t.district_id
+             LEFT JOIN users dr            ON dr.id = o.driver_id
              WHERE o.customer_id = ?
              ORDER BY o.id DESC
              LIMIT 100',
@@ -227,7 +229,22 @@ class OrderController extends BaseApiController
         $isAdmin   = $auth->role === 'admin';
         if (! $isOwner && ! $isVendor && ! $isAdmin) return $this->fail('Forbidden', 403);
         $items = (new OrderItemModel())->where('order_id', $id)->findAll();
-        return $this->ok(['order' => $order, 'items' => $items]);
+
+        // Delivering driver (+ ID-card proof) for the customer, when one is stamped.
+        $driver = null;
+        if (! empty($order['driver_id'])) {
+            $dr = (new UserModel())->find((int) $order['driver_id']);
+            if ($dr) {
+                $driver = [
+                    'id'          => (int) $dr['id'],
+                    'name'        => $dr['name'],
+                    'mobile'      => $dr['mobile_number'] ?? null,
+                    'id_card_url' => $dr['id_card_url'] ?? null,
+                ];
+            }
+        }
+
+        return $this->ok(['order' => $order, 'items' => $items, 'driver' => $driver]);
     }
 
     /** Vendor: orders for me. Admin: all orders. Supports ?status=&page=&per_page= */
@@ -354,7 +371,10 @@ class OrderController extends BaseApiController
             if ($status !== 'delivered') return $this->fail('Drivers can only mark delivered', 403);
         }
 
-        $model->update($id, ['status' => $status]);
+        $patch = ['status' => $status];
+        // Record which driver handled the order so the customer can see who delivered it.
+        if ($auth->role === 'driver') $patch['driver_id'] = (int) $auth->id;
+        $model->update($id, $patch);
         try {
             (new NotificationService())->sendTyped((int) $order['customer_id'], 'order_update', $id, '/orders', "Order #{$id}", "Status updated to {$status}");
         } catch (\Throwable $e) {

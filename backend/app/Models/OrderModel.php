@@ -13,7 +13,7 @@ class OrderModel extends Model
     protected $useSoftDeletes   = false;
     protected $protectFields    = true;
 
-    protected $allowedFields = ['customer_id','vendor_id','total','status','notes'];
+    protected $allowedFields = ['customer_id','vendor_id','total','status','notes','driver_id'];
 
     protected $useTimestamps = true;
     protected $dateFormat    = 'datetime';
