@@ -11,7 +11,7 @@ import {
 } from "@/components/ui/dialog";
 import { GuestGuard } from "@/components/auth-guard";
 import { useAuth } from "@/stores/auth";
-import { api, apiErrorMessage, StaffRole } from "@/lib/api";
+import { api, apiErrorMessage, StaffRole, STAFF_ROLES } from "@/lib/api";
 
 // After login, redirect to the role-specific deployment so the existing
 // per-role build serves the dashboard. Same-origin localStorage carries tokens.
@@ -25,8 +25,9 @@ const ROLE_HOME: Record<StaffRole, string> = {
 };
 
 export default function LoginPage() {
-  const { staffLogin, isLoading } = useAuth();
+  const { login, isLoading } = useAuth();
 
+  const [role, setRole] = useState<StaffRole | "">("");
   const [mobile, setMobile] = useState("");
   const [password, setPassword] = useState("");
 
@@ -37,9 +38,10 @@ export default function LoginPage() {
 
   const onSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    if (!role) return toast.error("Select your role");
     if (!mobile || !password) return toast.error("Enter mobile and password");
     try {
-      const user = await staffLogin(mobile.trim(), password);
+      const user = await login(mobile.trim(), password, role);
       toast.success("Welcome");
       const dest = ROLE_HOME[user.role as StaffRole] ?? "/dashboard/";
       window.location.href = dest;
@@ -75,10 +77,27 @@ export default function LoginPage() {
               className="mx-auto mb-2 h-14 w-14 object-contain"
             />
             <CardTitle className="text-2xl">Staff sign in</CardTitle>
-            <p className="text-sm text-muted-foreground">Enter your mobile and password</p>
+            <p className="text-sm text-muted-foreground">Select your role, then enter mobile and password</p>
           </CardHeader>
           <CardContent>
             <form onSubmit={onSubmit} className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="role">Role</Label>
+                <select
+                  id="role"
+                  value={role}
+                  onChange={(e) => setRole(e.target.value as StaffRole | "")}
+                  disabled={isLoading}
+                  className={`h-8 w-full rounded-lg border border-input bg-transparent px-2.5 py-1 text-base outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 md:text-sm ${role === "" ? "text-muted-foreground" : ""}`}
+                >
+                  <option value="" disabled>Select role</option>
+                  {STAFF_ROLES.map((r) => (
+                    <option key={r.value} value={r.value}>
+                      {r.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
               <div className="space-y-2">
                 <Label htmlFor="mobile">Mobile number</Label>
                 <Input
