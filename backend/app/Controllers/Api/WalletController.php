@@ -44,43 +44,71 @@ class WalletController extends BaseApiController
             return $this->fail('Invalid wallet', 422);
         }
 
-        // Build OR-list of LIKE patterns for the matching tag set.
+        // Build OR-list of LIKE patterns for the matching tag set. We match both
+        // the modern [+wallet]/[-wallet] note tags AND the un-tagged legacy rows
+        // imported from u290807677_epey, so migrated users see their full history.
+        $isMain  = $wallet === 'wallet';
         $conds   = [];
         $params  = [(int) $auth->id];
         foreach ($tagWallets as $tw) {
-            $conds[] = 'notes LIKE ?';
-            $conds[] = 'notes LIKE ?';
+            $conds[]  = 'notes LIKE ?';
             $params[] = '%[+' . $tw . ']%';
+            $conds[]  = 'notes LIKE ?';
             $params[] = '%[-' . $tw . ']%';
+
+            // Legacy commission rows are tagged in notes as "level N type M
+            // [legacy income]" — surface them on the matching L1/L2/L3 card.
+            if (preg_match('/^level_([123])$/', $tw, $lvl)) {
+                $conds[]  = '(notes LIKE ? AND notes LIKE ?)';
+                $params[] = 'level ' . $lvl[1] . ' type%';
+                $params[] = '%[legacy income]%';
+            }
+        }
+        // The main wallet also carries the legacy withdrawals and purchases.
+        if ($isMain) {
+            $conds[]  = 'notes LIKE ?';
+            $params[] = '%[legacy withdraw]%';
+            $conds[]  = 'notes LIKE ?';
+            $params[] = '%[legacy purchase]%';
         }
         $where = 'user_id = ? AND (' . implode(' OR ', $conds) . ')';
 
-        $db = \Config\Database::connect();
+        // Fetch up to 2000 matching rows: totals are summed over all of them,
+        // while only the latest 100 are returned for display.
+        $db   = \Config\Database::connect();
         $rows = $db->query(
             'SELECT id, amount, type, reference, notes, created_at
              FROM wallet_transactions
              WHERE ' . $where . '
              ORDER BY id DESC
-             LIMIT 100',
+             LIMIT 2000',
             $params
         )->getResultArray();
 
-        $items = array_map(static function ($r) use ($tagWallets) {
-            $isCredit = false;
+        $map = static function ($r) use ($tagWallets) {
+            $notes      = (string) $r['notes'];
+            $isCredit   = false;
             $matchedTag = null;
+
+            // Modern tagged transactions.
             foreach ($tagWallets as $tw) {
-                if (strpos((string) $r['notes'], '[+' . $tw . ']') !== false) {
-                    $isCredit = true;
-                    $matchedTag = $tw;
-                    break;
-                }
-                if (strpos((string) $r['notes'], '[-' . $tw . ']') !== false) {
-                    $matchedTag = $tw;
-                    break;
+                if (strpos($notes, '[+' . $tw . ']') !== false) { $isCredit = true;  $matchedTag = $tw; break; }
+                if (strpos($notes, '[-' . $tw . ']') !== false) { $isCredit = false; $matchedTag = $tw; break; }
+            }
+            // Un-tagged legacy rows: income = credit to its level, withdraw/
+            // purchase = debit from the main wallet.
+            if ($matchedTag === null) {
+                if (strpos($notes, '[legacy income]') !== false) {
+                    $isCredit   = true;
+                    $matchedTag = preg_match('/^level\s+([123])\s+type/', $notes, $lm) ? 'level_' . $lm[1] : ($tagWallets[0] ?? null);
+                } elseif (strpos($notes, '[legacy withdraw]') !== false || strpos($notes, '[legacy purchase]') !== false) {
+                    $isCredit   = false;
+                    $matchedTag = 'wallet';
                 }
             }
+
             // Strip the internal [+wallet] / [-wallet] tag for display.
-            $cleanNotes = (string) $r['notes'];
+            $cleanNotes = $notes;
             foreach ($tagWallets as $tw) {
                 $cleanNotes = preg_replace('/\s*\[[+\-]' . preg_quote($tw, '/') . '\]\s*/', '', $cleanNotes);
             }
@@ -94,14 +122,18 @@ class WalletController extends BaseApiController
                 'source'     => $matchedTag,
                 'created_at' => $r['created_at'],
             ];
-        }, $rows);
+        };
+
+        $all = array_map($map, $rows);
 
         $totalCredit = 0.0;
         $totalDebit  = 0.0;
-        foreach ($items as $r) {
+        foreach ($all as $r) {
             if ($r['direction'] === 'credit') $totalCredit += $r['amount'];
             else                              $totalDebit  += $r['amount'];
         }
+
+        $items = array_slice($all, 0, 100);
 
         // Current balance (for the header card). For 'referral' sum L1+L2+L3.
         $bal = (new \App\Services\WalletService())->balances((int) $auth->id);

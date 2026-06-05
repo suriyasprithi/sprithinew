@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
-import { ArrowLeft, Search, Store } from "lucide-react";
+import { ArrowLeft, ChevronRight, MapPin, Search, Store } from "lucide-react";
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 import { ListSkeleton } from "@/components/skeletons";
@@ -12,21 +12,43 @@ import { GradientButton } from "@/components/ui/custom/gradient-button";
 import { api, apiErrorMessage } from "@/lib/api";
 import { useAuth } from "@/stores/auth";
 
-type Vendor = { id: number; name: string; mobile: string; shop_name: string | null; area: string | null; gst: string | null };
+type Vendor = { id: number; name: string; mobile: string; shop_name: string | null; address: string | null; area: string | null; gst: string | null };
 
 export default function PublicVendorsPage() {
   const { user, isHydrated } = useAuth();
   const [items, setItems] = useState<Vendor[]>([]);
   const [pincode, setPincode] = useState("");
+  const [taluks, setTaluks] = useState<{ id: number; label: string }[]>([]);
+  const [talukId, setTalukId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
 
   const load = async () => {
     setLoading(true);
-    try { const r = await api.get("/public/vendors", { params: pincode ? { pincode } : {} }); setItems((r.data.data?.items ?? []) as Vendor[]); }
+    try {
+      const params: Record<string, string> = {};
+      if (pincode) params.pincode = pincode;
+      if (talukId) params.taluk_id = String(talukId);
+      const r = await api.get("/public/vendors", { params });
+      setItems((r.data.data?.items ?? []) as Vendor[]);
+    }
     catch (err) { toast.error(apiErrorMessage(err)); }
     finally { setLoading(false); }
   };
-  useEffect(() => { void load(); }, []);
+  // Reload whenever the taluk filter changes (also runs once on mount).
+  useEffect(() => { void load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [talukId]);
+
+  // Load taluks once for the filter dropdown (labelled "Taluk — District").
+  useEffect(() => {
+    void (async () => {
+      try {
+        const r = await api.get("/public/locations");
+        const ds = (r.data?.data?.districts ?? []) as { id: number; name: string }[];
+        const ts = (r.data?.data?.taluks ?? []) as { id: number; district_id: number; name: string }[];
+        const dById = new Map(ds.map((d) => [d.id, d.name]));
+        setTaluks(ts.map((t) => ({ id: t.id, label: dById.get(t.district_id) ? `${t.name} — ${dById.get(t.district_id)}` : t.name })));
+      } catch { /* filter just stays empty */ }
+    })();
+  }, []);
 
   return (
     <main className="min-h-screen">
@@ -43,7 +65,15 @@ export default function PublicVendorsPage() {
       </header>
 
       <section className="mx-auto max-w-3xl space-y-5 p-4 md:p-8">
-        <div className="glass rounded-2xl p-3">
+        <div className="glass space-y-2 rounded-2xl p-3">
+          <select
+            value={talukId ?? ""}
+            onChange={(e) => setTalukId(e.target.value ? Number(e.target.value) : null)}
+            className="h-10 w-full rounded-xl border border-border bg-surface-2/60 px-3 text-sm outline-none focus:border-brand/50"
+          >
+            <option value="">All taluks</option>
+            {taluks.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
+          </select>
           <form onSubmit={(e) => { e.preventDefault(); void load(); }} className="flex gap-2">
             <div className="relative flex-1">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -70,17 +100,26 @@ export default function PublicVendorsPage() {
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: i * 0.03 }}
               >
-                <LuxuryCard className="p-3">
-                  <div className="flex items-center gap-3">
-                    <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl brand-gradient text-sm font-semibold text-brand-foreground">
-                      {(v.shop_name ?? v.name).charAt(0).toUpperCase()}
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-semibold">{v.shop_name ?? v.name}</p>
-                      <p className="truncate text-xs text-muted-foreground">{v.area ?? "—"} · {v.mobile}</p>
+                <Link href={`/shop-public?vendor_id=${v.id}`} className="block">
+                  <LuxuryCard className="p-3">
+                    <div className="flex items-start gap-3">
+                      <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl brand-gradient text-sm font-semibold text-brand-foreground">
+                        {(v.shop_name ?? v.name).charAt(0).toUpperCase()}
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-semibold">{v.shop_name ?? v.name}</p>
+                        {v.address && (
+                          <p className="flex items-start gap-1 text-xs text-muted-foreground">
+                            <MapPin className="mt-0.5 h-3 w-3 shrink-0" />
+                            <span className="line-clamp-2">{v.address}</span>
+                          </p>
+                        )}
+                        <p className="truncate text-xs text-muted-foreground">{v.area ?? "—"} · {v.mobile}</p>
+                      </div>
+                      <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
                     </div>
-                  </div>
-                </LuxuryCard>
+                  </LuxuryCard>
+                </Link>
               </motion.div>
             ))}
           </div>

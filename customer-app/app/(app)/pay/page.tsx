@@ -1,10 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
-import { Loader2, Wallet as WalletIcon, MapPin, Home, AlertCircle, Pencil } from "lucide-react";
+import { Loader2, Wallet as WalletIcon, Banknote, MapPin, Home, AlertCircle, Pencil } from "lucide-react";
 import { toast } from "sonner";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
@@ -37,6 +36,7 @@ export default function CheckoutPage() {
   const [loading, setLoading] = useState(true);
   const [placing, setPlacing] = useState(false);
   const [notes, setNotes] = useState("");
+  const [payMethod, setPayMethod] = useState<"wallet" | "cod">("wallet");
   const [useSavedAddress, setUseSavedAddress] = useState(false);
   const [editingAddr, setEditingAddr] = useState(false);
   const [savingAddr, setSavingAddr] = useState(false);
@@ -118,14 +118,17 @@ export default function CheckoutPage() {
   const total = subtotal + deliveryFee;
   const balance = user?.wallet_balance ?? 0;
   const hasAddress = Boolean(user?.address_line || user?.landmark || user?.city || user?.pincode);
-  const canPay = balance >= total && hasAddress && useSavedAddress;
+  const addrSelected = hasAddress && useSavedAddress;
+  const walletOk = balance >= total;
+  // COD has no balance requirement — cash is collected on delivery.
+  const canPay = addrSelected && (payMethod === "cod" || walletOk);
 
   async function place() {
     setPlacing(true);
     try {
-      const res = await api.post("/orders/place", { notes });
+      const res = await api.post("/orders/place", { notes, payment_method: payMethod });
       const orderId = res.data.data?.order_id;
-      toast.success(`Order #${orderId} placed!`);
+      toast.success(payMethod === "cod" ? `Order #${orderId} placed — pay on delivery` : `Order #${orderId} placed!`);
       // Refresh wallet balance in the auth store so /wallet + header reflect the debit.
       try { await hydrate(); } catch { /* non-fatal */ }
       router.replace("/orders");
@@ -276,21 +279,60 @@ export default function CheckoutPage() {
           <Textarea rows={3} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Landmark / instructions" className="mt-3 rounded-xl bg-surface-2/60 text-sm" />
         </LuxuryCard>
 
-        <LuxuryCard hoverLift={false} className={canPay ? "" : "border-rose-500/30 bg-rose-500/5"}>
-          <div className="flex items-center gap-3 p-4 text-sm">
-            <span className={`flex h-10 w-10 items-center justify-center rounded-xl ${canPay ? "bg-brand/10 text-brand" : "bg-rose-500/10 text-rose-400"}`}>
+        <LuxuryCard hoverLift={false} className="space-y-2 p-4">
+          <p className="text-sm font-semibold">Payment method</p>
+
+          {/* Wallet */}
+          <button
+            type="button"
+            onClick={() => setPayMethod("wallet")}
+            className={`flex w-full items-center gap-3 rounded-xl border p-3 text-left transition-colors ${
+              payMethod === "wallet" ? "border-brand bg-brand/5" : "border-border hover:border-brand/40"
+            }`}
+          >
+            <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand/10 text-brand">
               <WalletIcon className="h-4 w-4" />
             </span>
-            <div className="flex-1">
-              <p className="font-semibold">Pay from wallet</p>
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-semibold">Pay from wallet</p>
               <p className="text-xs text-muted-foreground">Balance: {fmtINR(balance)}</p>
             </div>
-            {!canPay && <span className="text-xs font-semibold uppercase tracking-wider text-rose-400">Insufficient</span>}
-          </div>
+            {payMethod === "wallet" && !walletOk && (
+              <span className="text-xs font-semibold uppercase tracking-wider text-rose-400">Insufficient</span>
+            )}
+          </button>
+
+          {/* Cash on delivery */}
+          <button
+            type="button"
+            onClick={() => setPayMethod("cod")}
+            className={`flex w-full items-center gap-3 rounded-xl border p-3 text-left transition-colors ${
+              payMethod === "cod" ? "border-brand bg-brand/5" : "border-border hover:border-brand/40"
+            }`}
+          >
+            <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-500/10 text-emerald-500">
+              <Banknote className="h-4 w-4" />
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-semibold">Cash on Delivery</p>
+              <p className="text-xs text-muted-foreground">Pay {fmtINR(total)} in cash when it arrives</p>
+            </div>
+          </button>
         </LuxuryCard>
 
+        {!canPay && (
+          <p className="flex items-center gap-1.5 text-xs text-rose-400">
+            <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+            {!addrSelected
+              ? "Select your delivery address above to continue."
+              : "Insufficient wallet balance — choose Cash on Delivery instead."}
+          </p>
+        )}
+
         <GradientButton size="lg" className="w-full" disabled={!canPay || placing} onClick={() => void place()}>
-          {placing ? <Loader2 className="h-4 w-4 animate-spin" /> : `Pay ${fmtINR(total)}`}
+          {placing
+            ? <Loader2 className="h-4 w-4 animate-spin" />
+            : payMethod === "cod" ? `Place COD Order · ${fmtINR(total)}` : `Pay ${fmtINR(total)}`}
         </GradientButton>
       </section>
     </>

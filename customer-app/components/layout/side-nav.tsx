@@ -9,7 +9,7 @@ import { useAuth } from "@/stores/auth";
 
 const ITEMS = [
   { href: "/dashboard", label: "Home",     icon: Home },
-  { href: "/shop-public", label: "Shop",   icon: ShoppingBag },
+  { href: "/vendors-public", label: "Shop",   icon: ShoppingBag },
   { href: "/cart",      label: "Cart",     icon: ShoppingCart },
   { href: "/qr",        label: "Scan",     icon: QrCode },
   { href: "/wallet",         label: "Wallet",         icon: Wallet },

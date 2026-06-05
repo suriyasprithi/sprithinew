@@ -13,10 +13,16 @@ class ShopController extends BaseApiController
     /** Customer-facing shop list — no district/taluk filter. */
     public function customerIndex(): ResponseInterface
     {
-        $q     = (string) $this->request->getGet('q');
-        $catId = (int) $this->request->getGet('category_id');
+        $q       = (string) $this->request->getGet('q');
+        $catId   = (int) $this->request->getGet('category_id');
+        $talukId = (int) $this->request->getGet('taluk_id');
 
         $users = (new UserModel())->where('role', 'vendor')->where('status', 'active');
+        if ($talukId > 0) {
+            $talukVendorIds = (new VendorProfileModel())->where('taluk_id', $talukId)->findColumn('user_id') ?: [];
+            if (empty($talukVendorIds)) return $this->ok(['items' => []]);
+            $users->whereIn('id', $talukVendorIds);
+        }
         if ($q) $users->groupStart()
             ->like('name', $q)
             ->orLike('mobile_number', $q)
@@ -52,6 +58,7 @@ class ShopController extends BaseApiController
         $items = array_map(static fn ($u) => [
             'id'            => (int) $u['id'],
             'name'          => $byId[(int) $u['id']]['shop_name'] ?? $u['name'],
+            'address'       => $byId[(int) $u['id']]['address'] ?? '',
             'area'          => $byId[(int) $u['id']]['area']    ?? '',
             'pincode'       => $byId[(int) $u['id']]['pincode'] ?? '',
             'mobile'        => $u['mobile_number']              ?? '',

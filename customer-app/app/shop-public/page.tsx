@@ -13,6 +13,7 @@ import { FloatingActions } from "@/components/marketplace/floating-actions";
 import { MarketplaceBottomNav } from "@/components/marketplace/mobile-bottom-nav";
 import { MarketplaceFooter } from "@/components/marketplace/marketplace-footer";
 import { api, apiErrorMessage } from "@/lib/api";
+import { readSavedLocation } from "@/components/marketplace/location-picker";
 
 type ApiProduct = {
   id: number; name: string; price: number | string; image: string | null;
@@ -21,6 +22,7 @@ type ApiProduct = {
   default_variant_id?: number | null;
 };
 type Category = { id: number; name: string };
+type VendorCategory = { id: number; name: string };
 
 function adapt(raw: ApiProduct): MarketplaceProduct {
   return {
@@ -48,6 +50,7 @@ function PublicShopInner() {
   const router = useRouter();
   const [items, setItems] = useState<MarketplaceProduct[]>([]);
   const [cats, setCats] = useState<Category[]>([]);
+  const [vcats, setVcats] = useState<VendorCategory[]>([]);
   // catId is derived from the URL so the dropdown <Link> clicks (which only
   // change the query string) actually re-filter the products.
   const catId = sp?.get("category_id") ? Number(sp.get("category_id")) : null;
@@ -55,10 +58,12 @@ function PublicShopInner() {
   const [q, setQ] = useState(sp?.get("q") ?? "");
   const [loading, setLoading] = useState(true);
 
-  function setCategory(id: number | null) {
+  // The tab row uses the vendor-category taxonomy (same as "Shop by Category"
+  // and Featured Categories), so the tab you arrived from stays highlighted.
+  function setVendorCategory(id: number | null) {
     const params = new URLSearchParams(sp?.toString() ?? "");
-    if (id === null) params.delete("category_id");
-    else params.set("category_id", String(id));
+    if (id === null) params.delete("vendor_category_id");
+    else params.set("vendor_category_id", String(id));
     const qs = params.toString();
     router.push(`/shop-public${qs ? `?${qs}` : ""}`);
   }
@@ -100,6 +105,27 @@ function PublicShopInner() {
   useEffect(() => { setQ(urlQ); }, [urlQ]);
   useEffect(() => { void load(urlQ); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [catId, vendorId, vendorCategoryId, talukId, districtId, stateId, urlQ]);
 
+  // Load the vendor-category tabs (location-scoped, same source as the nav bar).
+  useEffect(() => {
+    const fetchVcats = async () => {
+      try {
+        const loc = readSavedLocation();
+        const params: Record<string, string> = {};
+        if (loc?.taluk_id)         params.taluk_id    = String(loc.taluk_id);
+        else if (loc?.district_id) params.district_id = String(loc.district_id);
+        else if (loc?.state_id)    params.state_id    = String(loc.state_id);
+        const res = await api.get("/vendor-categories", { params });
+        setVcats((res.data.data?.items ?? []) as VendorCategory[]);
+      } catch { setVcats([]); }
+    };
+    void fetchVcats();
+    if (typeof window !== "undefined") {
+      const onChange = () => { void fetchVcats(); };
+      window.addEventListener("epey-location-changed", onChange);
+      return () => window.removeEventListener("epey-location-changed", onChange);
+    }
+  }, []);
+
   return (
     <div className="marketplace-theme min-h-screen pb-24 md:pb-0">
       <TopInfoBar />
@@ -136,13 +162,13 @@ function PublicShopInner() {
         </div>
       </section>
 
-      {/* Category pills */}
-      {cats.length > 0 && (
+      {/* Category tabs (vendor categories — same taxonomy as Shop by Category) */}
+      {vcats.length > 0 && (
         <section className="mx-auto max-w-7xl px-4 pt-4">
           <div className="flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-            <CategoryPill active={catId === null} onClick={() => setCategory(null)}>All</CategoryPill>
-            {cats.map((c) => (
-              <CategoryPill key={c.id} active={catId === c.id} onClick={() => setCategory(c.id)}>{c.name}</CategoryPill>
+            <CategoryPill active={vendorCategoryId === null} onClick={() => setVendorCategory(null)}>All</CategoryPill>
+            {vcats.map((c) => (
+              <CategoryPill key={c.id} active={vendorCategoryId === c.id} onClick={() => setVendorCategory(c.id)}>{c.name}</CategoryPill>
             ))}
           </div>
         </section>
@@ -158,9 +184,11 @@ function PublicShopInner() {
             <h1 className="text-xl font-bold tracking-tight md:text-2xl">
               {vendorId
                 ? (vendorName ?? "Vendor products")
-                : catId
-                  ? cats.find((c) => c.id === catId)?.name ?? "Products"
-                  : "All products"}
+                : vendorCategoryId
+                  ? vcats.find((c) => c.id === vendorCategoryId)?.name ?? "Products"
+                  : catId
+                    ? cats.find((c) => c.id === catId)?.name ?? "Products"
+                    : "All products"}
             </h1>
           </div>
           {!loading && (

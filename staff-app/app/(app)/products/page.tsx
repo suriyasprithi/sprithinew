@@ -27,6 +27,7 @@ import { EmptyState } from "@/components/data-table/empty-state";
 import { TableSkeleton } from "@/components/data-table/table-skeleton";
 import { MobileHeader } from "@/components/layout/mobile-nav";
 import { PageHeader } from "@/components/layout/page-header";
+import { ImportCsvDialog } from "@/components/products/import-csv-dialog";
 import { api, apiErrorMessage } from "@/lib/api";
 import {
   mock,
@@ -418,9 +419,34 @@ export default function VendorProductsPage() {
           title="My products"
           description={vendorCategory ? `You're listing under the ${vendorCategory.name} vendor category. Pick a product category per product.` : "Manage your storefront listings, stock and prices."}
           action={
-            <GradientButton onClick={startNew}>
-              <Plus className="h-4 w-4" /> New product
-            </GradientButton>
+            <div className="flex items-center gap-2">
+              <ImportCsvDialog
+                productCategories={productCategories}
+                existingProducts={items.map((p) => ({
+                  id: p.id,
+                  name: p.name,
+                  stock: p.stock,
+                  variants: (p.variants ?? []).map((v) => ({ sku: v.sku ?? null, options: v.options ?? {}, stock: v.stock ?? 0 })),
+                }))}
+                vendorCategoryId={vendorCategory?.id ?? null}
+                onImported={async () => {
+                  try {
+                    const res = await api.get("/vendor/products");
+                    setItems((res.data.data?.items ?? []) as VendorProduct[]);
+                  } catch { /* keep current items if reload fails */ }
+                  // Refresh categories too — the import may have created new ones.
+                  try {
+                    const params = vendorCategory ? { vendor_category_id: vendorCategory.id } : {};
+                    const res = await api.get("/catalog/categories", { params });
+                    const cats = res.data.data?.items;
+                    if (Array.isArray(cats)) setProductCategories(cats as ProductCategory[]);
+                  } catch { /* keep current categories if reload fails */ }
+                }}
+              />
+              <GradientButton onClick={startNew}>
+                <Plus className="h-4 w-4" /> New product
+              </GradientButton>
+            </div>
           }
         />
 

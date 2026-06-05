@@ -23,7 +23,9 @@ class OrderController extends BaseApiController
     {
         $auth = $this->authUser();
         if (! $auth) return $this->fail('Unauthorized', 401);
-        $notes = (string) ($this->request->getJSON(true)['notes'] ?? $this->request->getPost('notes') ?? '');
+        $body          = $this->request->getJSON(true) ?? $this->request->getPost() ?? [];
+        $notes         = (string) ($body['notes'] ?? '');
+        $paymentMethod = (($body['payment_method'] ?? 'wallet') === 'cod') ? 'cod' : 'wallet';
 
         $cart = (new CartItemModel())->where('user_id', $auth->id)->findAll();
         if (! $cart) return $this->fail('Cart is empty', 422);
@@ -53,10 +55,10 @@ class OrderController extends BaseApiController
         }
         $vendorId = count(array_unique($vendorIds)) === 1 ? $vendorIds[0] : null;
 
-        // Wallet check
+        // Wallet check (only when paying from wallet; COD is collected on delivery)
         $users = new UserModel();
         $u = $users->find($auth->id);
-        if ((float) ($u['wallet_balance'] ?? 0) < $total) {
+        if ($paymentMethod === 'wallet' && (float) ($u['wallet_balance'] ?? 0) < $total) {
             return $this->fail('Insufficient wallet balance', 402);
         }
 
@@ -73,11 +75,13 @@ class OrderController extends BaseApiController
         $orderModel = new OrderModel();
         $itemModel  = new OrderItemModel();
         $orderId = $orderModel->insert([
-            'customer_id' => $auth->id,
-            'vendor_id'   => $vendorId,
-            'total'       => $total,
-            'status'      => 'paid',
-            'notes'       => $notes ?: null,
+            'customer_id'    => $auth->id,
+            'vendor_id'      => $vendorId,
+            'total'          => $total,
+            'payment_method' => $paymentMethod,
+            // Wallet orders are paid up-front; COD stays 'pending' until delivered.
+            'status'         => $paymentMethod === 'cod' ? 'pending' : 'paid',
+            'notes'          => $notes ?: null,
         ], true);
 
         foreach ($cart as $r) {
@@ -101,21 +105,25 @@ class OrderController extends BaseApiController
             }
         }
 
-        // Debit customer wallet + record transaction
-        $users->update($auth->id, ['wallet_balance' => (float) $u['wallet_balance'] - $total]);
-        (new WalletTransactionModel())->insert([
-            'user_id'   => $auth->id,
-            'amount'    => $total,
-            'type'      => 'payment',
-            'reference' => 'order#' . $orderId,
-            'notes'     => 'Order #' . $orderId,
-        ]);
+        // Wallet orders settle immediately: debit the customer, credit the vendor
+        // 90%, and (below) run the commission cascade. COD defers all of this to
+        // delivery — see setStatus().
+        if ($paymentMethod === 'wallet') {
+            $users->update($auth->id, ['wallet_balance' => (float) $u['wallet_balance'] - $total]);
+            (new WalletTransactionModel())->insert([
+                'user_id'   => $auth->id,
+                'amount'    => $total,
+                'type'      => 'payment',
+                'reference' => 'order#' . $orderId,
+                'notes'     => 'Order #' . $orderId,
+            ]);
 
-        // Credit vendor 90% of total — the remaining 10% becomes the commission
-        // pool distributed by CommissionService below.
-        if ($vendorId) {
-            $vendorShare = round((float) $total * 0.90, 2);
-            (new WalletService())->credit($vendorId, 'wallet', $vendorShare, 'receive', 'order#' . $orderId, 'Sale (90% of order)');
+            // Credit vendor 90% of total — the remaining 10% becomes the
+            // commission pool distributed by CommissionService below.
+            if ($vendorId) {
+                $vendorShare = round((float) $total * 0.90, 2);
+                (new WalletService())->credit($vendorId, 'wallet', $vendorShare, 'receive', 'order#' . $orderId, 'Sale (90% of order)');
+            }
         }
 
         // Clear cart
@@ -148,8 +156,10 @@ class OrderController extends BaseApiController
             log_message('error', 'Order push failed: ' . $e->getMessage());
         }
 
-        // MLM commission cascade — also slow; runs in background
-        (new CommissionService())->distributeForOrder((int) $orderId, (int) $auth->id, (float) $total, $vendorId);
+        // MLM commission cascade — wallet only; COD runs this on delivery.
+        if ($paymentMethod === 'wallet') {
+            (new CommissionService())->distributeForOrder((int) $orderId, (int) $auth->id, (float) $total, $vendorId);
+        }
 
         return $response;
     }
@@ -300,11 +310,21 @@ class OrderController extends BaseApiController
         $vendorId = (int) ($driver['assigned_vendor_id'] ?? 0);
         if (! $vendorId) return $this->ok(['items' => []]);
 
-        $orders = (new OrderModel())
+        // Deliverable = new COD orders awaiting delivery (pending) + wallet orders
+        // (paid/shipped). Legacy-imported orders are excluded — they were handled
+        // on the old site and must not reappear in the driver queue.
+        $db = \Config\Database::connect();
+        $legacyIds = [];
+        if ($db->tableExists('legacy_id_map')) {
+            foreach ($db->table('legacy_id_map')->select('new_id')->where('old_table', 'order')->get()->getResultArray() as $r) {
+                $legacyIds[] = (int) $r['new_id'];
+            }
+        }
+        $builder = (new OrderModel())
             ->where('vendor_id', $vendorId)
-            ->whereIn('status', ['paid', 'shipped'])
-            ->orderBy('id', 'DESC')
-            ->findAll(200);
+            ->whereIn('status', ['pending', 'paid', 'shipped']);
+        if ($legacyIds) $builder->whereNotIn('id', $legacyIds);
+        $orders = $builder->orderBy('id', 'DESC')->findAll(200);
         if (! $orders) return $this->ok(['items' => []]);
 
         // Vendor profile for pickup address
@@ -347,6 +367,17 @@ class OrderController extends BaseApiController
         return $this->ok(['items' => $items]);
     }
 
+    /** True if this order id came from the legacy import (so COD must not re-settle). */
+    private function isLegacyOrder(int $orderId): bool
+    {
+        $db = \Config\Database::connect();
+        if (! $db->tableExists('legacy_id_map')) return false;
+        return (bool) $db->table('legacy_id_map')
+            ->where('old_table', 'order')
+            ->where('new_id', $orderId)
+            ->countAllResults();
+    }
+
     public function setStatus(int $id): ResponseInterface
     {
         $auth = $this->authUser();
@@ -375,6 +406,25 @@ class OrderController extends BaseApiController
         // Record which driver handled the order so the customer can see who delivered it.
         if ($auth->role === 'driver') $patch['driver_id'] = (int) $auth->id;
         $model->update($id, $patch);
+
+        // COD settles on delivery: the cash is now collected, so credit the vendor
+        // 90% and run the commission cascade — exactly what a wallet order does at
+        // placement. Guarded so it only fires on the first transition to delivered,
+        // and never for legacy-imported orders (already settled on the old site —
+        // their commissions came in as historical wallet_transactions).
+        if ($status === 'delivered'
+            && ($order['payment_method'] ?? 'wallet') === 'cod'
+            && ($order['status'] ?? '') !== 'delivered'
+            && ! $this->isLegacyOrder($id)) {
+            $codVendorId = ! empty($order['vendor_id']) ? (int) $order['vendor_id'] : null;
+            $codTotal    = (float) $order['total'];
+            if ($codVendorId) {
+                $vendorShare = round($codTotal * 0.90, 2);
+                (new WalletService())->credit($codVendorId, 'wallet', $vendorShare, 'receive', 'order#' . $id, 'COD sale (90% of order)');
+            }
+            (new CommissionService())->distributeForOrder($id, (int) $order['customer_id'], $codTotal, $codVendorId);
+        }
+
         try {
             (new NotificationService())->sendTyped((int) $order['customer_id'], 'order_update', $id, '/orders', "Order #{$id}", "Status updated to {$status}");
         } catch (\Throwable $e) {

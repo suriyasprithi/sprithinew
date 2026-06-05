@@ -199,13 +199,104 @@ class ProductController extends BaseApiController
         ])) {
             return $this->fail('Validation failed', 422, $this->validator->getErrors());
         }
-        $d = $this->request->getJSON(true) ?? $this->request->getPost();
+        $d        = $this->request->getJSON(true) ?? $this->request->getPost();
+        $vendorId = $auth->role === 'admin' ? (int) ($d['vendor_id'] ?? $auth->id) : (int) $auth->id;
+        $id       = $this->persistProduct($d, $vendorId);
+        return $this->ok(['id' => $id], 'Created');
+    }
+
+    /**
+     * Bulk-create products (with variants) from a CSV import.
+     * Body: { items: [ { name, price, stock?, category_id?, description?, status?,
+     *                    variant_types?, variants? }, ... ] }
+     * All-or-nothing: if any row is invalid the whole batch is rolled back so the
+     * vendor can fix the file and retry without leaving partial duplicates behind.
+     */
+    public function bulkCreate(): ResponseInterface
+    {
+        $auth = $this->authUser();
+        if (! $auth) return $this->fail('Unauthorized', 401);
+        if (! in_array($auth->role, ['vendor', 'admin'], true)) return $this->fail('Forbidden', 403);
+
+        $d     = $this->request->getJSON(true) ?? $this->request->getPost();
+        $items = $d['items'] ?? null;
+        if (! is_array($items) || ! $items) return $this->fail('No items to import', 422);
+        if (count($items) > 500)            return $this->fail('Too many rows (max 500 per import)', 422);
+
+        $db = \Config\Database::connect();
+        $db->transStart();
+
+        $created = 0;
+        $updated = 0;       // update-details
+        $addStock = 0;      // products that got stock added
+        $replaceStock = 0;  // products that got stock replaced
+        $unitsAdded = 0;    // total stock units added
+        $errors  = [];
+        foreach (array_values($items) as $i => $item) {
+            $line = $i + 1;
+            if (! is_array($item)) { $errors[] = ['row' => $line, 'error' => 'Invalid item']; continue; }
+            $name  = trim((string) ($item['name'] ?? ''));
+            $price = $item['price'] ?? null;
+            if ($name === '')                               { $errors[] = ['row' => $line, 'error' => 'Name is required']; continue; }
+            if (! is_numeric($price) || (float) $price < 0) { $errors[] = ['row' => $line, 'error' => 'Valid price is required']; continue; }
+
+            // An `id` means "act on this existing product" (matched product).
+            $pid = isset($item['id']) ? (int) $item['id'] : 0;
+            if ($pid > 0) {
+                $row = (new ProductModel())->find($pid);
+                if (! $row) { $errors[] = ['row' => $line, 'error' => "Product #{$pid} not found"]; continue; }
+                if ($auth->role !== 'admin' && (int) $row['vendor_id'] !== (int) $auth->id) {
+                    $errors[] = ['row' => $line, 'error' => "Product #{$pid} is not yours"]; continue;
+                }
+                $action = (string) ($item['action'] ?? 'update');
+                if ($action === 'add_stock' || $action === 'replace_stock') {
+                    $added = $this->applyStockChange($pid, $row, $item, $action === 'add_stock' ? 'add' : 'replace');
+                    if ($action === 'add_stock') { $addStock++; $unitsAdded += $added; }
+                    else                          { $replaceStock++; }
+                } else {
+                    $this->applyProductUpdate($pid, $item);
+                    $updated++;
+                }
+            } else {
+                $vendorId = $auth->role === 'admin' ? (int) ($item['vendor_id'] ?? $auth->id) : (int) $auth->id;
+                $this->persistProduct($item, $vendorId);
+                $created++;
+            }
+        }
+
+        if ($errors) {
+            $db->transRollback();
+            return $this->fail('Import failed — fix the listed rows and retry', 422, $errors);
+        }
+        $db->transComplete();
+        if ($db->transStatus() === false) return $this->fail('Import failed', 500);
+
+        $parts = [];
+        if ($created)      $parts[] = "{$created} created";
+        if ($updated)      $parts[] = "{$updated} updated";
+        if ($addStock)     $parts[] = "{$addStock} stock-added";
+        if ($replaceStock) $parts[] = "{$replaceStock} stock-replaced";
+        return $this->ok([
+            'created'       => $created,
+            'updated'       => $updated,
+            'stock_added'   => $addStock,
+            'stock_replaced' => $replaceStock,
+            'units_added'   => $unitsAdded,
+        ], $parts ? ('Import: ' . implode(', ', $parts)) : 'Nothing imported');
+    }
+
+    /**
+     * Insert one product plus its variants from a (decoded) request item.
+     * Shared by create() and bulkCreate(); caller resolves $vendorId + auth.
+     */
+    private function persistProduct(array $d, int $vendorId): int
+    {
         $attrs    = isset($d['attributes']) ? $this->normalizeAttributes($d['attributes']) : null;
         $vTypes   = $this->normalizeVariantTypes($d['variant_types'] ?? null);
         $variants = $this->normalizeVariants($d['variants'] ?? null, $vTypes);
         $vImages  = $this->normalizeVariantImages($d['variant_images'] ?? null, $vTypes);
         $id = (new ProductModel())->insert([
-            'vendor_id'          => $auth->role === 'admin' ? ($d['vendor_id'] ?? $auth->id) : $auth->id,
+            'vendor_id'          => $vendorId,
             'category_id'        => $d['category_id'] ?? null,
             'vendor_category_id' => isset($d['vendor_category_id']) ? (int) $d['vendor_category_id'] : null,
             'name'               => $d['name'],
@@ -220,7 +311,121 @@ class ProductController extends BaseApiController
             'status'             => $d['status'] ?? 'active',
         ], true);
         $this->syncVariants((int) $id, $variants);
-        return $this->ok(['id' => (int) $id], 'Created');
+        return (int) $id;
+    }
+
+    /** Update an existing product (fields + variants) from a decoded import item. */
+    private function applyProductUpdate(int $id, array $d): void
+    {
+        $attrs    = isset($d['attributes']) ? $this->normalizeAttributes($d['attributes']) : null;
+        $vTypes   = $this->normalizeVariantTypes($d['variant_types'] ?? null);
+        $variants = $this->normalizeVariants($d['variants'] ?? null, $vTypes);
+        $vImages  = $this->normalizeVariantImages($d['variant_images'] ?? null, $vTypes);
+        (new ProductModel())->update($id, [
+            'category_id'    => $d['category_id'] ?? null,
+            'name'           => $d['name'],
+            'description'    => $d['description'] ?? null,
+            'price'          => $d['price'],
+            'stock'          => $d['stock'] ?? 0,
+            'has_variants'   => $variants ? 1 : 0,
+            'variant_types'  => $vTypes ? json_encode($vTypes, JSON_UNESCAPED_UNICODE) : null,
+            'variant_images' => $vImages ? json_encode($vImages, JSON_UNESCAPED_UNICODE) : null,
+            'attributes'     => $attrs !== null ? json_encode($attrs, JSON_UNESCAPED_UNICODE) : null,
+            'status'         => $d['status'] ?? 'active',
+        ]);
+        $this->syncVariants($id, $variants);
+    }
+
+    /**
+     * Add or replace stock on an existing product without touching its other
+     * details. Variant products are merged per-variant (matched by SKU, then by
+     * option combination); brand-new combos are appended. Returns units added.
+     */
+    private function applyStockChange(int $id, array $row, array $d, string $mode): int
+    {
+        $pm = new ProductModel();
+        $vm = new ProductVariantModel();
+        $vTypes      = $this->normalizeVariantTypes($d['variant_types'] ?? null);
+        $csvVariants = $this->normalizeVariants($d['variants'] ?? null, $vTypes);
+        $existing    = $vm->where('product_id', $id)->findAll();
+
+        // Plain product (no variants on either side): adjust the stock column.
+        if (! $existing && ! $csvVariants) {
+            $import = (int) ($d['stock'] ?? 0);
+            $new    = $mode === 'add' ? (int) $row['stock'] + $import : $import;
+            $pm->update($id, ['stock' => $new]);
+            return $mode === 'add' ? $import : 0;
+        }
+
+        // Variant product: match each CSV combo to an existing variant.
+        $bySku = [];
+        $byOpts = [];
+        foreach ($existing as $ev) {
+            if (! empty($ev['sku'])) $bySku[mb_strtolower(trim((string) $ev['sku']))] = $ev;
+            $byOpts[$this->optionsKey($ev['options'] ?? null)] = $ev;
+        }
+        $unitsAdded = 0;
+        foreach ($csvVariants as $cv) {
+            $match = null;
+            $cvSku = mb_strtolower(trim((string) ($cv['sku'] ?? '')));
+            if ($cvSku !== '' && isset($bySku[$cvSku]))               $match = $bySku[$cvSku];
+            elseif (isset($byOpts[$this->optionsKey($cv['options'])])) $match = $byOpts[$this->optionsKey($cv['options'])];
+
+            if ($match) {
+                $new = $mode === 'add' ? (int) $match['stock'] + (int) $cv['stock'] : (int) $cv['stock'];
+                $vm->update((int) $match['id'], ['stock' => $new]);
+            } else {
+                $vm->insert([
+                    'product_id' => $id,
+                    'name'       => $cv['name'],
+                    'sku'        => $cv['sku'],
+                    'options'    => json_encode($cv['options'], JSON_UNESCAPED_UNICODE),
+                    'price'      => $cv['price'],
+                    'stock'      => (int) $cv['stock'],
+                    'image'      => $cv['image'],
+                    'status'     => $cv['status'],
+                ], false);
+            }
+            if ($mode === 'add') $unitsAdded += (int) $cv['stock'];
+        }
+
+        // Keep the product's declared variant axes in sync with any new combos.
+        $merged = $this->mergeVariantTypes($this->decodeVariantTypes($row['variant_types'] ?? null), $vTypes);
+        $pm->update($id, [
+            'has_variants'  => 1,
+            'variant_types' => $merged ? json_encode($merged, JSON_UNESCAPED_UNICODE) : null,
+        ]);
+        return $unitsAdded;
+    }
+
+    /** Axis-sorted, lowercased key for a variant option map. */
+    private function optionsKey(mixed $options): string
+    {
+        $arr = is_array($options) ? $options : (is_string($options) ? (json_decode($options, true) ?: []) : []);
+        ksort($arr);
+        $parts = [];
+        foreach ($arr as $k => $v) $parts[] = mb_strtolower(trim((string) $k)) . '=' . mb_strtolower(trim((string) $v));
+        return implode('|', $parts);
+    }
+
+    /** Union two variant_types definitions (by axis name, options de-duplicated). */
+    private function mergeVariantTypes(array $a, array $b): array
+    {
+        $out = [];
+        foreach ([$a, $b] as $set) {
+            foreach ($set as $vt) {
+                $name = trim((string) ($vt['name'] ?? ''));
+                if ($name === '') continue;
+                if (! isset($out[$name])) $out[$name] = [];
+                foreach (($vt['options'] ?? []) as $o) {
+                    $o = trim((string) $o);
+                    if ($o !== '' && ! in_array($o, $out[$name], true)) $out[$name][] = $o;
+                }
+            }
+        }
+        $res = [];
+        foreach ($out as $name => $opts) $res[] = ['name' => $name, 'options' => $opts];
+        return $res;
     }
 
     /** Drop attributes down to a flat key→scalar map. */

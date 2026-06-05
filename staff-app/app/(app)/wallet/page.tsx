@@ -40,6 +40,7 @@ const periodLabel = (p: string) => {
 export default function StaffWalletPage() {
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
+  const isVendor = user?.role === "vendor";
 
   const [pool, setPool] = useState<PoolPayload | null>(null);
   const [loadingPool, setLoadingPool] = useState(false);
@@ -81,8 +82,8 @@ export default function StaffWalletPage() {
           </LuxuryCard>
         </motion.div>
 
-        {/* Sub-wallet breakdown — global, monthly, referral, etc. */}
-        {(() => {
+        {/* Sub-wallet breakdown — global, monthly, referral, etc. (hidden for vendors) */}
+        {!isVendor && (() => {
           const breakdown = [
             { label: "Global wallet",   value: user?.global_wallet  ?? 0 },
             { label: "Monthly wallet",  value: user?.monthly_wallet ?? 0 },

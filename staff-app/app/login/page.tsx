@@ -91,7 +91,7 @@ export default function LoginPage() {
                   className={`h-8 w-full rounded-lg border border-input bg-transparent px-2.5 py-1 text-base outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 md:text-sm ${role === "" ? "text-muted-foreground" : ""}`}
                 >
                   <option value="" disabled>Select role</option>
-                  {STAFF_ROLES.map((r) => (
+                  {STAFF_ROLES.filter((r) => r.value !== "admin").map((r) => (
                     <option key={r.value} value={r.value}>
                       {r.label}
                     </option>

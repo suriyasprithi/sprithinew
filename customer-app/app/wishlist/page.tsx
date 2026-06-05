@@ -42,8 +42,11 @@ export default function WishlistPage() {
   const [items, setItems] = useState<MarketplaceProduct[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Keep the local id list in sync with the wishlist store.
+  // Keep the local id list in sync with the wishlist store. The initial read
+  // runs post-mount (not as a lazy initializer) so the static-export HTML and
+  // the client's first render agree — avoids a hydration mismatch.
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional: hydrate external store after mount
     setIds(wishlist.ids());
     return wishlist.subscribe(() => setIds(wishlist.ids()));
   }, []);
@@ -63,14 +66,25 @@ export default function WishlistPage() {
         const results = await Promise.all(
           ids.map((id) =>
             api.get(`/public/products/${id}`)
-              .then((r) => r.data.data?.item as ApiProduct | undefined)
-              .catch(() => undefined),
+              .then((r) => ({ id, product: r.data.data?.item as ApiProduct | undefined, gone: false }))
+              // Only a 404 means the product is truly gone; treat network/other
+              // errors as transient so we don't drop valid wishlist entries.
+              .catch((e) => ({
+                id,
+                product: undefined as ApiProduct | undefined,
+                gone: (e as { response?: { status?: number } })?.response?.status === 404,
+              })),
           ),
         );
         if (!active) return;
         const products = results
+          .map((r) => r.product)
           .filter((p): p is ApiProduct => !!p)
           .map(adapt);
+        // Self-heal: prune ids whose product no longer exists so the header
+        // badge can't get stuck counting dead entries (count 2, but 0 items).
+        const goneIds = results.filter((r) => r.gone).map((r) => r.id);
+        if (goneIds.length) goneIds.forEach((id) => wishlist.remove(id));
         setItems(products);
       } catch (err) {
         if (!active) return;

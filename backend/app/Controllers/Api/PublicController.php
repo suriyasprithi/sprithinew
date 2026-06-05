@@ -215,6 +215,7 @@ class PublicController extends BaseApiController
                 'name'      => $u['name'],
                 'mobile'    => $u['mobile_number'],
                 'shop_name' => $p['shop_name'] ?? null,
+                'address'   => $p['address']   ?? null,
                 'area'      => $p['area']      ?? null,
                 'pincode'   => $p['pincode']   ?? null,
                 'image'     => $p['image']     ?? null,

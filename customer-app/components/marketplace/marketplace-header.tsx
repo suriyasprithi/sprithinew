@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { Search, MapPin, ShoppingCart, Heart, Bell, User, ChevronDown } from "lucide-react";
 import { LocationPicker, readSavedLocation } from "./location-picker";
 import { useAuth } from "@/stores/auth";
+import { wishlist } from "@/lib/wishlist";
 
 export function MarketplaceHeader({ cartCount = 0, wishlistCount = 0, unreadCount = 0 }: {
   cartCount?: number;
@@ -17,6 +18,15 @@ export function MarketplaceHeader({ cartCount = 0, wishlistCount = 0, unreadCoun
   const [q, setQ] = useState("");
   const [locOpen, setLocOpen] = useState(false);
   const [locLabel, setLocLabel] = useState<string>("Coimbatore South, Coimbatore");
+  // Wishlist count is client-side (localStorage) — derive it here and keep it
+  // live via the wishlist lib, so the badge updates the moment a heart is toggled
+  // on any page. Falls back to the passed-in prop until hydrated.
+  const [liveWishlist, setLiveWishlist] = useState(wishlistCount);
+  useEffect(() => {
+    const read = () => setLiveWishlist(wishlist.ids().length);
+    read();
+    return wishlist.subscribe(read);
+  }, []);
   useEffect(() => {
     const apply = () => {
       const v = readSavedLocation();
@@ -74,7 +84,7 @@ export function MarketplaceHeader({ cartCount = 0, wishlistCount = 0, unreadCoun
 
         {/* Actions */}
         <div className="flex shrink-0 items-center gap-1 md:gap-2">
-          <IconButton href="/wishlist" aria-label="Wishlist" badge={wishlistCount}>
+          <IconButton href="/wishlist" aria-label="Wishlist" badge={liveWishlist}>
             <Heart className="h-5 w-5" />
           </IconButton>
           <IconButton href="/notifications" aria-label="Notifications" badge={unreadCount}>

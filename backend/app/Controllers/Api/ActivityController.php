@@ -138,7 +138,10 @@ class ActivityController extends BaseApiController
      * own wallet movements, referral bonuses earned, and notifications received.
      *
      * GET /api/v1/activity/mine
-     *   ?source=wallet|referral|notification
+     *   ?source=wallet,referral,notification   one or more, comma-separated (empty = all)
+     *   ?levels=1,2,3                          referral levels to include (empty = all)
+     *   ?direction=credit|debit                only money-in / money-out (rows w/o amount kept)
+     *   ?from=YYYY-MM-DD &to=YYYY-MM-DD         date range (inclusive)
      *   ?page=1 &per_page=50
      */
     public function mine(): ResponseInterface
@@ -146,21 +149,40 @@ class ActivityController extends BaseApiController
         $auth = $this->authUser();
         if (! $auth) return $this->fail('Unauthorized', 401);
 
-        $source = (string) ($this->request->getGet('source') ?? '');
-        $p      = $this->paging(50);
+        $uid = (int) $auth->id;
 
+        // ---- Parse filters (all multi-selectable / combinable) ----
+        $allSources = ['wallet', 'referral', 'notification'];
+        $sources = array_values(array_intersect(
+            $allSources,
+            array_filter(array_map('trim', explode(',', (string) ($this->request->getGet('source') ?? ''))))
+        ));
+        if (empty($sources)) $sources = $allSources;
+
+        $levels = array_values(array_filter(
+            array_map('intval', array_filter(array_map('trim', explode(',', (string) ($this->request->getGet('levels') ?? ''))), 'strlen')),
+            static fn ($l) => in_array($l, [1, 2, 3], true)
+        ));
+
+        $from      = (string) ($this->request->getGet('from') ?? '');
+        $to        = (string) ($this->request->getGet('to') ?? '');
+        $direction = (string) ($this->request->getGet('direction') ?? '');
+        if (! in_array($direction, ['credit', 'debit'], true)) $direction = '';
+
+        $p  = $this->paging(50);
         $db = Database::connect();
+
         $bindings = [];
         $unions   = [];
-        $uid      = (int) $auth->id;
 
-        if ($source === '' || $source === 'wallet') {
+        if (in_array('wallet', $sources, true)) {
             $unions[] = "
                 SELECT 'wallet' AS source,
                        wt.id   AS event_id,
                        CONCAT(UPPER(LEFT(wt.type,1)), SUBSTRING(wt.type,2),
                               CASE WHEN wt.notes IS NOT NULL AND wt.notes <> '' THEN CONCAT(' — ', wt.notes) ELSE '' END) AS title,
                        wt.amount AS amount,
+                       CASE WHEN wt.type IN ('withdraw','payment','send','debit') THEN 'debit' ELSE 'credit' END AS direction,
                        wt.created_at AS created_at
                 FROM wallet_transactions wt
                 WHERE wt.user_id = ?
@@ -168,27 +190,34 @@ class ActivityController extends BaseApiController
             $bindings[] = $uid;
         }
 
-        if ($source === '' || $source === 'referral') {
+        if (in_array('referral', $sources, true)) {
+            $levelSql = '';
+            if (! empty($levels)) {
+                $levelSql = ' AND r.level IN (' . implode(',', array_fill(0, count($levels), '?')) . ')';
+            }
             $unions[] = "
                 SELECT 'referral' AS source,
                        r.id      AS event_id,
                        CONCAT('Referral bonus L', r.level, ' for ', COALESCE(ref.name, '—')) AS title,
                        r.bonus_amount AS amount,
+                       'credit' AS direction,
                        r.created_at AS created_at
                 FROM referrals r
                 LEFT JOIN users ref ON ref.id = r.referred_id
-                WHERE r.referrer_id = ?
+                WHERE r.referrer_id = ?{$levelSql}
             ";
             $bindings[] = $uid;
+            foreach ($levels as $l) $bindings[] = $l;
         }
 
-        if ($source === '' || $source === 'notification') {
+        if (in_array('notification', $sources, true)) {
             $unions[] = "
                 SELECT 'notification' AS source,
                        n.id   AS event_id,
                        CONCAT(COALESCE(n.title, 'Notification'),
                               CASE WHEN n.body IS NOT NULL AND n.body <> '' THEN CONCAT(' — ', n.body) ELSE '' END) AS title,
                        NULL   AS amount,
+                       NULL   AS direction,
                        n.created_at AS created_at
                 FROM notifications n
                 WHERE n.user_id = ?
@@ -202,10 +231,17 @@ class ActivityController extends BaseApiController
 
         $inner = '(' . implode(' UNION ALL ', $unions) . ') AS feed';
 
-        $countSql = "SELECT COUNT(*) AS n FROM {$inner}";
+        // Outer filters that apply uniformly across every source.
+        $where = [];
+        if ($from !== '')      { $where[] = 'feed.created_at >= ?';                       $bindings[] = $from . ' 00:00:00'; }
+        if ($to   !== '')      { $where[] = 'feed.created_at <= ?';                       $bindings[] = $to   . ' 23:59:59'; }
+        if ($direction !== '') { $where[] = '(feed.direction = ? OR feed.amount IS NULL)'; $bindings[] = $direction; }
+        $whereSql = $where ? ' WHERE ' . implode(' AND ', $where) : '';
+
+        $countSql = "SELECT COUNT(*) AS n FROM {$inner}{$whereSql}";
         $total    = (int) ($db->query($countSql, $bindings)->getRow('n') ?? 0);
 
-        $pageSql = "SELECT * FROM {$inner} ORDER BY feed.created_at DESC LIMIT {$p['perPage']} OFFSET {$p['offset']}";
+        $pageSql = "SELECT * FROM {$inner}{$whereSql} ORDER BY feed.created_at DESC LIMIT {$p['perPage']} OFFSET {$p['offset']}";
         $rows    = $db->query($pageSql, $bindings)->getResultArray();
 
         $items = array_map(static function ($r) {
@@ -214,6 +250,7 @@ class ActivityController extends BaseApiController
                 'event_id'   => (int) $r['event_id'],
                 'title'      => $r['title'],
                 'amount'     => $r['amount'] !== null ? (float) $r['amount'] : null,
+                'direction'  => $r['direction'] ?? null,
                 'created_at' => $r['created_at'],
             ];
         }, $rows);

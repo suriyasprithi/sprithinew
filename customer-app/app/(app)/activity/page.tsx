@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { Activity, Bell, Gift, Wallet, Filter } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Bell, Gift, Wallet, Filter, X } from "lucide-react";
 import { toast } from "sonner";
 import { motion } from "framer-motion";
 import { AppHeader } from "@/components/layout/app-header";
@@ -13,11 +13,13 @@ const fmtINR = (n: number) =>
   new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 2 }).format(n);
 
 type Source = "wallet" | "referral" | "notification";
+type Direction = "" | "credit" | "debit";
 type ActivityItem = {
   source: Source;
   event_id: number;
   title: string;
   amount: number | null;
+  direction: "credit" | "debit" | null;
   created_at: string;
 };
 
@@ -26,6 +28,7 @@ const SOURCE_META: Record<Source, { label: string; icon: typeof Wallet; bg: stri
   referral:     { label: "Referral",     icon: Gift,   bg: "bg-pink-500/10",    fg: "text-pink-500" },
   notification: { label: "Notification", icon: Bell,   bg: "bg-sky-500/10",     fg: "text-sky-500" },
 };
+const ALL_SOURCES: Source[] = ["wallet", "referral", "notification"];
 
 function formatDateTime(iso: string): string {
   if (!iso) return "—";
@@ -39,7 +42,19 @@ export default function ActivityPage() {
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
-  const [source, setSource] = useState<"all" | Source>("all");
+
+  // Multi-select / combinable filters.
+  const [sources, setSources] = useState<Source[]>([]); // empty = all
+  const [levels, setLevels] = useState<number[]>([]);   // empty = all (referral only)
+  const [direction, setDirection] = useState<Direction>("");
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
+
+  const referralInScope = sources.length === 0 || sources.includes("referral");
+
+  // Serialized filter params (also used as effect deps so arrays compare by value).
+  const sourceParam = sources.length > 0 && sources.length < ALL_SOURCES.length ? sources.join(",") : "";
+  const levelParam = referralInScope && levels.length > 0 && levels.length < 3 ? levels.join(",") : "";
 
   useEffect(() => {
     let active = true;
@@ -47,7 +62,11 @@ export default function ActivityPage() {
       setLoading(true);
       try {
         const params: Record<string, string | number> = { page, per_page: PAGE_SIZE };
-        if (source !== "all") params.source = source;
+        if (sourceParam) params.source = sourceParam;
+        if (levelParam) params.levels = levelParam;
+        if (direction) params.direction = direction;
+        if (from) params.from = from;
+        if (to) params.to = to;
         const r = await api.get("/activity/mine", { params });
         if (!active) return;
         setItems((r.data.data?.items ?? []) as ActivityItem[]);
@@ -59,16 +78,28 @@ export default function ActivityPage() {
       } finally { if (active) setLoading(false); }
     })();
     return () => { active = false; };
-  }, [page, source]);
+  }, [page, sourceParam, levelParam, direction, from, to]);
 
-  useEffect(() => { setPage(1); }, [source]);
+  // Any filter change also returns to the first page (done in the handlers,
+  // not an effect, so we never setState synchronously inside an effect).
+  const resetPage = () => setPage(1);
+  const toggleSource = (s: Source) => {
+    setSources((cur) => (cur.includes(s) ? cur.filter((x) => x !== s) : [...cur, s]));
+    resetPage();
+  };
+  const toggleLevel = (l: number) => {
+    setLevels((cur) => (cur.includes(l) ? cur.filter((x) => x !== l) : [...cur, l]));
+    resetPage();
+  };
+  const chooseAllSources = () => { setSources([]); resetPage(); };
+  const chooseDirection = (d: Direction) => { setDirection(d); resetPage(); };
+  const changeFrom = (v: string) => { setFrom(v); resetPage(); };
+  const changeTo = (v: string) => { setTo(v); resetPage(); };
+
+  const hasFilters = sources.length > 0 || levels.length > 0 || direction !== "" || from !== "" || to !== "";
+  const clearAll = () => { setSources([]); setLevels([]); setDirection(""); setFrom(""); setTo(""); resetPage(); };
 
   const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
-  const counts = useMemo(() => ({
-    wallet:       items.filter((i) => i.source === "wallet").length,
-    referral:     items.filter((i) => i.source === "referral").length,
-    notification: items.filter((i) => i.source === "notification").length,
-  }), [items]);
 
   return (
     <>
@@ -82,12 +113,53 @@ export default function ActivityPage() {
           </p>
         </div>
 
-        {/* Source filter */}
-        <div className="flex flex-wrap gap-2">
-          <FilterPill active={source === "all"}          onClick={() => setSource("all")}          label={`All (${total})`} />
-          <FilterPill active={source === "wallet"}       onClick={() => setSource("wallet")}       label={`Wallet${source === "wallet" ? ` (${counts.wallet})` : ""}`} />
-          <FilterPill active={source === "referral"}     onClick={() => setSource("referral")}     label={`Referral${source === "referral" ? ` (${counts.referral})` : ""}`} />
-          <FilterPill active={source === "notification"} onClick={() => setSource("notification")} label={`Notification${source === "notification" ? ` (${counts.notification})` : ""}`} />
+        {/* Filters */}
+        <div className="space-y-2.5">
+          {/* Source — multi-select */}
+          <div className="flex flex-wrap gap-2">
+            <FilterPill active={sources.length === 0} onClick={chooseAllSources} label={`All (${total})`} />
+            {ALL_SOURCES.map((s) => (
+              <FilterPill key={s} active={sources.includes(s)} onClick={() => toggleSource(s)} label={SOURCE_META[s].label} />
+            ))}
+          </div>
+
+          {/* Referral level — multi-select (only when referral is in scope) */}
+          {referralInScope && (
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-[11px] uppercase tracking-wider text-muted-foreground">Level</span>
+              {[1, 2, 3].map((l) => (
+                <FilterPill key={l} small active={levels.includes(l)} onClick={() => toggleLevel(l)} label={`L${l}`} />
+              ))}
+            </div>
+          )}
+
+          {/* Direction + date range */}
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-[11px] uppercase tracking-wider text-muted-foreground">Type</span>
+            <FilterPill small active={direction === ""}       onClick={() => chooseDirection("")}       label="All" />
+            <FilterPill small active={direction === "credit"} onClick={() => chooseDirection("credit")} label="Credit" />
+            <FilterPill small active={direction === "debit"}  onClick={() => chooseDirection("debit")}  label="Debit" />
+            <span className="mx-0.5 h-4 w-px bg-border" />
+            <input
+              type="date" value={from} max={to || undefined} onChange={(e) => changeFrom(e.target.value)}
+              className="rounded-lg border border-border bg-surface px-2 py-1 text-xs"
+              aria-label="From date"
+            />
+            <span className="text-xs text-muted-foreground">to</span>
+            <input
+              type="date" value={to} min={from || undefined} onChange={(e) => changeTo(e.target.value)}
+              className="rounded-lg border border-border bg-surface px-2 py-1 text-xs"
+              aria-label="To date"
+            />
+            {hasFilters && (
+              <button
+                type="button" onClick={clearAll}
+                className="inline-flex items-center gap-1 rounded-full border border-border bg-surface px-2.5 py-1 text-xs font-medium text-muted-foreground hover:border-brand/40"
+              >
+                <X className="h-3 w-3" /> Clear
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Feed */}
@@ -102,15 +174,16 @@ export default function ActivityPage() {
             <Filter className="mx-auto mb-2 h-8 w-8 text-muted-foreground" />
             <p className="text-sm font-medium">No activity yet</p>
             <p className="mt-1 text-xs text-muted-foreground">
-              {source === "all"
-                ? "When you transact, refer friends, or receive notifications, they will appear here."
-                : "Try a different filter or check back later."}
+              {hasFilters
+                ? "No events match these filters. Try widening or clearing them."
+                : "When you transact, refer friends, or receive notifications, they will appear here."}
             </p>
           </LuxuryCard>
         ) : (
           <div className="space-y-2">
             {items.map((it, i) => {
               const M = SOURCE_META[it.source];
+              const isDebit = it.direction === "debit";
               return (
                 <motion.div
                   key={`${it.source}-${it.event_id}`}
@@ -129,8 +202,8 @@ export default function ActivityPage() {
                       </p>
                     </div>
                     {it.amount != null && (
-                      <p className={`shrink-0 text-sm font-bold ${it.amount >= 0 ? "text-emerald-500" : "text-rose-500"}`}>
-                        {it.amount >= 0 ? "+" : ""}{fmtINR(it.amount)}
+                      <p className={`shrink-0 text-sm font-bold ${isDebit ? "text-rose-500" : "text-emerald-500"}`}>
+                        {isDebit ? "−" : "+"}{fmtINR(Math.abs(it.amount))}
                       </p>
                     )}
                   </LuxuryCard>
@@ -169,13 +242,14 @@ export default function ActivityPage() {
   );
 }
 
-function FilterPill({ active, onClick, label }: { active: boolean; onClick: () => void; label: string }) {
+function FilterPill({ active, onClick, label, small }: { active: boolean; onClick: () => void; label: string; small?: boolean }) {
   return (
     <button
       type="button"
       onClick={onClick}
       className={
-        "rounded-full border px-3 py-1.5 text-xs font-medium transition-colors " +
+        "rounded-full border font-medium transition-colors " +
+        (small ? "px-2.5 py-1 text-[11px] " : "px-3 py-1.5 text-xs ") +
         (active
           ? "border-brand bg-brand/10 text-brand"
           : "border-border bg-surface hover:border-brand/40")
