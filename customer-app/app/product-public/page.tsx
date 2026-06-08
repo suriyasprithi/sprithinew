@@ -83,6 +83,7 @@ function pickValue(
 type ApiProduct = {
   id: number; name: string; price: number | string; image: string | null;
   stock: number; category_id: number | null; vendor_name?: string | null;
+  has_variants?: boolean; default_variant_id?: number | null;
 };
 type AttributeField = {
   key: string; label: string;
@@ -108,6 +109,8 @@ function adaptRelated(raw: ApiProduct): MarketplaceProduct {
     image: raw.image,
     vendor_name: raw.vendor_name ?? null,
     stock: raw.stock,
+    has_variants: !!raw.has_variants,
+    default_variant_id: raw.default_variant_id ?? null,
   };
 }
 

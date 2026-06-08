@@ -66,6 +66,55 @@ class DeliveryRateController extends BaseApiController
         return $this->ok(['items' => $this->decorate($rows)]);
     }
 
+    /**
+     * Time-based delivery rates for the current customer's cart vendor's taluk.
+     * Used by the checkout page to populate the delivery-fee dropdown. Returned
+     * cheapest-first so the UI can default-select the lowest price.
+     */
+    public function customerTimeRates(): ResponseInterface
+    {
+        $auth = $this->authUser();
+        if (! $auth) return $this->fail('Unauthorized', 401);
+
+        $talukId = $this->cartTalukId((int) $auth->id);
+        if (! $talukId) return $this->ok(['items' => [], 'taluk_id' => 0]);
+
+        // The rate table has exact-duplicate rows (legacy import) — collapse
+        // identical (time_min, price) pairs so the dropdown shows each option
+        // once. MIN(id) is a real row in this taluk, so place() still validates.
+        $rates = (new DeliveryTimeRateModel())
+            ->select('MIN(id) AS id, time_min, price')
+            ->where('taluk_id', $talukId)
+            ->groupBy(['time_min', 'price'])
+            ->orderBy('price', 'ASC')
+            ->orderBy('time_min', 'DESC')
+            ->findAll();
+
+        return $this->ok([
+            'items'    => array_map(static fn ($r) => [
+                'id'       => (int) $r['id'],
+                'time_min' => (int) $r['time_min'],
+                'price'    => (float) $r['price'],
+            ], $rates),
+            'taluk_id' => $talukId,
+        ]);
+    }
+
+    /** Resolve the taluk of the (first) vendor in the customer's cart, or 0. */
+    private function cartTalukId(int $userId): int
+    {
+        $cart = (new CartItemModel())->where('user_id', $userId)->findAll();
+        if (! $cart) return 0;
+
+        $productIds = array_values(array_unique(array_map(static fn ($r) => (int) $r['product_id'], $cart)));
+        $products   = $productIds ? (new ProductModel())->whereIn('id', $productIds)->findAll() : [];
+        $vendorIds  = array_values(array_unique(array_filter(array_map(static fn ($p) => (int) ($p['vendor_id'] ?? 0), $products))));
+        if (! $vendorIds) return 0;
+
+        $vendorProfile = (new VendorProfileModel())->where('user_id', (int) $vendorIds[0])->first();
+        return (int) ($vendorProfile['taluk_id'] ?? 0);
+    }
+
     public function createKm(): ResponseInterface
     {
         if ($r = $this->requireRole(['admin'])) return $r;

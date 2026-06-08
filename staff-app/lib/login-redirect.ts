@@ -12,6 +12,18 @@
  *     would either show a blank screen or stay stuck on the splash. We use the
  *     in-app /login route via the Next.js router instead.
  */
+/**
+ * Login URL for a full-page redirect after logout (window.location).
+ * Admin uses the hidden /admin/control/; other per-role web builds use the
+ * unified /admin/login/; the Capacitor APK (basePath="") uses the in-app route.
+ */
+export function loginUrl(): string {
+  const basePath = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
+  if (basePath === "") return "/login/";
+  if (basePath === "/admin") return "/admin/control/";
+  return "/admin/login/";
+}
+
 export function goToLogin(router?: { replace: (href: string) => void }): void {
   if (typeof window === "undefined") return;
   const basePath = process.env.NEXT_PUBLIC_BASE_PATH ?? "";

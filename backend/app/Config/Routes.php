@@ -96,6 +96,8 @@ $routes->group('api/v1', ['filter' => 'cors'], static function ($routes) {
 
     // Customer-scoped: KM slabs for the current cart's vendor's taluk.
     $routes->get('customer/delivery-rates/km', 'Api\DeliveryRateController::customerSlabs', ['filter' => 'auth']);
+    // Customer-scoped: time-based delivery rates (checkout delivery-fee dropdown).
+    $routes->get('customer/delivery-rates/time', 'Api\DeliveryRateController::customerTimeRates', ['filter' => 'auth']);
 
     // Customer-scoped: saved delivery addresses (multiple + one default).
     $routes->group('customer/addresses', ['filter' => 'auth'], static function ($routes) {

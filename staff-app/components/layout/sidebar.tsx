@@ -6,6 +6,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { ChevronsLeft, ChevronsRight, LogOut } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/stores/auth";
+import { loginUrl } from "@/lib/login-redirect";
 import { useSidebar } from "@/stores/sidebar";
 import { menuFor, ROLE_LABEL } from "@/lib/role-menu";
 import type { StaffRole } from "@/lib/api";
@@ -21,9 +22,7 @@ export function Sidebar() {
 
   const onLogout = async () => {
     await logout();
-    const basePath = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
-    if (basePath === "") window.location.assign("/login/");
-    else window.location.href = "/admin/login/";
+    window.location.href = loginUrl();
   };
 
   return (

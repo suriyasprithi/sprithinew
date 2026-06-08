@@ -57,29 +57,28 @@ export default function CheckoutPage() {
   const [makeDefault, setMakeDefault] = useState(false);
   const [savingAddr, setSavingAddr] = useState(false);
 
-  type KmSlab = { id: number; from_km: number; to_km: number; price_per_km: number };
-  const [smallestSlab, setSmallestSlab] = useState<KmSlab | null>(null);
+  type TimeRate = { id: number; time_min: number; price: number };
+  const [rates, setRates] = useState<TimeRate[]>([]);
+  const [rateId, setRateId] = useState<number | null>(null);
 
   useEffect(() => {
     void (async () => {
       try {
-        const res = await api.get("/customer/delivery-rates/km");
+        const res = await api.get("/customer/delivery-rates/time");
         const raw = (Array.isArray(res.data.data?.items) ? res.data.data.items : []) as unknown[];
-        const slabs = raw.map((r) => {
+        const list = raw.map((r) => {
           const x = r as Record<string, unknown>;
           return {
             id: Number(x.id ?? 0),
-            from_km: Number(x.from_km ?? 0),
-            to_km: Number(x.to_km ?? 0),
-            price_per_km: Number(x.price_per_km ?? 0),
+            time_min: Number(x.time_min ?? 0),
+            price: Number(x.price ?? 0),
           };
         });
-        const smallest = slabs.length
-          ? slabs.reduce((best, s) => (s.from_km < best.from_km ? s : best), slabs[0])
-          : null;
-        setSmallestSlab(smallest);
+        setRates(list);
+        // API returns cheapest-first → default-select the cheapest option.
+        if (list.length) setRateId(list[0].id);
       } catch {
-        // Non-blocking — falls back to flat fee
+        // Non-blocking — no rates for this taluk → free delivery (₹0).
       }
     })();
   }, []);
@@ -139,9 +138,8 @@ export default function CheckoutPage() {
   }
 
   const subtotal = items.reduce((s, i) => s + Number(i.price) * i.qty, 0);
-  const deliveryFee = smallestSlab
-    ? Math.round(smallestSlab.to_km * smallestSlab.price_per_km * 100) / 100
-    : 25;
+  const selectedRate = rates.find((r) => r.id === rateId) ?? null;
+  const deliveryFee = selectedRate ? selectedRate.price : 0;
   const total = subtotal + deliveryFee;
   const balance = user?.wallet_balance ?? 0;
   const selected = addresses.find((a) => a.id === selectedId) ?? null;
@@ -153,7 +151,7 @@ export default function CheckoutPage() {
     if (!selectedId) { toast.error("Select a delivery address"); return; }
     setPlacing(true);
     try {
-      const res = await api.post("/orders/place", { notes, payment_method: payMethod, address_id: selectedId });
+      const res = await api.post("/orders/place", { notes, payment_method: payMethod, address_id: selectedId, delivery_rate_id: rateId });
       const orderId = res.data.data?.order_id;
       toast.success(payMethod === "cod" ? `Order #${orderId} placed — pay on delivery` : `Order #${orderId} placed!`);
       try { await hydrate(); } catch { /* non-fatal */ }
@@ -189,16 +187,24 @@ export default function CheckoutPage() {
 
         <LuxuryCard hoverLift={false} className="space-y-2 p-4 text-sm">
           <div className="flex justify-between"><span className="text-muted-foreground">Subtotal</span><span>{fmtINR(subtotal)}</span></div>
-          <div className="flex items-baseline justify-between">
-            <span className="text-muted-foreground">
-              Delivery fee
-              {smallestSlab && (
-                <span className="ml-1 text-xs text-muted-foreground/70">
-                  ({smallestSlab.to_km} km × {fmtINR(smallestSlab.price_per_km)}/km)
-                </span>
-              )}
-            </span>
-            <span>{fmtINR(deliveryFee)}</span>
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-muted-foreground">Delivery fee</span>
+            {rates.length > 0 ? (
+              <select
+                value={rateId ?? ""}
+                onChange={(e) => setRateId(Number(e.target.value))}
+                aria-label="Delivery option"
+                className="rounded-lg border border-border bg-surface-2/60 px-2 py-1 text-sm font-medium outline-none focus:border-brand/50"
+              >
+                {rates.map((r) => (
+                  <option key={r.id} value={r.id}>
+                    {r.time_min} min — {fmtINR(r.price)}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <span>{fmtINR(deliveryFee)}</span>
+            )}
           </div>
           <div className="mt-2 flex justify-between border-t border-border pt-2 text-base font-bold"><span>Total</span><span className="text-brand">{fmtINR(total)}</span></div>
         </LuxuryCard>

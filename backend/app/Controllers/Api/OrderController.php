@@ -4,6 +4,7 @@ namespace App\Controllers\Api;
 
 use App\Models\CartItemModel;
 use App\Models\CustomerAddressModel;
+use App\Models\DeliveryTimeRateModel;
 use App\Models\OrderItemModel;
 use App\Models\OrderModel;
 use App\Models\ProductModel;
@@ -56,6 +57,25 @@ class OrderController extends BaseApiController
         }
         $vendorId = count(array_unique($vendorIds)) === 1 ? $vendorIds[0] : null;
 
+        // Delivery fee: validate the customer's chosen time-rate against the cart
+        // vendor's taluk server-side (never trust a client-sent amount). The order
+        // total becomes items_subtotal ($total) + delivery fee, but all vendor /
+        // commission / token math below stays on $total (items only) so the vendor
+        // never gets a cut of the delivery fee.
+        $deliveryFee     = 0.0;
+        $deliveryMinutes = null;
+        $rateId = (int) ($body['delivery_rate_id'] ?? 0);
+        if ($rateId && $vendorId) {
+            $vp      = (new VendorProfileModel())->where('user_id', $vendorId)->first();
+            $talukId = (int) ($vp['taluk_id'] ?? 0);
+            $rate    = (new DeliveryTimeRateModel())->find($rateId);
+            if ($rate && $talukId && (int) $rate['taluk_id'] === $talukId) {
+                $deliveryFee     = (float) $rate['price'];
+                $deliveryMinutes = (int) $rate['time_min'];
+            }
+        }
+        $grandTotal = $total + $deliveryFee;
+
         // Wallet check (only when paying from wallet; COD is collected on delivery)
         $users = new UserModel();
         $u = $users->find($auth->id);
@@ -84,7 +104,7 @@ class OrderController extends BaseApiController
         if ($deliveryAddress === '') {
             return $this->fail('Add a delivery address before placing your order', 422);
         }
-        if ($paymentMethod === 'wallet' && (float) ($u['wallet_balance'] ?? 0) < $total) {
+        if ($paymentMethod === 'wallet' && (float) ($u['wallet_balance'] ?? 0) < $grandTotal) {
             return $this->fail('Insufficient wallet balance', 402);
         }
 
@@ -103,7 +123,9 @@ class OrderController extends BaseApiController
         $orderId = $orderModel->insert([
             'customer_id'    => $auth->id,
             'vendor_id'      => $vendorId,
-            'total'          => $total,
+            'total'          => $grandTotal,
+            'delivery_fee'   => $deliveryFee,
+            'delivery_minutes' => $deliveryMinutes,
             'payment_method' => $paymentMethod,
             // Wallet orders are paid up-front; COD stays 'pending' until delivered.
             'status'         => $paymentMethod === 'cod' ? 'pending' : 'paid',
@@ -136,20 +158,30 @@ class OrderController extends BaseApiController
         // 90%, and (below) run the commission cascade. COD defers all of this to
         // delivery — see setStatus().
         if ($paymentMethod === 'wallet') {
-            $users->update($auth->id, ['wallet_balance' => (float) $u['wallet_balance'] - $total]);
+            $users->update($auth->id, ['wallet_balance' => (float) $u['wallet_balance'] - $grandTotal]);
             (new WalletTransactionModel())->insert([
                 'user_id'   => $auth->id,
-                'amount'    => $total,
+                'amount'    => $grandTotal,
                 'type'      => 'payment',
                 'reference' => 'order#' . $orderId,
                 'notes'     => 'Order #' . $orderId,
             ]);
 
-            // Credit vendor 90% of total — the remaining 10% becomes the
-            // commission pool distributed by CommissionService below.
+            // Credit vendor 90% of the items subtotal — the remaining 10% becomes
+            // the commission pool distributed by CommissionService below. The
+            // vendor never gets a share of the delivery fee.
             if ($vendorId) {
                 $vendorShare = round((float) $total * 0.90, 2);
                 (new WalletService())->credit($vendorId, 'wallet', $vendorShare, 'receive', 'order#' . $orderId, 'Sale (90% of order)');
+            }
+
+            // Delivery fee is the platform's logistics revenue → admin pool, so the
+            // amount debited from the customer is fully accounted for.
+            if ($deliveryFee > 0) {
+                \Config\Database::connect()->table('system_pools')
+                    ->where('pool_key', 'admin_wallet')
+                    ->set('balance', "balance + {$deliveryFee}", false)
+                    ->update();
             }
         }
 
@@ -165,9 +197,9 @@ class OrderController extends BaseApiController
         // Notify customer + vendor + all admins (slow — runs after response)
         $svc = new NotificationService();
         try {
-            $svc->sendTyped((int) $auth->id, 'order_created', (int) $orderId, '/orders', 'Order placed', "Total ₹{$total}");
+            $svc->sendTyped((int) $auth->id, 'order_created', (int) $orderId, '/orders', 'Order placed', "Total ₹{$grandTotal}");
             if ($vendorId) {
-                $svc->sendTyped($vendorId, 'order_created', (int) $orderId, '/orders', 'New order', "Order #{$orderId} — ₹{$total}");
+                $svc->sendTyped($vendorId, 'order_created', (int) $orderId, '/orders', 'New order', "Order #{$orderId} — ₹{$grandTotal}");
                 // Notify driver(s) assigned to this vendor — the order is theirs to deliver.
                 $drivers = (new UserModel())
                     ->where('assigned_vendor_id', $vendorId)
@@ -175,10 +207,10 @@ class OrderController extends BaseApiController
                     ->where('status', 'active')
                     ->findAll();
                 foreach ($drivers as $d) {
-                    $svc->sendTyped((int) $d['id'], 'order_created', (int) $orderId, '/driver/orders', 'New delivery', "Order #{$orderId} — ₹{$total} ready to deliver");
+                    $svc->sendTyped((int) $d['id'], 'order_created', (int) $orderId, '/driver/orders', 'New delivery', "Order #{$orderId} — ₹{$grandTotal} ready to deliver");
                 }
             }
-            $svc->sendTypedToRole('admin', 'order_created', (int) $orderId, '/orders', 'New order', "Order #{$orderId} — ₹{$total}");
+            $svc->sendTypedToRole('admin', 'order_created', (int) $orderId, '/orders', 'New order', "Order #{$orderId} — ₹{$grandTotal}");
         } catch (\Throwable $e) {
             log_message('error', 'Order push failed: ' . $e->getMessage());
         }
@@ -449,12 +481,14 @@ class OrderController extends BaseApiController
             && ($order['status'] ?? '') !== 'delivered'
             && ! $this->isLegacyOrder($id)) {
             $codVendorId = ! empty($order['vendor_id']) ? (int) $order['vendor_id'] : null;
-            $codTotal    = (float) $order['total'];
+            // Settle vendor share + commission on the items subtotal only — the
+            // delivery fee (collected in cash) is not the vendor's revenue.
+            $codItems = (float) $order['total'] - (float) ($order['delivery_fee'] ?? 0);
             if ($codVendorId) {
-                $vendorShare = round($codTotal * 0.90, 2);
+                $vendorShare = round($codItems * 0.90, 2);
                 (new WalletService())->credit($codVendorId, 'wallet', $vendorShare, 'receive', 'order#' . $id, 'COD sale (90% of order)');
             }
-            (new CommissionService())->distributeForOrder($id, (int) $order['customer_id'], $codTotal, $codVendorId);
+            (new CommissionService())->distributeForOrder($id, (int) $order['customer_id'], $codItems, $codVendorId);
         }
 
         try {

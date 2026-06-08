@@ -25,7 +25,6 @@ import { TableSkeleton } from "@/components/data-table/table-skeleton";
 import { MobileHeader } from "@/components/layout/mobile-nav";
 import { PageHeader } from "@/components/layout/page-header";
 import { api, apiErrorMessage } from "@/lib/api";
-import { cn } from "@/lib/utils";
 
 const fmtINR = (n: number) =>
   new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 2 }).format(n);
@@ -110,11 +109,19 @@ function GeoSelects<T extends { state_id?: number; district_id?: number; taluk_i
   const districtOpts = districts.filter((d) => !value.state_id || d.state_id === value.state_id);
   const talukOpts    = taluks.filter((t) => !value.district_id || t.district_id === value.district_id);
 
+  // Base UI's <Select.Value> can only show the label of a mounted item; once
+  // the popup closes the items unmount and it falls back to printing the raw
+  // value (the id). Passing `items` (value → name) lets it render the name.
+  const stateItems    = states.map((s)    => ({ value: String(s.id), label: s.name }));
+  const districtItems = districts.map((d) => ({ value: String(d.id), label: d.name }));
+  const talukItems    = taluks.map((t)    => ({ value: String(t.id), label: t.name }));
+
   return (
     <>
       <div className="space-y-1.5">
         <Label>State</Label>
         <Select
+          items={stateItems}
           value={value.state_id ? String(value.state_id) : ""}
           onValueChange={(v) => v && onChange({ ...value, state_id: Number(v), district_id: undefined, taluk_id: undefined })}
         >
@@ -127,6 +134,7 @@ function GeoSelects<T extends { state_id?: number; district_id?: number; taluk_i
       <div className="space-y-1.5">
         <Label>District</Label>
         <Select
+          items={districtItems}
           value={value.district_id ? String(value.district_id) : ""}
           onValueChange={(v) => v && onChange({ ...value, district_id: Number(v), taluk_id: undefined })}
           disabled={!value.state_id}
@@ -140,6 +148,7 @@ function GeoSelects<T extends { state_id?: number; district_id?: number; taluk_i
       <div className="space-y-1.5">
         <Label>Taluk</Label>
         <Select
+          items={talukItems}
           value={value.taluk_id ? String(value.taluk_id) : ""}
           onValueChange={(v) => v && onChange({ ...value, taluk_id: Number(v) })}
           disabled={!value.district_id}
@@ -155,7 +164,9 @@ function GeoSelects<T extends { state_id?: number; district_id?: number; taluk_i
 }
 
 export default function DeliveryRatesPage() {
-  const [tab, setTab] = useState<"km" | "time">("km");
+  // KM management was retired from this screen — it's a Time-only manager now.
+  // `tab` stays typed for the (unused) KM table/modal code below; it never changes.
+  const [tab] = useState<"km" | "time">("time");
   const [kmRows, setKmRows] = useState<KmRow[]>([]);
   const [timeRows, setTimeRows] = useState<TimeRow[]>([]);
   const [states, setStates] = useState<GeoState[]>([]);
@@ -312,7 +323,6 @@ export default function DeliveryRatesPage() {
     }
   }
 
-  const avgKm   = kmRows.length   ? kmRows.reduce((s, r) => s + r.price_per_km, 0) / kmRows.length : 0;
   const avgTime = timeRows.length ? timeRows.reduce((s, r) => s + r.price, 0) / timeRows.length    : 0;
 
   return (
@@ -331,32 +341,9 @@ export default function DeliveryRatesPage() {
           }
         />
 
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <StatCard label="KM slabs"          value={kmRows.length}                              icon={Gauge}     tone="brand"   spark={[1, 2, 2, 3, 3, 4, 4, 4]} />
-          <StatCard label="Avg price / km"    value={Math.round(avgKm * 100) / 100}              icon={Gauge}     tone="amber"   spark={[3, 3, 4, 4, 4, 5, 5, 5]} format={fmtINR} />
+        <div className="grid gap-3 sm:grid-cols-2">
           <StatCard label="Time tiers"        value={timeRows.length}                            icon={Clock}     tone="violet"  spark={[1, 1, 2, 2, 2, 3, 3, 3]} />
           <StatCard label="Avg time price"    value={Math.round(avgTime * 100) / 100}            icon={Clock}     tone="emerald" spark={[2, 3, 3, 4, 4, 4, 5, 5]} format={fmtINR} />
-        </div>
-
-        <div className="flex gap-2">
-          <button
-            onClick={() => setTab("km")}
-            className={cn(
-              "flex items-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-medium transition-colors",
-              tab === "km" ? "border-brand bg-brand/10 text-brand brand-glow" : "border-border bg-surface hover:border-brand/40",
-            )}
-          >
-            <Gauge className="h-4 w-4" /> Delivery KM
-          </button>
-          <button
-            onClick={() => setTab("time")}
-            className={cn(
-              "flex items-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-medium transition-colors",
-              tab === "time" ? "border-brand bg-brand/10 text-brand brand-glow" : "border-border bg-surface hover:border-brand/40",
-            )}
-          >
-            <Clock className="h-4 w-4" /> Delivery Time
-          </button>
         </div>
 
         <div className="glass rounded-2xl p-3">

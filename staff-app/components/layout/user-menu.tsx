@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { LogOut, User as UserIcon, Settings, ChevronDown } from "lucide-react";
 import { useAuth } from "@/stores/auth";
+import { loginUrl } from "@/lib/login-redirect";
 import { ROLE_LABEL } from "@/lib/role-menu";
 import type { StaffRole } from "@/lib/api";
 import {
@@ -22,9 +23,7 @@ export function UserMenu() {
 
   const onLogout = async () => {
     await logout();
-    const basePath = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
-    if (basePath === "") window.location.assign("/login/");
-    else window.location.href = "/admin/login/";
+    window.location.href = loginUrl();
   };
 
   return (

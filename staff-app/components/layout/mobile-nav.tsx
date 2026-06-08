@@ -17,6 +17,7 @@ import {
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
 import { useAuth } from "@/stores/auth";
+import { loginUrl } from "@/lib/login-redirect";
 import { menuFor, ROLE_LABEL } from "@/lib/role-menu";
 import type { StaffRole } from "@/lib/api";
 
@@ -47,9 +48,7 @@ export function MobileHeader({ title }: { title?: string }) {
   const onLogout = async () => {
     setOpen(false);
     await logout();
-    const basePath = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
-    if (basePath === "") window.location.assign("/login/");
-    else window.location.href = "/admin/login/";
+    window.location.href = loginUrl();
   };
 
   return (
