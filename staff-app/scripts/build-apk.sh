@@ -13,8 +13,21 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."   # → staff-app/
 
-APP_NAME="staff-app"
-echo "==> $APP_NAME → Android debug APK"
+# Admin variant: ADMIN_BUILD=1 builds the dedicated admin APK (com.epey.admin,
+# opens to /control, uses the firebase-admin/ google-services.json). Default is
+# the staff app. ADMIN_BUILD is exported so capacitor.config.ts + next.config.ts
+# (run by the npm build / cap sync below) pick the right appId and start route.
+export ADMIN_BUILD="${ADMIN_BUILD:-0}"
+if [ "$ADMIN_BUILD" = "1" ]; then
+  APP_ID="com.epey.admin"
+  FIREBASE_DIR="firebase-admin"
+  APP_NAME="staff-app (admin)"
+else
+  APP_ID="com.epey.staff"
+  FIREBASE_DIR="firebase"
+  APP_NAME="staff-app"
+fi
+echo "==> $APP_NAME → Android debug APK  (appId: $APP_ID)"
 
 if [ "${1:-}" != "" ]; then
   RAW_URL="$1"
@@ -72,6 +85,14 @@ fi
 echo "==> Building Next.js (static export, Capacitor mode)…"
 CAPACITOR_BUILD=1 npm run build
 
+# admin + staff APKs share this android/ scaffold but use different appIds, and
+# Capacitor only sets applicationId at `cap add` time. Reset the scaffold when it
+# belongs to the other app so the right applicationId is baked in.
+if [ -d "android" ] && ! grep -q "applicationId \"$APP_ID\"" android/app/build.gradle 2>/dev/null; then
+  echo "==> android/ belongs to a different appId — resetting for $APP_ID"
+  rm -rf android
+fi
+
 if [ ! -d "android" ]; then
   echo "==> First run: adding Android platform via Capacitor…"
   npx cap add android
@@ -97,9 +118,9 @@ npx cap sync android
 # Wire Firebase Android config AFTER cap sync so our changes survive any
 # overwrite Capacitor may do during sync. android/ is gitignored so the
 # source of truth lives in staff-app/firebase/.
-if [ -f "firebase/google-services.json" ]; then
-  echo "==> Copying firebase/google-services.json → android/app/"
-  cp firebase/google-services.json android/app/google-services.json
+if [ -f "$FIREBASE_DIR/google-services.json" ]; then
+  echo "==> Copying $FIREBASE_DIR/google-services.json → android/app/"
+  cp "$FIREBASE_DIR/google-services.json" android/app/google-services.json
 
   # Patch project-level android/build.gradle to add the google-services
   # classpath. Without it, the JSON is ignored at build time and FCM init
@@ -132,7 +153,7 @@ if [ -f "firebase/google-services.json" ]; then
   echo "    google-services.json exists: $(test -f android/app/google-services.json && echo YES || echo NO)"
   echo "    classpath in project gradle: $(grep -c "com.google.gms:google-services" "$PROJECT_GRADLE") line(s)"
   echo "    plugin in app gradle:        $(grep -c "com.google.gms.google-services" "$APP_GRADLE") line(s)"
-  echo "    package_name match for com.epey.staff: $(grep -c "com.epey.staff" android/app/google-services.json) match(es)"
+  echo "    package_name match for $APP_ID: $(grep -c "$APP_ID" android/app/google-services.json) match(es)"
 
   # ---------------------------------------------------------------------------
   # Generate notification status-bar icon (monochrome silhouette).
@@ -188,11 +209,11 @@ if [ -f "firebase/google-services.json" ]; then
   fi
 else
   echo ""
-  echo "    ⚠ firebase/google-services.json not found. Push notifications will"
+  echo "    ⚠ $FIREBASE_DIR/google-services.json not found. Push notifications will"
   echo "      crash the APK on permission grant. To fix:"
-  echo "      1. Firebase Console → Add Android app with package com.epey.staff"
+  echo "      1. Firebase Console → Add Android app with package $APP_ID"
   echo "      2. Download google-services.json"
-  echo "      3. Save to staff-app/firebase/google-services.json"
+  echo "      3. Save to staff-app/$FIREBASE_DIR/google-services.json"
   echo "      4. Re-run this build"
   echo ""
 fi

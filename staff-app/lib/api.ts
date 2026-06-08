@@ -69,11 +69,13 @@ api.interceptors.response.use(
       storage.remove(STORAGE_KEYS.REFRESH);
       if (typeof window !== "undefined") {
         const basePath = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
+        // Admin APK opens to /control; staff APK to /login.
+        const apkLogin = (process.env.NEXT_PUBLIC_ADMIN_BUILD ?? "") === "1" ? "/control" : "/login";
         const onLogin = basePath === ""
-          ? window.location.pathname.endsWith("/login/") || window.location.pathname.endsWith("/login")
+          ? window.location.pathname.endsWith(`${apkLogin}/`) || window.location.pathname.endsWith(apkLogin)
           : window.location.pathname.startsWith("/admin/login");
         if (! onLogin) {
-          if (basePath === "") window.location.assign("/login/");
+          if (basePath === "") window.location.assign(`${apkLogin}/`);
           else window.location.href = "/admin/login/";
         }
       }
