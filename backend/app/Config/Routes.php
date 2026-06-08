@@ -97,6 +97,15 @@ $routes->group('api/v1', ['filter' => 'cors'], static function ($routes) {
     // Customer-scoped: KM slabs for the current cart's vendor's taluk.
     $routes->get('customer/delivery-rates/km', 'Api\DeliveryRateController::customerSlabs', ['filter' => 'auth']);
 
+    // Customer-scoped: saved delivery addresses (multiple + one default).
+    $routes->group('customer/addresses', ['filter' => 'auth'], static function ($routes) {
+        $routes->get('/',               'Api\AddressController::index');
+        $routes->post('/',              'Api\AddressController::create');
+        $routes->patch('(:num)',        'Api\AddressController::update/$1');
+        $routes->post('(:num)/default', 'Api\AddressController::setDefault/$1');
+        $routes->delete('(:num)',       'Api\AddressController::delete/$1');
+    });
+
     // ===== Wallet + withdrawals (Phase 4 will rebuild) =====
     $routes->group('wallet', ['filter' => 'auth'], static function ($routes) {
         $routes->get('balance',      'Api\WalletController::balance');

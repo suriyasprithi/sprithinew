@@ -3,17 +3,21 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
-import { Loader2, Wallet as WalletIcon, Banknote, MapPin, Home, AlertCircle, Pencil } from "lucide-react";
+import { Loader2, Wallet as WalletIcon, Banknote, MapPin, Home, AlertCircle, Check, Plus, Star } from "lucide-react";
 import { toast } from "sonner";
 import { Textarea } from "@/components/ui/textarea";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { AppHeader } from "@/components/layout/app-header";
 import { LuxuryCard } from "@/components/ui/custom/luxury-card";
 import { GradientButton } from "@/components/ui/custom/gradient-button";
+import {
+  AddressFields,
+  emptyAddressForm,
+  formatAddress,
+  type AddressForm,
+} from "@/components/address/address-fields";
 import { useAuth } from "@/stores/auth";
-import { api, apiErrorMessage, AuthUser } from "@/lib/api";
+import { api, apiErrorMessage, type CustomerAddress } from "@/lib/api";
 
 type CartRow = {
   cart_id: number;
@@ -27,20 +31,31 @@ type CartRow = {
 const fmtINR = (n: number) =>
   new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(n);
 
-type AddressForm = { address_line: string; landmark: string; city: string; pincode: string };
+function normalize(items: unknown[]): CustomerAddress[] {
+  return (items as CustomerAddress[]).map((a) => ({
+    ...a,
+    id: Number(a.id),
+    is_default: Number(a.is_default),
+  }));
+}
 
 export default function CheckoutPage() {
   const router = useRouter();
-  const { user, hydrate, setUser } = useAuth();
+  const { user, hydrate } = useAuth();
   const [items, setItems] = useState<CartRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [placing, setPlacing] = useState(false);
   const [notes, setNotes] = useState("");
   const [payMethod, setPayMethod] = useState<"wallet" | "cod">("wallet");
-  const [useSavedAddress, setUseSavedAddress] = useState(false);
-  const [editingAddr, setEditingAddr] = useState(false);
+
+  // Addresses
+  const [addresses, setAddresses] = useState<CustomerAddress[]>([]);
+  const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [choosing, setChoosing] = useState(false);
+  const [addingNew, setAddingNew] = useState(false);
+  const [addrForm, setAddrForm] = useState<AddressForm>(emptyAddressForm);
+  const [makeDefault, setMakeDefault] = useState(false);
   const [savingAddr, setSavingAddr] = useState(false);
-  const [addrForm, setAddrForm] = useState<AddressForm>({ address_line: "", landmark: "", city: "", pincode: "" });
 
   type KmSlab = { id: number; from_km: number; to_km: number; price_per_km: number };
   const [smallestSlab, setSmallestSlab] = useState<KmSlab | null>(null);
@@ -59,7 +74,6 @@ export default function CheckoutPage() {
             price_per_km: Number(x.price_per_km ?? 0),
           };
         });
-        // Smallest by from_km (e.g. 0-3 km slab)
         const smallest = slabs.length
           ? slabs.reduce((best, s) => (s.from_km < best.from_km ? s : best), slabs[0])
           : null;
@@ -70,29 +84,20 @@ export default function CheckoutPage() {
     })();
   }, []);
 
-  function openAddrEdit() {
-    setAddrForm({
-      address_line: user?.address_line ?? "",
-      landmark:     user?.landmark ?? "",
-      city:         user?.city ?? "",
-      pincode:      user?.pincode ?? "",
-    });
-    setEditingAddr(true);
-  }
-
-  async function saveAddr() {
-    setSavingAddr(true);
-    try {
-      const res = await api.patch("/auth/me/address", addrForm);
-      setUser(res.data.data as AuthUser);
-      toast.success("Address updated");
-      setEditingAddr(false);
-    } catch (err) {
-      toast.error(apiErrorMessage(err, "Save failed"));
-    } finally {
-      setSavingAddr(false);
-    }
-  }
+  useEffect(() => {
+    void (async () => {
+      try {
+        const res = await api.get("/customer/addresses");
+        const list = normalize(res.data.data?.items ?? []);
+        setAddresses(list);
+        const def = list.find((a) => a.is_default === 1) ?? list[0] ?? null;
+        setSelectedId(def?.id ?? null);
+        if (list.length === 0) { setChoosing(true); setAddingNew(true); setMakeDefault(true); }
+      } catch (e) {
+        toast.error(apiErrorMessage(e));
+      }
+    })();
+  }, []);
 
   useEffect(() => {
     void (async () => {
@@ -111,25 +116,46 @@ export default function CheckoutPage() {
     })();
   }, [router]);
 
+  async function addNewAddress() {
+    if (!addrForm.address_line.trim()) { toast.error("Full address is required"); return; }
+    setSavingAddr(true);
+    try {
+      const res = await api.post("/customer/addresses", { ...addrForm, is_default: makeDefault });
+      const list = normalize(res.data.data?.items ?? []);
+      setAddresses(list);
+      // Select the just-added address (highest id).
+      const newestId = list.reduce((m, a) => (a.id > m ? a.id : m), 0);
+      setSelectedId(newestId || (list.find((a) => a.is_default === 1)?.id ?? list[0]?.id ?? null));
+      setAddrForm(emptyAddressForm);
+      setMakeDefault(false);
+      setAddingNew(false);
+      setChoosing(false);
+      toast.success("Address added");
+    } catch (e) {
+      toast.error(apiErrorMessage(e, "Save failed"));
+    } finally {
+      setSavingAddr(false);
+    }
+  }
+
   const subtotal = items.reduce((s, i) => s + Number(i.price) * i.qty, 0);
   const deliveryFee = smallestSlab
     ? Math.round(smallestSlab.to_km * smallestSlab.price_per_km * 100) / 100
     : 25;
   const total = subtotal + deliveryFee;
   const balance = user?.wallet_balance ?? 0;
-  const hasAddress = Boolean(user?.address_line || user?.landmark || user?.city || user?.pincode);
-  const addrSelected = hasAddress && useSavedAddress;
+  const selected = addresses.find((a) => a.id === selectedId) ?? null;
   const walletOk = balance >= total;
   // COD has no balance requirement — cash is collected on delivery.
-  const canPay = addrSelected && (payMethod === "cod" || walletOk);
+  const canPay = Boolean(selected) && (payMethod === "cod" || walletOk);
 
   async function place() {
+    if (!selectedId) { toast.error("Select a delivery address"); return; }
     setPlacing(true);
     try {
-      const res = await api.post("/orders/place", { notes, payment_method: payMethod });
+      const res = await api.post("/orders/place", { notes, payment_method: payMethod, address_id: selectedId });
       const orderId = res.data.data?.order_id;
       toast.success(payMethod === "cod" ? `Order #${orderId} placed — pay on delivery` : `Order #${orderId} placed!`);
-      // Refresh wallet balance in the auth store so /wallet + header reflect the debit.
       try { await hydrate(); } catch { /* non-fatal */ }
       router.replace("/orders");
     } catch (e) {
@@ -152,9 +178,9 @@ export default function CheckoutPage() {
             <p className="text-xs uppercase tracking-wider text-muted-foreground">Items ({items.length})</p>
             <div className="mt-3 space-y-2">
               {items.map((it) => (
-                <div key={it.id} className="flex justify-between text-sm">
+                <div key={it.cart_id} className="flex justify-between text-sm">
                   <span className="truncate pr-2">{it.qty} × {it.name}{it.variation_label ? ` (${it.variation_label})` : ""}</span>
-                  <span className="font-medium">{fmtINR(it.price * it.qty)}</span>
+                  <span className="font-medium">{fmtINR(Number(it.price) * it.qty)}</span>
                 </div>
               ))}
             </div>
@@ -177,96 +203,105 @@ export default function CheckoutPage() {
           <div className="mt-2 flex justify-between border-t border-border pt-2 text-base font-bold"><span>Total</span><span className="text-brand">{fmtINR(total)}</span></div>
         </LuxuryCard>
 
+        {/* Delivery address */}
         <LuxuryCard hoverLift={false} className="p-4">
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-2">
               <Home className="h-4 w-4 text-brand" />
               <p className="text-sm font-semibold">Delivery address</p>
             </div>
-            {!editingAddr && hasAddress && (
-              <Button size="sm" variant="ghost" onClick={openAddrEdit} className="-mr-2 h-7 gap-1.5 text-xs">
-                <Pencil className="h-3.5 w-3.5" /> Change
+            {addresses.length > 0 && !choosing && (
+              <Button size="sm" variant="ghost" onClick={() => setChoosing(true)} className="-mr-2 h-7 text-xs">
+                Change
               </Button>
             )}
           </div>
 
-          {editingAddr ? (
-            <div className="mt-3 space-y-3">
-              <div className="space-y-1.5">
-                <Label htmlFor="addr_line">Full address</Label>
-                <Textarea
-                  id="addr_line"
-                  rows={2}
-                  value={addrForm.address_line}
-                  onChange={(e) => setAddrForm({ ...addrForm, address_line: e.target.value })}
-                  placeholder="House no, street, area"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="addr_landmark">Landmark</Label>
-                <Input
-                  id="addr_landmark"
-                  value={addrForm.landmark}
-                  onChange={(e) => setAddrForm({ ...addrForm, landmark: e.target.value })}
-                  placeholder="Near…"
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1.5">
-                  <Label htmlFor="addr_city">City</Label>
-                  <Input
-                    id="addr_city"
-                    value={addrForm.city}
-                    onChange={(e) => setAddrForm({ ...addrForm, city: e.target.value })}
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="addr_pin">Pincode</Label>
-                  <Input
-                    id="addr_pin"
-                    inputMode="numeric"
-                    value={addrForm.pincode}
-                    onChange={(e) => setAddrForm({ ...addrForm, pincode: e.target.value.replace(/\D/g, "").slice(0, 10) })}
-                  />
-                </div>
-              </div>
-              <div className="flex gap-2 pt-1">
-                <Button variant="ghost" className="flex-1" disabled={savingAddr} onClick={() => setEditingAddr(false)}>Cancel</Button>
-                <GradientButton className="flex-1" disabled={savingAddr} onClick={() => void saveAddr()}>
-                  {savingAddr ? "Saving…" : "Save address"}
-                </GradientButton>
+          {/* Collapsed: show the selected address */}
+          {!choosing && selected && (
+            <div className="mt-3 flex items-start gap-3 rounded-xl border border-brand/40 bg-brand/5 p-3 text-sm">
+              <Check className="mt-0.5 h-4 w-4 shrink-0 text-brand" />
+              <div className="min-w-0 flex-1">
+                {selected.is_default === 1 && (
+                  <span className="mb-1 inline-flex items-center gap-1 rounded-full border border-brand/30 bg-brand/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-brand">
+                    <Star className="h-3 w-3 fill-current" /> Default
+                  </span>
+                )}
+                <p className="leading-snug">{formatAddress(selected)}</p>
               </div>
             </div>
-          ) : hasAddress ? (
-            <label className="mt-3 flex cursor-pointer items-start gap-3 rounded-xl border border-border bg-surface-2/60 p-3 transition-colors hover:border-brand/40">
-              <input
-                type="checkbox"
-                checked={useSavedAddress}
-                onChange={(e) => setUseSavedAddress(e.target.checked)}
-                className="mt-0.5 h-4 w-4 shrink-0 accent-brand"
-              />
-              <div className="min-w-0 flex-1 space-y-0.5 text-sm">
-                {user?.address_line && <p className="font-medium">{user.address_line}</p>}
-                {user?.landmark && <p className="text-muted-foreground">Near {user.landmark}</p>}
-                {(user?.city || user?.pincode) && (
-                  <p className="text-muted-foreground">
-                    {[user?.city, user?.pincode].filter(Boolean).join(" · ")}
-                  </p>
-                )}
-              </div>
-            </label>
-          ) : (
-            <div className="mt-3 space-y-3">
-              <div className="flex items-start gap-3 rounded-xl border border-rose-500/30 bg-rose-500/5 p-3 text-sm">
-                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-rose-400" />
-                <div className="min-w-0 flex-1">
-                  <p className="font-medium">No address saved.</p>
-                  <p className="text-xs text-muted-foreground">Add one below to continue.</p>
+          )}
+
+          {/* Chooser: pick a saved address or add a new one */}
+          {choosing && (
+            <div className="mt-3 space-y-2">
+              {addresses.map((a) => {
+                const isSel = a.id === selectedId;
+                return (
+                  <button
+                    key={a.id}
+                    type="button"
+                    onClick={() => { setSelectedId(a.id); setChoosing(false); setAddingNew(false); }}
+                    className={`flex w-full items-start gap-3 rounded-xl border p-3 text-left text-sm transition-colors ${
+                      isSel ? "border-brand bg-brand/5" : "border-border hover:border-brand/40"
+                    }`}
+                  >
+                    <span className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border ${isSel ? "border-brand bg-brand text-brand-foreground" : "border-muted-foreground/40"}`}>
+                      {isSel && <Check className="h-3 w-3" />}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      {a.is_default === 1 && (
+                        <span className="mb-0.5 inline-block text-[10px] font-semibold uppercase tracking-wider text-brand">Default</span>
+                      )}
+                      <p className="leading-snug">{formatAddress(a)}</p>
+                    </div>
+                  </button>
+                );
+              })}
+
+              {!addingNew ? (
+                <Button variant="outline" className="w-full" onClick={() => { setAddingNew(true); setMakeDefault(addresses.length === 0); }}>
+                  <Plus className="h-4 w-4" /> Add new address
+                </Button>
+              ) : (
+                <div className="space-y-3 rounded-xl border border-border p-3">
+                  <AddressFields form={addrForm} setForm={setAddrForm} />
+                  {addresses.length > 0 && (
+                    <label className="flex cursor-pointer items-center gap-2.5 text-sm">
+                      <input
+                        type="checkbox"
+                        checked={makeDefault}
+                        onChange={(e) => setMakeDefault(e.target.checked)}
+                        className="h-4 w-4 accent-brand"
+                      />
+                      Set as default address
+                    </label>
+                  )}
+                  <div className="flex gap-2">
+                    {addresses.length > 0 && (
+                      <Button variant="ghost" className="flex-1" disabled={savingAddr} onClick={() => setAddingNew(false)}>
+                        Cancel
+                      </Button>
+                    )}
+                    <GradientButton className="flex-1" disabled={savingAddr} onClick={() => void addNewAddress()}>
+                      {savingAddr ? "Saving…" : "Save address"}
+                    </GradientButton>
+                  </div>
                 </div>
+              )}
+            </div>
+          )}
+
+          {/* No address at all and not currently adding */}
+          {!choosing && !selected && (
+            <div className="mt-3 flex items-start gap-3 rounded-xl border border-rose-500/30 bg-rose-500/5 p-3 text-sm">
+              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-rose-400" />
+              <div className="min-w-0 flex-1">
+                <p className="font-medium">No address selected.</p>
+                <Button size="sm" variant="ghost" className="mt-1 h-7 px-0 text-xs text-brand" onClick={() => { setChoosing(true); setAddingNew(addresses.length === 0); }}>
+                  Add a delivery address
+                </Button>
               </div>
-              <Button variant="outline" className="w-full" onClick={openAddrEdit}>
-                <Pencil className="h-4 w-4" /> Add address
-              </Button>
             </div>
           )}
         </LuxuryCard>
@@ -323,7 +358,7 @@ export default function CheckoutPage() {
         {!canPay && (
           <p className="flex items-center gap-1.5 text-xs text-rose-400">
             <AlertCircle className="h-3.5 w-3.5 shrink-0" />
-            {!addrSelected
+            {!selected
               ? "Select your delivery address above to continue."
               : "Insufficient wallet balance — choose Cash on Delivery instead."}
           </p>

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { motion } from "framer-motion";
-import { Home, QrCode, Wallet, User, ShoppingCart } from "lucide-react";
+import { Home, QrCode, Wallet, Package, ShoppingCart } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 type Item = {
@@ -18,7 +18,7 @@ const ITEMS: Item[] = [
   { href: "/cart",      label: "Cart",    icon: ShoppingCart },
   { href: "/qr",        label: "Scan",    icon: QrCode, center: true },
   { href: "/wallet",    label: "Wallet",  icon: Wallet },
-  { href: "/profile",   label: "Profile", icon: User },
+  { href: "/orders",    label: "Order",   icon: Package },
 ];
 
 export function BottomNav() {

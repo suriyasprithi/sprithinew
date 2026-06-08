@@ -36,9 +36,13 @@ export function AppHeader({ title }: { title?: string }) {
   return (
     <header className="sticky top-0 z-30 flex items-center justify-between glass border-b-0 px-4 py-3 md:hidden">
       <div className="flex min-w-0 items-center gap-3">
-        <span className="flex h-9 w-9 items-center justify-center rounded-xl brand-gradient text-brand-foreground text-sm font-bold">
+        <Link
+          href="/profile"
+          aria-label="Profile"
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl brand-gradient text-brand-foreground text-sm font-bold"
+        >
           {initial}
-        </span>
+        </Link>
         <div className="min-w-0">
           {title ? (
             <h1 className="truncate text-sm font-semibold">{title}</h1>

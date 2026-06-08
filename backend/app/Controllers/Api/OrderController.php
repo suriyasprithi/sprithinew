@@ -3,6 +3,7 @@
 namespace App\Controllers\Api;
 
 use App\Models\CartItemModel;
+use App\Models\CustomerAddressModel;
 use App\Models\OrderItemModel;
 use App\Models\OrderModel;
 use App\Models\ProductModel;
@@ -58,6 +59,31 @@ class OrderController extends BaseApiController
         // Wallet check (only when paying from wallet; COD is collected on delivery)
         $users = new UserModel();
         $u = $users->find($auth->id);
+
+        // Resolve the delivery address snapshot. Prefer the address the customer
+        // chose at checkout; fall back to their default saved address, then to
+        // the legacy users-row address. Stored on the order so the driver sees
+        // the address used at the time — unaffected by later edits.
+        $addrModel = new CustomerAddressModel();
+        $addrId    = (int) ($body['address_id'] ?? 0);
+        if ($addrId) {
+            $addrRow = $addrModel->ownedBy($addrId, (int) $auth->id);
+            if (! $addrRow) return $this->fail('Invalid delivery address', 422);
+        } else {
+            $addrRow = $addrModel->where('customer_id', (int) $auth->id)
+                ->orderBy('is_default', 'DESC')->orderBy('id', 'DESC')->first();
+        }
+        $deliveryAddress = $addrRow
+            ? CustomerAddressModel::formatLine($addrRow)
+            : CustomerAddressModel::formatLine([
+                'address_line' => $u['address_line'] ?? null,
+                'landmark'     => $u['landmark'] ?? null,
+                'city'         => $u['city'] ?? null,
+                'pincode'      => $u['pincode'] ?? null,
+            ]);
+        if ($deliveryAddress === '') {
+            return $this->fail('Add a delivery address before placing your order', 422);
+        }
         if ($paymentMethod === 'wallet' && (float) ($u['wallet_balance'] ?? 0) < $total) {
             return $this->fail('Insufficient wallet balance', 402);
         }
@@ -82,6 +108,7 @@ class OrderController extends BaseApiController
             // Wallet orders are paid up-front; COD stays 'pending' until delivered.
             'status'         => $paymentMethod === 'cod' ? 'pending' : 'paid',
             'notes'          => $notes ?: null,
+            'delivery_address' => $deliveryAddress,
         ], true);
 
         foreach ($cart as $r) {
@@ -346,13 +373,18 @@ class OrderController extends BaseApiController
         $items = [];
         foreach ($orders as $o) {
             $c = $byId[(int) $o['customer_id']] ?? null;
-            $dropParts = $c ? array_filter([
-                $c['address_line'] ?? null,
-                ! empty($c['landmark']) ? 'Near ' . $c['landmark'] : null,
-                $c['city']    ?? null,
-                $c['pincode'] ?? null,
-            ]) : [];
-            $drop = $dropParts ? implode(', ', $dropParts) : ($c['name'] ?? '');
+            // Prefer the address snapshotted on the order at checkout; fall back
+            // to the customer's live address for legacy orders without a snapshot.
+            $drop = trim((string) ($o['delivery_address'] ?? ''));
+            if ($drop === '') {
+                $dropParts = $c ? array_filter([
+                    $c['address_line'] ?? null,
+                    ! empty($c['landmark']) ? 'Near ' . $c['landmark'] : null,
+                    $c['city']    ?? null,
+                    $c['pincode'] ?? null,
+                ]) : [];
+                $drop = $dropParts ? implode(', ', $dropParts) : ($c['name'] ?? '');
+            }
             $items[] = [
                 'id'              => (int) $o['id'],
                 'status'          => $o['status'],

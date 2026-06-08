@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { motion } from "framer-motion";
-import { Home, QrCode, Wallet, User, LogOut, ShoppingBag, ShoppingCart, Activity, Sparkles } from "lucide-react";
+import { Home, QrCode, Wallet, LogOut, ShoppingBag, ShoppingCart, Activity, Sparkles, Package } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/stores/auth";
 
@@ -15,7 +15,7 @@ const ITEMS = [
   { href: "/wallet",         label: "Wallet",         icon: Wallet },
   { href: "/digital-point",  label: "Digital Point",  icon: Sparkles },
   { href: "/activity",       label: "Activity",       icon: Activity },
-  { href: "/profile",   label: "Profile",  icon: User },
+  { href: "/orders",         label: "Order",          icon: Package },
 ];
 
 export function SideNav() {
@@ -78,13 +78,19 @@ export function SideNav() {
 
       <div className="border-t border-sidebar-border p-3">
         <div className="flex items-center gap-3 rounded-xl bg-surface-2 p-2">
-          <span className="flex h-9 w-9 items-center justify-center rounded-lg brand-gradient text-sm font-semibold text-brand-foreground">
-            {initial}
-          </span>
-          <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-medium">{user?.name ?? "—"}</p>
-            <p className="truncate text-xs text-muted-foreground">{user?.mobile_number ?? ""}</p>
-          </div>
+          <Link
+            href="/profile"
+            aria-label="Profile"
+            className="flex min-w-0 flex-1 items-center gap-3 rounded-lg transition-colors hover:text-brand"
+          >
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg brand-gradient text-sm font-semibold text-brand-foreground">
+              {initial}
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-medium">{user?.name ?? "—"}</p>
+              <p className="truncate text-xs text-muted-foreground">{user?.mobile_number ?? ""}</p>
+            </div>
+          </Link>
           <button
             onClick={onLogout}
             aria-label="Log out"

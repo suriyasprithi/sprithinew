@@ -113,6 +113,16 @@ export type AuthUser = {
   level_3_count: number;
 };
 
+export type CustomerAddress = {
+  id: number;
+  customer_id: number;
+  address_line: string | null;
+  landmark: string | null;
+  city: string | null;
+  pincode: string | null;
+  is_default: number; // 0 | 1
+};
+
 export type WalletKey = "wallet" | "level" | "level_1" | "level_2" | "level_3" | "buyback" | "global";
 
 export type AuthTokens = {
