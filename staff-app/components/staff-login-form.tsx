@@ -28,7 +28,11 @@ const ROLE_HOME: Record<StaffRole, string> = {
 // no base path falls back to the mobile-only staff login.
 const BASE_ROLE: StaffRole | null = (() => {
   const bp = (process.env.NEXT_PUBLIC_BASE_PATH ?? "").replace(/^\/+|\/+$/g, "");
-  return STAFF_ROLES.some((r) => r.value === bp) ? (bp as StaffRole) : null;
+  if (STAFF_ROLES.some((r) => r.value === bp)) return bp as StaffRole;
+  // Admin APK: basePath is empty, but it should sign in role-specifically as
+  // admin (mobile + password), just like the web /admin/control/ build.
+  if ((process.env.NEXT_PUBLIC_ADMIN_BUILD ?? "") === "1") return "admin" as StaffRole;
+  return null;
 })();
 
 export function StaffLoginForm() {
@@ -45,7 +49,10 @@ export function StaffLoginForm() {
         ? await login(mobile.trim(), password, BASE_ROLE)
         : await staffLogin(mobile.trim(), password);
       toast.success("Welcome");
-      const dest = ROLE_HOME[user.role as StaffRole] ?? "/login/";
+      // Capacitor APK (no base path) serves every screen at the root, so go to
+      // the in-app dashboard. Web per-role builds use the role-prefixed home.
+      const isApk = (process.env.NEXT_PUBLIC_BASE_PATH ?? "") === "";
+      const dest = isApk ? "/dashboard/" : (ROLE_HOME[user.role as StaffRole] ?? "/login/");
       window.location.href = dest;
     } catch (err) {
       toast.error(apiErrorMessage(err, "Login failed"));
