@@ -13,7 +13,7 @@ class DistributeTokenModel extends Model
     protected $useSoftDeletes   = false;
     protected $protectFields    = true;
 
-    protected $allowedFields = ['from_user_id','to_user_id','amount','tokens','notes'];
+    protected $allowedFields = ['from_user_id','to_user_id','amount','tokens','bonus','notes'];
 
     protected $useTimestamps = true;
     protected $dateFormat    = 'datetime';

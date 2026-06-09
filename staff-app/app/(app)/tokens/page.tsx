@@ -24,6 +24,7 @@ type Row = {
   id: number;
   amount: number;
   tokens: number;
+  bonus?: number;
   notes: string | null;
   created_at: string;
   peer: { name: string; mobile_number: string } | null;
@@ -126,6 +127,8 @@ export default function TokensPage() {
 
   const totalReceived = received.reduce((s, r) => s + r.tokens, 0);
   const totalIssued = issued.reduce((s, r) => s + r.tokens, 0);
+  // Bonus tokens minted into approved requests (state 3.5% / district 3% / taluk 2%).
+  const totalBonus = Math.round(received.reduce((s, r) => s + (Number(r.bonus) || 0), 0) * 100) / 100;
 
   const canRequest    = user?.role ? CAN_REQUEST.has(user.role)    : false;
   const canDistribute = user?.role ? CAN_DISTRIBUTE.has(user.role) : false;
@@ -161,6 +164,23 @@ export default function TokensPage() {
             </div>
           </LuxuryCard>
         </motion.div>
+
+        {totalBonus > 0 && (
+          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
+            <LuxuryCard hoverLift={false} className="flex items-center justify-between p-4">
+              <div className="flex items-center gap-3">
+                <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-amber-500/10 text-amber-400">
+                  <Coins className="h-5 w-5" />
+                </span>
+                <div>
+                  <p className="text-sm font-semibold">Bonus earned</p>
+                  <p className="text-[11px] text-muted-foreground">Extra tokens from approved requests</p>
+                </div>
+              </div>
+              <p className="text-2xl font-bold text-amber-400">+{totalBonus.toLocaleString("en-IN")}</p>
+            </LuxuryCard>
+          </motion.div>
+        )}
 
         <div className="grid grid-cols-2 gap-3">
           {canRequest && (

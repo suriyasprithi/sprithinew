@@ -307,6 +307,7 @@ class TokenService
             'to_user_id'   => (int) $requester['id'],
             'amount'       => 0,
             'tokens'       => $credited,
+            'bonus'        => $bonus,
             'notes'        => $ledgerNote,
         ], true);
 
