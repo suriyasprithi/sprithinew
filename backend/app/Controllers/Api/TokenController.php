@@ -465,11 +465,20 @@ class TokenController extends BaseApiController
         return $this->ok(null, 'Cancelled');
     }
 
-    /** Admin: list all + approve/reject. */
+    /** Admin: list state → admin requests + approve/reject. */
     public function adminRequests(): ResponseInterface
     {
         if ($r = $this->requireAdmin()) return $r;
-        $rows = (new TokenRequestModel())->orderBy('id', 'DESC')->findAll(200);
+
+        // Admin only handles requests that originate from a state user
+        // (state → admin). Lower-level requests (vendor/taluk/district) are
+        // handled by their own upstream approver, so they never show here.
+        $stateIds = (new UserModel())->where('role', 'state')->findColumn('id') ?: [];
+        if (empty($stateIds)) return $this->ok(['items' => []]);
+
+        $rows = (new TokenRequestModel())
+            ->whereIn('requester_id', $stateIds)
+            ->orderBy('id', 'DESC')->findAll(200);
         $ids = array_unique(array_map(static fn ($r) => (int) $r['requester_id'], $rows));
         $users = $ids ? (new UserModel())->whereIn('id', $ids)->findAll() : [];
         $byId = [];
