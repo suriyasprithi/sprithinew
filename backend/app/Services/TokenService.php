@@ -78,7 +78,7 @@ class TokenService
         if (($recipient['status'] ?? 'active') !== 'active') {
             throw new \DomainException('Recipient is not active');
         }
-        if ($sender['role'] !== 'admin' && (int) ($sender['token_balance'] ?? 0) < $tokens) {
+        if ($sender['role'] !== 'admin' && (float) ($sender['token_balance'] ?? 0) < $tokens) {
             throw new \DomainException('Insufficient token_balance');
         }
 
@@ -99,11 +99,11 @@ class TokenService
         // Tokens: -sender (admin exempt — infinite source), +recipient
         if ($sender['role'] !== 'admin') {
             $users->update((int) $sender['id'], [
-                'token_balance' => (int) $sender['token_balance'] - $tokens,
+                'token_balance' => (float) $sender['token_balance'] - $tokens,
             ]);
         }
         $users->update((int) $recipient['id'], [
-            'token_balance' => (int) ($recipient['token_balance'] ?? 0) + $tokens,
+            'token_balance' => (float) ($recipient['token_balance'] ?? 0) + $tokens,
         ]);
 
         // ₹: -recipient, +sender (admin's ₹ goes to admin_wallet pool instead of user.wallet_balance)
@@ -170,7 +170,7 @@ class TokenService
         // A customer's order must never be blocked by the vendor's token
         // balance, so we never throw on a shortage — deduct only what's
         // available (clamped at 0, never negative) and proceed.
-        $have = (int) ($vendor['token_balance'] ?? 0);
+        $have = (float) ($vendor['token_balance'] ?? 0);
         $consumed = min($have, $tokensNeeded);
         if ($consumed > 0) {
             $users->update($vendorId, ['token_balance' => $have - $consumed]);
@@ -187,8 +187,8 @@ class TokenService
     public function gift(array $sender, array $recipient, int $tokens, ?string $notes = null): int
     {
         if ($tokens <= 0) throw new \DomainException('Tokens must be positive');
-        if ($sender['role'] !== 'admin' && (int) ($sender['token_balance'] ?? 0) < $tokens) {
-            throw new \DomainException("{$sender['name']} has only " . (int) ($sender['token_balance'] ?? 0) . " tokens; needs {$tokens}");
+        if ($sender['role'] !== 'admin' && (float) ($sender['token_balance'] ?? 0) < $tokens) {
+            throw new \DomainException("{$sender['name']} has only " . (float) ($sender['token_balance'] ?? 0) . " tokens; needs {$tokens}");
         }
 
         $db    = Database::connect();
@@ -197,11 +197,11 @@ class TokenService
 
         if ($sender['role'] !== 'admin') {
             $users->update((int) $sender['id'], [
-                'token_balance' => (int) $sender['token_balance'] - $tokens,
+                'token_balance' => (float) $sender['token_balance'] - $tokens,
             ]);
         }
         $users->update((int) $recipient['id'], [
-            'token_balance' => (int) ($recipient['token_balance'] ?? 0) + $tokens,
+            'token_balance' => (float) ($recipient['token_balance'] ?? 0) + $tokens,
         ]);
         $id = (new DistributeTokenModel())->insert([
             'from_user_id' => (int) $sender['id'],
@@ -245,24 +245,81 @@ class TokenService
     }
 
     /**
-     * Fulfil a token request: move tokens from the approving level down to
-     * the vendor along the chain. If any intermediate link isn't mapped yet
-     * (taluks.user_id / districts.user_id / states.user_id is NULL), fall
-     * back to a direct gift from approver to vendor with a note.
-     *
-     * Returns the list of distribute_tokens ledger ids created.
+     * Bonus % the requester earns when their token request is approved,
+     * keyed by the REQUESTER's own role (the level receiving the tokens).
+     * Minted by the system — the approver is not charged for the bonus.
+     * Configurable via system_settings (token.bonus.<role>).
      */
-    /**
-     * One-hop fulfilment: approver → requester only. No chain cascading.
-     * Each level handles its own requests; if they're empty they must
-     * create their own request to the level above.
-     */
-    public function fulfillRequest(array $approver, array $requester, int $tokens, string $notes): array
+    private function bonusPctForRole(string $requesterRole): float
     {
+        $svc = new SystemSettingsService();
+        return match ($requesterRole) {
+            'state'    => (float) $svc->get('token.bonus.state', '3.5'),
+            'district' => (float) $svc->get('token.bonus.district', '3.0'),
+            'taluk'    => (float) $svc->get('token.bonus.taluk', '2.0'),
+            default    => 0.0, // vendor (and anything else) gets no bonus
+        };
+    }
+
+    /**
+     * One-hop fulfilment of a token request: approver → requester only.
+     * No chain cascading — each level handles its immediate-below requests.
+     *
+     * The requester is credited base + bonus, where the bonus (state +3.5%,
+     * district +3%, taluk +2%, vendor 0%) is MINTED by the system. The
+     * approver is debited only the base amount (admin is the infinite source
+     * and is never debited). No ₹ changes hands.
+     *
+     * @return array{ledger_id:int, base:float, bonus:float, bonus_pct:float, credited:float}
+     */
+    public function fulfillRequest(array $approver, array $requester, float $tokens, string $notes): array
+    {
+        if ($tokens <= 0) throw new \DomainException('Tokens must be positive');
         if (! in_array($approver['role'], ['taluk', 'district', 'state', 'admin'], true)) {
             throw new \DomainException("Role '{$approver['role']}' cannot fulfil a request");
         }
-        return [$this->gift($approver, $requester, $tokens, $notes)];
+
+        $bonusPct = $this->bonusPctForRole($requester['role'] ?? '');
+        $bonus    = round($tokens * $bonusPct / 100, 2);
+        $credited = round($tokens + $bonus, 2);
+
+        // Approver is debited the BASE only (bonus is minted). Admin = infinite.
+        if ($approver['role'] !== 'admin' && (float) ($approver['token_balance'] ?? 0) < $tokens) {
+            throw new \DomainException("{$approver['name']} has only " . (float) ($approver['token_balance'] ?? 0) . " tokens; needs {$tokens}");
+        }
+
+        $db    = Database::connect();
+        $users = new UserModel();
+        $db->transStart();
+
+        if ($approver['role'] !== 'admin') {
+            $users->update((int) $approver['id'], [
+                'token_balance' => (float) $approver['token_balance'] - $tokens,
+            ]);
+        }
+        $users->update((int) $requester['id'], [
+            'token_balance' => (float) ($requester['token_balance'] ?? 0) + $credited,
+        ]);
+
+        $ledgerNote = $bonus > 0 ? "{$notes} (+{$bonus} bonus @ {$bonusPct}%)" : $notes;
+        $id = (new DistributeTokenModel())->insert([
+            'from_user_id' => (int) $approver['id'],
+            'to_user_id'   => (int) $requester['id'],
+            'amount'       => 0,
+            'tokens'       => $credited,
+            'notes'        => $ledgerNote,
+        ], true);
+
+        $db->transComplete();
+        if ($db->transStatus() === false) throw new \RuntimeException('Fulfil failed');
+
+        return [
+            'ledger_id' => (int) $id,
+            'base'      => (float) $tokens,
+            'bonus'     => $bonus,
+            'bonus_pct' => $bonusPct,
+            'credited'  => $credited,
+        ];
     }
 
     /** For UI: how much would the next hop cost? */

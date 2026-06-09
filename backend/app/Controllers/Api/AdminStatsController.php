@@ -220,7 +220,7 @@ class AdminStatsController extends BaseApiController
         };
         $tokenBalance = 0;
         if ($aboveRole) {
-            $tokenBalance = (int) ($db->query(
+            $tokenBalance = (float) ($db->query(
                 'SELECT COALESCE(SUM(dt.tokens),0) s
                  FROM distribute_tokens dt
                  JOIN users u ON u.id = dt.from_user_id
@@ -231,11 +231,11 @@ class AdminStatsController extends BaseApiController
 
         // Token movement comes from the distribute_tokens ledger (the real
         // source of truth — wallet_transactions doesn't track token flow).
-        $tokensReceived = (int) ($db->query(
+        $tokensReceived = (float) ($db->query(
             'SELECT COALESCE(SUM(tokens),0) s FROM distribute_tokens WHERE to_user_id = ?',
             [$uid]
         )->getRow()->s ?? 0);
-        $tokensIssued = (int) ($db->query(
+        $tokensIssued = (float) ($db->query(
             'SELECT COALESCE(SUM(tokens),0) s FROM distribute_tokens WHERE from_user_id = ?',
             [$uid]
         )->getRow()->s ?? 0);
@@ -357,7 +357,7 @@ class AdminStatsController extends BaseApiController
         // from non-taluk senders don't count toward the displayed balance.)
         $wallet = (float) ($db->query('SELECT wallet_balance FROM users WHERE id = ?', [$vid])->getRow()->wallet_balance ?? 0);
 
-        $receivedFromTaluk = (int) ($db->query(
+        $receivedFromTaluk = (float) ($db->query(
             'SELECT COALESCE(SUM(dt.tokens),0) s
              FROM distribute_tokens dt
              JOIN users u ON u.id = dt.from_user_id

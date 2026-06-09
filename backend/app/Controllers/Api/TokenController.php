@@ -261,7 +261,7 @@ class TokenController extends BaseApiController
         if (! $vendor) return $this->fail('Requester not found', 404);
 
         try {
-            (new TokenService())->fulfillRequest($approver, $vendor, (int) $row['tokens'], "request#{$id}");
+            $result = (new TokenService())->fulfillRequest($approver, $vendor, (float) $row['tokens'], "request#{$id}");
         } catch (\DomainException $e) {
             return $this->fail($e->getMessage(), 422);
         } catch (\RuntimeException $e) {
@@ -277,10 +277,14 @@ class TokenController extends BaseApiController
 
         try {
             $approverLabel = ucfirst((string) $auth->role);
+            $credited = rtrim(rtrim(number_format($result['credited'], 2, '.', ''), '0'), '.');
+            $body     = $result['bonus'] > 0
+                ? "{$credited} tokens credited (incl {$result['bonus']} bonus @ {$result['bonus_pct']}%)"
+                : "{$credited} tokens credited to your wallet";
             (new NotificationService())->sendTyped(
                 (int) $vendor['id'], 'token_credit', $id, '/tokens',
                 "Token request approved by {$approverLabel}",
-                "{$row['tokens']} tokens credited to your wallet"
+                $body
             );
         } catch (\Throwable $e) { log_message('error', 'Token approve push failed: ' . $e->getMessage()); }
 
