@@ -108,6 +108,7 @@ export type AuthUser = {
   global_wallet?: number;
   monthly_wallet?: number;
   lucky_wallet?: number;
+  qr_wallet?: number;
   token_balance?: number;
   level_1_count?: number;
   level_2_count?: number;

@@ -50,9 +50,10 @@ class PurchaseController extends BaseApiController
         $tx = new WalletTransactionModel();
         $tx->insert(['user_id' => $auth->id, 'peer_user_id' => $vendor['id'], 'amount' => $amount, 'type' => 'payment', 'reference' => 'qr#' . $orderId, 'notes' => 'Vendor purchase']);
 
-        // Credit vendor 90% — remaining 10% becomes the commission pool below.
+        // Credit vendor 90% to the QR wallet — remaining 10% becomes the commission pool below.
+        // The vendor later transfers from qr_wallet to their main wallet to spend/withdraw.
         $vendorShare = round((float) $amount * 0.90, 2);
-        (new WalletService())->credit((int) $vendor['id'], 'wallet', $vendorShare, 'receive', 'qr#' . $orderId, 'Sale (90% of QR purchase)');
+        (new WalletService())->credit((int) $vendor['id'], 'qr', $vendorShare, 'receive', 'qr#' . $orderId, 'Sale (90% of QR purchase)');
 
         // 9-way commission pool distribution (L1/L2/L3 + buyback x4 + global + admin)
         (new CommissionService())->distributeForOrder((int) $orderId, (int) $auth->id, $amount, (int) $vendor['id']);

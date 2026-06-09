@@ -248,8 +248,8 @@ class WalletController extends BaseApiController
         $auth = $this->authUser();
         if (! $auth) return $this->fail('Unauthorized', 401);
         if (! $this->validate([
-            'from'   => 'required|in_list[wallet,monthly,level,global,buyback]',
-            'to'     => 'required|in_list[wallet,monthly,level,global,buyback]',
+            'from'   => 'required|in_list[wallet,monthly,level,global,buyback,qr]',
+            'to'     => 'required|in_list[wallet,monthly,level,global,buyback,qr]',
             'amount' => 'required|numeric|greater_than[0]',
         ])) return $this->fail('Validation failed', 422, $this->validator->getErrors());
         $d = $this->request->getJSON(true) ?? $this->request->getPost();

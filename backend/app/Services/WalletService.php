@@ -15,10 +15,11 @@ use App\Models\WalletTransactionModel;
  * - level_3_wallet   (L3 referral commissions — gated by threshold)
  * - global_wallet
  * - buyback_wallet
+ * - qr_wallet        (vendor in-store QR sales land here; vendor transfers to main wallet)
  */
 class WalletService
 {
-    public const WALLETS = ['wallet', 'monthly', 'level', 'level_1', 'level_2', 'level_3', 'global', 'buyback'];
+    public const WALLETS = ['wallet', 'monthly', 'level', 'level_1', 'level_2', 'level_3', 'global', 'buyback', 'qr'];
 
     public static function column(string $key): string
     {
@@ -38,6 +39,7 @@ class WalletService
             'level_3' => (float) ($u['level_3_wallet']   ?? 0),
             'global'  => (float) ($u['global_wallet']    ?? 0),
             'buyback' => (float) ($u['buyback_wallet']   ?? 0),
+            'qr'      => (float) ($u['qr_wallet']        ?? 0),
         ];
     }
 

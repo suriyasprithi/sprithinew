@@ -167,12 +167,15 @@ class TokenService
         $tokensNeeded = (int) round($itemsSubtotal * $commissionPct / 100);
         if ($tokensNeeded <= 0) return 0;
 
+        // A customer's order must never be blocked by the vendor's token
+        // balance, so we never throw on a shortage — deduct only what's
+        // available (clamped at 0, never negative) and proceed.
         $have = (int) ($vendor['token_balance'] ?? 0);
-        if ($have < $tokensNeeded) {
-            throw new \DomainException("Vendor is out of inventory tokens (needs {$tokensNeeded}, has {$have})");
+        $consumed = min($have, $tokensNeeded);
+        if ($consumed > 0) {
+            $users->update($vendorId, ['token_balance' => $have - $consumed]);
         }
-        $users->update($vendorId, ['token_balance' => $have - $tokensNeeded]);
-        return $tokensNeeded;
+        return $consumed;
     }
 
     /**

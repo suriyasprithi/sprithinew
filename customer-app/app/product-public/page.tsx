@@ -604,7 +604,7 @@ function ProductInner() {
   const hasAnyFilter = !!(filters.category_id || filters.price_min || filters.price_max || filters.in_stock);
 
   return (
-    <div className="marketplace-theme min-h-screen pb-12">
+    <div className="marketplace-theme min-h-screen">
       <TopInfoBar />
       <MarketplaceHeader />
 

@@ -109,12 +109,13 @@ class OrderController extends BaseApiController
         }
 
         // Vendor inventory tokens: deduct items_subtotal × vendor.commission_pct
-        // (1 token = ₹1). Rejected before any writes so the order is atomic.
+        // (1 token = ₹1). This must never block the customer's order or surface a
+        // vendor-side shortage message — deduct what's available and move on.
         if ($vendorId) {
             try {
                 (new TokenService())->consumeForOrder($vendorId, (float) $total);
-            } catch (\DomainException $e) {
-                return $this->fail($e->getMessage(), 409);
+            } catch (\Throwable $e) {
+                log_message('error', 'Token consume skipped for order: ' . $e->getMessage());
             }
         }
 

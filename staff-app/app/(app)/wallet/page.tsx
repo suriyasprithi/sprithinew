@@ -2,13 +2,15 @@
 
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { Wallet as WalletIcon, Banknote, Clock, Sparkles, Users, Loader2 } from "lucide-react";
+import { Wallet as WalletIcon, Banknote, Clock, Sparkles, Users, Loader2, QrCode, ArrowRightLeft } from "lucide-react";
 import { toast } from "sonner";
 import { LuxuryCard } from "@/components/ui/custom/luxury-card";
 import { AnimatedCounter } from "@/components/ui/custom/animated-counter";
 import { EmptyState } from "@/components/data-table/empty-state";
 import { MobileHeader } from "@/components/layout/mobile-nav";
 import { PageHeader } from "@/components/layout/page-header";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 import { useAuth } from "@/stores/auth";
 import { api, apiErrorMessage } from "@/lib/api";
 
@@ -38,12 +40,31 @@ const periodLabel = (p: string) => {
 };
 
 export default function StaffWalletPage() {
-  const { user } = useAuth();
+  const { user, hydrate } = useAuth();
   const isAdmin = user?.role === "admin";
   const isVendor = user?.role === "vendor";
 
   const [pool, setPool] = useState<PoolPayload | null>(null);
   const [loadingPool, setLoadingPool] = useState(false);
+
+  // Vendor QR wallet → main wallet transfer
+  const qrBalance = user?.qr_wallet ?? 0;
+  const [xferAmount, setXferAmount] = useState("");
+  const [xferBusy, setXferBusy] = useState(false);
+
+  async function transferToMain() {
+    const amt = Number(xferAmount);
+    if (!amt || amt <= 0) { toast.error("Enter an amount"); return; }
+    if (amt > qrBalance) { toast.error("Amount exceeds QR wallet balance"); return; }
+    setXferBusy(true);
+    try {
+      await api.post("/wallet/transfer", { from: "qr", to: "wallet", amount: amt });
+      toast.success(`₹${amt} moved to main wallet`);
+      setXferAmount("");
+      await hydrate(); // refresh balances from /auth/me
+    } catch (e) { toast.error(apiErrorMessage(e)); }
+    finally { setXferBusy(false); }
+  }
 
   useEffect(() => {
     if (!isAdmin) return;
@@ -81,6 +102,63 @@ export default function StaffWalletPage() {
             </div>
           </LuxuryCard>
         </motion.div>
+
+        {/* Vendor QR wallet — in-store QR sales land here; transfer to main to spend */}
+        {isVendor && (
+          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
+            <LuxuryCard hoverLift={false} className="space-y-4 p-5">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <span className="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-brand/10 text-brand">
+                    <QrCode className="h-5 w-5" />
+                  </span>
+                  <div>
+                    <p className="text-[15px] font-bold">QR wallet</p>
+                    <p className="text-xs text-muted-foreground">In-store QR sales land here. Transfer to your main wallet to spend or withdraw.</p>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <p className="text-2xl font-bold tracking-tight">
+                    <AnimatedCounter value={qrBalance} format={fmtINR} />
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-end gap-2">
+                <div className="flex-1 space-y-1.5">
+                  <label htmlFor="xfer" className="text-xs font-medium text-muted-foreground">Amount to move</label>
+                  <Input
+                    id="xfer"
+                    type="number"
+                    inputMode="decimal"
+                    value={xferAmount}
+                    onChange={(e) => setXferAmount(e.target.value)}
+                    placeholder="0"
+                    className="h-11 rounded-xl"
+                    disabled={xferBusy || qrBalance <= 0}
+                  />
+                </div>
+                <Button
+                  type="button"
+                  className="h-11 rounded-xl"
+                  onClick={() => setXferAmount(String(qrBalance))}
+                  variant="outline"
+                  disabled={xferBusy || qrBalance <= 0}
+                >
+                  All
+                </Button>
+                <Button
+                  type="button"
+                  className="h-11 rounded-xl"
+                  onClick={() => void transferToMain()}
+                  disabled={xferBusy || qrBalance <= 0}
+                >
+                  {xferBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <><ArrowRightLeft className="h-4 w-4" /> Transfer</>}
+                </Button>
+              </div>
+            </LuxuryCard>
+          </motion.div>
+        )}
 
         {/* Sub-wallet breakdown — global, monthly, referral, etc. (hidden for vendors) */}
         {!isVendor && (() => {
