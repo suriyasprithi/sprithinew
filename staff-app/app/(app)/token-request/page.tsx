@@ -45,6 +45,7 @@ export default function TokenRequestPage() {
   const [tokens, setTokens] = useState("");
   const [busy, setBusy] = useState(false);
   const [rowBusy, setRowBusy] = useState<number | null>(null);
+  const [bonusEarned, setBonusEarned] = useState(0);
 
   async function refresh() {
     setLoading(true);
@@ -79,6 +80,17 @@ export default function TokenRequestPage() {
         items = ((await api.get("/tokens/requests/mine")).data.data?.items ?? []) as ApiRow[];
       }
       setRows(items.map((r) => adapt(r, user?.name)));
+
+      // "Bonus earned" = the bonus minted into THIS user's own approved
+      // requests (state 3.5% / district 3% / taluk 2%). It lands on their
+      // received token ledger, not in the request inbox listed above.
+      if (isApprover) {
+        try {
+          const h = await api.get("/tokens/distribute/history");
+          const recv = (h.data.data?.received ?? []) as Array<{ bonus?: number | string }>;
+          setBonusEarned(Math.round(recv.reduce((s, x) => s + (Number(x.bonus) || 0), 0) * 100) / 100);
+        } catch { /* non-fatal — leave the previous value */ }
+      }
     } catch (e) {
       toast.error(apiErrorMessage(e));
       setRows(await mock.tokenRequests());
@@ -172,6 +184,23 @@ export default function TokenRequestPage() {
           <StatCard label="Approved"         value={approved.length} icon={Check}     tone="emerald" spark={[1, 1, 2, 2, 2, 2, 2, 2]} />
           <StatCard label="Tokens approved"  value={totalTokens}     icon={Coins}     tone="violet"  spark={[2, 3, 3, 4, 4, 5, 5, 6]} />
         </div>
+
+        {isApprover && (
+          <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}>
+            <div className="luxe-card flex items-center justify-between p-4">
+              <div className="flex items-center gap-3">
+                <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-amber-500/10 text-amber-400">
+                  <Coins className="h-5 w-5" />
+                </span>
+                <div>
+                  <p className="text-sm font-semibold">Bonus earned</p>
+                  <p className="text-xs text-muted-foreground">Extra tokens credited when your upstream approves your requests</p>
+                </div>
+              </div>
+              <p className="text-2xl font-bold text-amber-400">{bonusEarned > 0 ? "+" : ""}{bonusEarned.toLocaleString("en-IN")}</p>
+            </div>
+          </motion.div>
+        )}
 
         <div className="glass rounded-2xl p-3">
           <div className="grid gap-2 md:grid-cols-[1fr_200px]">
