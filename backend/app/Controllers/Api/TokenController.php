@@ -169,6 +169,16 @@ class TokenController extends BaseApiController
             }
         } catch (\Throwable $e) { log_message('error', 'Token request push failed: ' . $e->getMessage()); }
 
+        // Self-notification so the requester sees their own request in their
+        // activity feed (legacy parity: "You Requested N Points").
+        try {
+            (new NotificationService())->sendTyped(
+                (int) $auth->id, 'token_request', (int) $id, '/token-request',
+                'Token request submitted',
+                "You requested {$d['tokens']} tokens"
+            );
+        } catch (\Throwable $e) { log_message('error', 'Token request self-notify failed: ' . $e->getMessage()); }
+
         return $this->ok(['id' => (int) $id, 'current_level' => $startLevel], 'Submitted');
     }
 
