@@ -243,8 +243,8 @@ export default function TokenRequestPage() {
                   transition={{ delay: i * 0.02 }}
                   className="grid grid-cols-[1fr_auto] items-center gap-3 px-4 py-3 transition-colors hover:bg-surface-2/40 md:grid-cols-[1.4fr_120px_140px_120px_180px]"
                 >
-                  <div className="flex items-center gap-3">
-                    <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-brand/10 text-xs font-semibold text-brand">
+                  <div className="flex min-w-0 items-center gap-3">
+                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brand/10 text-xs font-semibold text-brand">
                       {r.requester_name.charAt(0).toUpperCase()}
                     </span>
                     <div className="min-w-0">
