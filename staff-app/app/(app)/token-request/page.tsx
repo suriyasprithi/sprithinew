@@ -263,11 +263,9 @@ export default function TokenRequestPage() {
                           <Button size="sm" className="h-8 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20" onClick={() => void approve(r.id)} disabled={rowBusy === r.id}>
                             {rowBusy === r.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <><Check className="h-3.5 w-3.5" /> Approve</>}
                           </Button>
-                          {isAdmin && (
-                            <Button size="sm" variant="ghost" className="h-8 text-rose-400 hover:bg-rose-500/10" onClick={() => void reject(r.id)} disabled={rowBusy === r.id}>
-                              <X className="h-3.5 w-3.5" /> Reject
-                            </Button>
-                          )}
+                          <Button size="sm" variant="ghost" className="h-8 text-rose-400 hover:bg-rose-500/10" onClick={() => void reject(r.id)} disabled={rowBusy === r.id}>
+                            <X className="h-3.5 w-3.5" /> Reject
+                          </Button>
                         </div>
                         <DropdownMenu>
                           <DropdownMenuTrigger
@@ -279,9 +277,7 @@ export default function TokenRequestPage() {
                           />
                           <DropdownMenuContent align="end" className="w-40">
                             <DropdownMenuItem onClick={() => void approve(r.id)}><Check className="h-4 w-4" /> Approve</DropdownMenuItem>
-                            {isAdmin && (
-                              <DropdownMenuItem onClick={() => void reject(r.id)} className="text-rose-400 focus:text-rose-400"><X className="h-4 w-4" /> Reject</DropdownMenuItem>
-                            )}
+                            <DropdownMenuItem onClick={() => void reject(r.id)} className="text-rose-400 focus:text-rose-400"><X className="h-4 w-4" /> Reject</DropdownMenuItem>
                           </DropdownMenuContent>
                         </DropdownMenu>
                       </>

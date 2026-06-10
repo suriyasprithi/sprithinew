@@ -341,16 +341,21 @@ class TokenController extends BaseApiController
         return $this->ok(['current_level' => $next], 'Escalated');
     }
 
-    /** Admin-only final reject. */
+    /** Reject a request. The approver currently responsible (current_level == role) or admin. */
     public function requestReject(int $id): ResponseInterface
     {
-        if ($r = $this->requireAdmin()) return $r;
         $auth = $this->authUser();
+        if (! $auth) return $this->fail('Unauthorized', 401);
+        if (! in_array($auth->role, ['taluk', 'district', 'state', 'admin'], true)) return $this->fail('Forbidden', 403);
 
         $reqModel = new TokenRequestModel();
         $row = $reqModel->find($id);
         if (! $row) return $this->fail('Not found', 404);
         if ($row['status'] !== 'pending') return $this->fail('Already processed', 409);
+        // Only the level currently responsible may reject (admin can reject anything).
+        if ($auth->role !== 'admin' && $row['current_level'] !== $auth->role) {
+            return $this->fail("This request is waiting on a {$row['current_level']} approver", 403);
+        }
 
         $reqModel->update($id, [
             'status'        => 'rejected',
@@ -360,9 +365,10 @@ class TokenController extends BaseApiController
         $this->logEvent($id, (int) $auth->id, 'reject', $row['current_level'], 'rejected', null);
 
         try {
+            $rejecterLabel = ucfirst((string) $auth->role);
             (new NotificationService())->sendTyped(
                 (int) $row['requester_id'], 'token_credit', $id, '/tokens',
-                'Token request rejected by Admin',
+                "Token request rejected by {$rejecterLabel}",
                 "Your {$row['tokens']}-token request was declined"
             );
         } catch (\Throwable $e) { log_message('error', 'Token reject push failed: ' . $e->getMessage()); }
