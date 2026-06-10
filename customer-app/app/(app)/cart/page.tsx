@@ -10,6 +10,7 @@ import { LuxuryCard } from "@/components/ui/custom/luxury-card";
 import { GradientButton } from "@/components/ui/custom/gradient-button";
 import { ProductImage } from "@/components/ui/custom/product-image";
 import { api, apiErrorMessage } from "@/lib/api";
+import { cartBadge } from "@/lib/cart";
 
 const fmtINR = (n: number) =>
   new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(n);
@@ -35,7 +36,9 @@ export default function CartPage() {
     setLoading(true);
     try {
       const res = await api.get("/cart");
-      setItems((res.data.data?.items ?? []) as CartRow[]);
+      const rows = (res.data.data?.items ?? []) as CartRow[];
+      setItems(rows);
+      cartBadge.set(rows.reduce((s, r) => s + (Number(r.qty) || 0), 0));
     } catch (e) {
       toast.error(apiErrorMessage(e));
       setItems([]);

@@ -13,6 +13,7 @@ import { GradientButton } from "@/components/ui/custom/gradient-button";
 import { ProductImage } from "@/components/ui/custom/product-image";
 import { ProductCard, ProductCardSkeleton, type MarketplaceProduct } from "@/components/marketplace/product-card";
 import { api, apiErrorMessage } from "@/lib/api";
+import { cartBadge } from "@/lib/cart";
 import { useAuth } from "@/stores/auth";
 import { cn } from "@/lib/utils";
 
@@ -588,6 +589,7 @@ function ProductInner() {
     }
     try {
       await api.post("/cart/add", { product_id: product.id, variation_id: selectedVariant?.id ?? undefined, qty });
+      cartBadge.bump(qty);
       toast.success("Added to cart");
       router.push("/cart");
     } catch (e) {

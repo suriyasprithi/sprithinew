@@ -10,6 +10,7 @@ import { AppHeader } from "@/components/layout/app-header";
 import { LuxuryCard } from "@/components/ui/custom/luxury-card";
 import { ProductImage } from "@/components/ui/custom/product-image";
 import { api, apiErrorMessage } from "@/lib/api";
+import { cartBadge } from "@/lib/cart";
 
 type Shop = { id: number; name: string; shop_name: string; area: string; pincode: string; address: string; image: string; product_count: number };
 type Product = { id: number; name: string; price: number; stock: number; image: string | null; vendor_name: string | null; category_name: string | null; has_variants: boolean };
@@ -51,6 +52,7 @@ function ShopDetailInner() {
     }
     try {
       await api.post("/cart/add", { product_id: p.id, qty: 1 });
+      cartBadge.bump(1);
       toast.success(`${p.name} added`);
     } catch (e) { toast.error(apiErrorMessage(e)); }
   }

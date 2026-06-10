@@ -12,6 +12,7 @@ import { LuxuryCard } from "@/components/ui/custom/luxury-card";
 import { GradientButton } from "@/components/ui/custom/gradient-button";
 import { ProductImage } from "@/components/ui/custom/product-image";
 import { api, apiErrorMessage } from "@/lib/api";
+import { cartBadge } from "@/lib/cart";
 import { useRouter } from "next/navigation";
 
 type Product = {
@@ -57,6 +58,7 @@ export default function ShopPage() {
     }
     try {
       await api.post("/cart/add", { product_id: p.id, qty: 1 });
+      cartBadge.bump(1);
       toast.success(`${p.name} added to cart`);
     } catch (e) { toast.error(apiErrorMessage(e)); }
   }

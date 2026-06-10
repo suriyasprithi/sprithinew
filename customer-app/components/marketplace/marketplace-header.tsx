@@ -7,6 +7,7 @@ import { Search, MapPin, ShoppingCart, Heart, Bell, User, ChevronDown } from "lu
 import { LocationPicker, readSavedLocation } from "./location-picker";
 import { useAuth } from "@/stores/auth";
 import { wishlist } from "@/lib/wishlist";
+import { cartBadge } from "@/lib/cart";
 
 export function MarketplaceHeader({ cartCount = 0, wishlistCount = 0, unreadCount = 0 }: {
   cartCount?: number;
@@ -27,6 +28,18 @@ export function MarketplaceHeader({ cartCount = 0, wishlistCount = 0, unreadCoun
     read();
     return wishlist.subscribe(read);
   }, []);
+  // Cart count is server-side but cached client-side (lib/cart) so the badge
+  // updates the moment an item is added on any page. Reconcile with the server
+  // once hydrated AND signed in (GET /cart 401s for guests → /login bounce).
+  const [liveCart, setLiveCart] = useState(cartCount);
+  useEffect(() => {
+    const read = () => setLiveCart(cartBadge.get());
+    read();
+    return cartBadge.subscribe(read);
+  }, []);
+  useEffect(() => {
+    if (isHydrated && user) void cartBadge.refresh();
+  }, [isHydrated, user]);
   useEffect(() => {
     const apply = () => {
       const v = readSavedLocation();
@@ -90,7 +103,7 @@ export function MarketplaceHeader({ cartCount = 0, wishlistCount = 0, unreadCoun
           <IconButton href="/notifications" aria-label="Notifications" badge={unreadCount}>
             <Bell className="h-5 w-5" />
           </IconButton>
-          <IconButton href="/cart" aria-label="Cart" badge={cartCount} highlighted>
+          <IconButton href="/cart" aria-label="Cart" badge={liveCart} highlighted>
             <ShoppingCart className="h-5 w-5" />
           </IconButton>
           <Link

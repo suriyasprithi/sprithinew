@@ -6,6 +6,7 @@ import { Heart, Star, Plus, Minus, Store } from "lucide-react";
 import { toast } from "sonner";
 import { ProductImage } from "@/components/ui/custom/product-image";
 import { wishlist } from "@/lib/wishlist";
+import { cartBadge } from "@/lib/cart";
 import { api, apiErrorMessage } from "@/lib/api";
 
 export type MarketplaceProduct = {
@@ -64,6 +65,7 @@ export function ProductCard({ product, onAdd }: {
           payload.variation_id = product.default_variant_id;
         }
         await api.post("/cart/add", payload);
+        cartBadge.bump(1); // server cart grew by 1 unit → reflect in the badge
       }
       setQty(nextQty);
       if (qty === 0) toast.success(`${product.name} added to cart`);

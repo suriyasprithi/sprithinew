@@ -10,6 +10,7 @@ import { LuxuryCard } from "@/components/ui/custom/luxury-card";
 import { GradientButton } from "@/components/ui/custom/gradient-button";
 import { ProductImage } from "@/components/ui/custom/product-image";
 import { api, apiErrorMessage } from "@/lib/api";
+import { cartBadge } from "@/lib/cart";
 import { cn } from "@/lib/utils";
 
 type AttrValue = string | number | boolean | string[] | null;
@@ -115,6 +116,7 @@ function ProductInner() {
         variation_id: selectedVariant?.id ?? undefined,
         qty,
       });
+      cartBadge.bump(qty);
       toast.success("Added to cart");
       router.push("/cart");
     } catch (e) { toast.error(apiErrorMessage(e)); }
