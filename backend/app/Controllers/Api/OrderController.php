@@ -57,19 +57,18 @@ class OrderController extends BaseApiController
         }
         $vendorId = count(array_unique($vendorIds)) === 1 ? $vendorIds[0] : null;
 
-        // Delivery fee: validate the customer's chosen time-rate against the cart
-        // vendor's taluk server-side (never trust a client-sent amount). The order
-        // total becomes items_subtotal ($total) + delivery fee, but all vendor /
-        // commission / token math below stays on $total (items only) so the vendor
-        // never gets a cut of the delivery fee.
+        // Delivery fee from the customer's chosen time-rate. Rates are offered
+        // across all taluks now, so accept any real rate row (no taluk match) —
+        // we still resolve price/time_min server-side, never trusting a client
+        // amount. The order total becomes items_subtotal ($total) + delivery fee,
+        // but all vendor / commission / token math below stays on $total (items
+        // only) so the vendor never gets a cut of the delivery fee.
         $deliveryFee     = 0.0;
         $deliveryMinutes = null;
         $rateId = (int) ($body['delivery_rate_id'] ?? 0);
-        if ($rateId && $vendorId) {
-            $vp      = (new VendorProfileModel())->where('user_id', $vendorId)->first();
-            $talukId = (int) ($vp['taluk_id'] ?? 0);
-            $rate    = (new DeliveryTimeRateModel())->find($rateId);
-            if ($rate && $talukId && (int) $rate['taluk_id'] === $talukId) {
+        if ($rateId) {
+            $rate = (new DeliveryTimeRateModel())->find($rateId);
+            if ($rate) {
                 $deliveryFee     = (float) $rate['price'];
                 $deliveryMinutes = (int) $rate['time_min'];
             }

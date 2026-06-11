@@ -76,15 +76,12 @@ class DeliveryRateController extends BaseApiController
         $auth = $this->authUser();
         if (! $auth) return $this->fail('Unauthorized', 401);
 
-        $talukId = $this->cartTalukId((int) $auth->id);
-        if (! $talukId) return $this->ok(['items' => [], 'taluk_id' => 0]);
-
+        // Show ALL delivery time-rates (not filtered by the cart vendor's taluk).
         // The rate table has exact-duplicate rows (legacy import) — collapse
         // identical (time_min, price) pairs so the dropdown shows each option
-        // once. MIN(id) is a real row in this taluk, so place() still validates.
+        // once. MIN(id) is a real row, so place() can resolve the chosen rate.
         $rates = (new DeliveryTimeRateModel())
             ->select('MIN(id) AS id, time_min, price')
-            ->where('taluk_id', $talukId)
             ->groupBy(['time_min', 'price'])
             ->orderBy('price', 'ASC')
             ->orderBy('time_min', 'DESC')
@@ -96,7 +93,7 @@ class DeliveryRateController extends BaseApiController
                 'time_min' => (int) $r['time_min'],
                 'price'    => (float) $r['price'],
             ], $rates),
-            'taluk_id' => $talukId,
+            'taluk_id' => 0,
         ]);
     }
 
