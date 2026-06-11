@@ -497,6 +497,30 @@ class OrderController extends BaseApiController
         } catch (\Throwable $e) {
             log_message('error', 'Order status push failed: ' . $e->getMessage());
         }
+
+        // When the order is marked ready ('shipped'), ping the vendor's assigned
+        // driver(s) that it's ready to pick up. This also reaches drivers who were
+        // assigned to the vendor AFTER the order was created (the create-time
+        // notification would have missed them). Guarded to fire only on the first
+        // transition into 'shipped'.
+        if ($status === 'shipped' && ($order['status'] ?? '') !== 'shipped') {
+            try {
+                $vId = (int) ($order['vendor_id'] ?? 0);
+                if ($vId) {
+                    $drivers = (new UserModel())
+                        ->where('assigned_vendor_id', $vId)
+                        ->where('role', 'driver')
+                        ->where('status', 'active')
+                        ->findAll();
+                    $svc = new NotificationService();
+                    foreach ($drivers as $drv) {
+                        $svc->sendTyped((int) $drv['id'], 'order_created', $id, '/driver/orders', 'New delivery', "Order #{$id} — ₹{$order['total']} ready to deliver");
+                    }
+                }
+            } catch (\Throwable $e) {
+                log_message('error', 'Order shipped driver push failed: ' . $e->getMessage());
+            }
+        }
         return $this->ok(null, 'Updated');
     }
 }

@@ -4,6 +4,7 @@ namespace App\Controllers\Api;
 
 use App\Models\TalukModel;
 use App\Models\UserModel;
+use App\Services\NotificationService;
 use CodeIgniter\HTTP\ResponseInterface;
 
 class DriverManagementController extends BaseApiController
@@ -129,6 +130,25 @@ class DriverManagementController extends BaseApiController
             if (! $vendor || $vendor['role'] !== 'vendor') return $this->fail('Vendor not found', 404);
         }
         $users->update($id, ['assigned_vendor_id' => $vendorId]);
+
+        // Notify both parties on a new assignment (not on unassign).
+        if ($vendorId && $vendor) {
+            try {
+                $svc = new NotificationService();
+                $svc->sendTyped(
+                    (int) $id, 'driver_assigned', $vendorId, '/driver/orders',
+                    'Assigned to a vendor',
+                    "You're now delivering for {$vendor['name']}. Check My Deliveries."
+                );
+                $svc->sendTyped(
+                    $vendorId, 'driver_assigned', (int) $id, '/orders',
+                    'Delivery driver assigned',
+                    "{$driver['name']} is now your delivery driver."
+                );
+            } catch (\Throwable $e) {
+                log_message('error', 'Driver assign push failed: ' . $e->getMessage());
+            }
+        }
         return $this->ok(null, $vendorId ? 'Assigned' : 'Unassigned');
     }
 
