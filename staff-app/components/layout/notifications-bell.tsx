@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Bell, ExternalLink } from "lucide-react";
 import { useAuth } from "@/stores/auth";
 import { api } from "@/lib/api";
@@ -14,12 +15,21 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 
-type NotifItem = { id: number | string; title?: string; body?: string; created_at?: string; read?: boolean };
+type NotifItem = { id: number | string; title?: string; body?: string; created_at?: string; read_at?: string | null; route?: string | null };
 
 export function NotificationsBell() {
+  const router = useRouter();
   const { user, isHydrated } = useAuth();
   const [unread, setUnread] = useState(0);
   const [items, setItems] = useState<NotifItem[]>([]);
+
+  // Mark the notification read, then jump to the page it points at.
+  async function open(n: NotifItem) {
+    if (!n.read_at) {
+      try { await api.patch(`/notifications/${n.id}/read`); setUnread((u) => Math.max(0, u - 1)); } catch { /* ignore */ }
+    }
+    if (n.route) router.push(n.route);
+  }
 
   useEffect(() => {
     if (!isHydrated || !user) return;
@@ -65,9 +75,13 @@ export function NotificationsBell() {
           <div className="px-3 py-6 text-center text-xs text-muted-foreground">No notifications yet.</div>
         ) : (
           items.map((n) => (
-            <DropdownMenuItem key={n.id} className="flex flex-col items-start gap-0.5 py-2">
+            <DropdownMenuItem
+              key={n.id}
+              onClick={() => void open(n)}
+              className={cn("flex flex-col items-start gap-0.5 py-2", n.route && "cursor-pointer")}
+            >
               <div className="flex w-full items-center gap-2">
-                <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", n.read ? "bg-muted-foreground" : "bg-brand")} />
+                <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", n.read_at ? "bg-muted-foreground" : "bg-brand")} />
                 <span className="truncate text-sm font-medium">{n.title ?? "Notification"}</span>
               </div>
               {n.body && <p className="line-clamp-2 pl-3.5 text-xs text-muted-foreground">{n.body}</p>}

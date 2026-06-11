@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { Bell, Loader2 } from "lucide-react";
 import { toast } from "sonner";
@@ -9,9 +10,10 @@ import { LuxuryCard } from "@/components/ui/custom/luxury-card";
 import { api, apiErrorMessage } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
-type Note = { id: number; title: string; body: string | null; read_at: string | null; created_at: string | null };
+type Note = { id: number; title: string; body: string | null; read_at: string | null; created_at: string | null; route?: string | null };
 
 export default function NotificationsPage() {
+  const router = useRouter();
   const [items, setItems] = useState<Note[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -33,6 +35,12 @@ export default function NotificationsPage() {
     } catch { /* ignore */ }
   };
 
+  // Mark read, then navigate to the page the notification points at.
+  const open = async (n: Note) => {
+    if (!n.read_at) await markRead(n.id);
+    if (n.route) router.push(n.route);
+  };
+
   return (
     <>
       <AppHeader title="Notifications" />
@@ -50,11 +58,8 @@ export default function NotificationsPage() {
             {items.map((n, i) => (
               <motion.div key={n.id} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.02 }}>
                 <button
-                  onClick={() => !n.read_at && markRead(n.id)}
-                  className={cn(
-                    "w-full text-left",
-                    !n.read_at && "cursor-pointer",
-                  )}
+                  onClick={() => void open(n)}
+                  className="w-full cursor-pointer text-left"
                 >
                   <LuxuryCard className={cn("p-4 transition-colors", !n.read_at && "border-brand/30")} >
                     <div className="flex items-start gap-3">

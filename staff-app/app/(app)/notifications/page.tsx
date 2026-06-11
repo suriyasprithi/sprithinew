@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { Bell, Loader2 } from "lucide-react";
 import { toast } from "sonner";
@@ -11,9 +12,10 @@ import { PageHeader } from "@/components/layout/page-header";
 import { api, apiErrorMessage } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
-type Note = { id: number; title: string; body: string | null; read_at: string | null; created_at: string | null };
+type Note = { id: number; title: string; body: string | null; read_at: string | null; created_at: string | null; route?: string | null };
 
 export default function StaffNotificationsPage() {
+  const router = useRouter();
   const [items, setItems] = useState<Note[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -31,6 +33,12 @@ export default function StaffNotificationsPage() {
       await api.patch(`/notifications/${id}/read`);
       setItems((cur) => cur.map((n) => (n.id === id ? { ...n, read_at: new Date().toISOString() } : n)));
     } catch { /* ignore */ }
+  }
+
+  // Mark read, then navigate to the page the notification points at.
+  async function open(n: Note) {
+    if (!n.read_at) await markRead(n.id);
+    if (n.route) router.push(n.route);
   }
 
   const unread = items.filter((n) => !n.read_at).length;
@@ -56,7 +64,7 @@ export default function StaffNotificationsPage() {
           <div className="space-y-2">
             {items.map((n, i) => (
               <motion.div key={n.id} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.02 }}>
-                <button onClick={() => !n.read_at && void markRead(n.id)} className="block w-full text-left">
+                <button onClick={() => void open(n)} className="block w-full text-left">
                   <LuxuryCard className={cn("p-4 transition-colors", !n.read_at && "border-brand/30")} hoverLift={!n.read_at}>
                     <div className="flex items-start gap-3">
                       <span className={cn(
