@@ -462,18 +462,28 @@ class AdminStatsController extends BaseApiController
             ]);
         }
 
+        // Only live orders count toward driver stats — legacy-imported orders
+        // were handled on the old site and never enter the driver queue (see
+        // OrderController::driverOrders). $legacyExcl is for unaliased queries,
+        // $legacyExclO for the aliased recent-orders query.
+        $legacyTable = $db->tableExists('legacy_id_map');
+        $legacyExcl  = $legacyTable ? ' AND id NOT IN (SELECT new_id FROM legacy_id_map WHERE old_table = "order")' : '';
+        $legacyExclO = $legacyTable ? ' AND o.id NOT IN (SELECT new_id FROM legacy_id_map WHERE old_table = "order")' : '';
+
+        // Pending deliveries must mirror the My Deliveries queue: pending (COD)
+        // + paid/shipped (wallet) orders awaiting delivery.
         $pending = (int) $db->query(
-            'SELECT COUNT(*) c FROM orders WHERE vendor_id = ? AND status IN ("paid","shipped")',
+            'SELECT COUNT(*) c FROM orders WHERE vendor_id = ? AND status IN ("pending","paid","shipped")' . $legacyExcl,
             [$vendorId]
         )->getRow()->c;
 
         $deliveredToday = (int) $db->query(
-            'SELECT COUNT(*) c FROM orders WHERE vendor_id = ? AND status = "delivered" AND DATE(updated_at) = ?',
+            'SELECT COUNT(*) c FROM orders WHERE vendor_id = ? AND status = "delivered" AND DATE(updated_at) = ?' . $legacyExcl,
             [$vendorId, $today]
         )->getRow()->c;
 
         $totalDelivered = (int) $db->query(
-            'SELECT COUNT(*) c FROM orders WHERE vendor_id = ? AND status = "delivered"',
+            'SELECT COUNT(*) c FROM orders WHERE vendor_id = ? AND status = "delivered"' . $legacyExcl,
             [$vendorId]
         )->getRow()->c;
 
@@ -481,7 +491,7 @@ class AdminStatsController extends BaseApiController
         $since = date('Y-m-d', strtotime('-13 days'));
         $rows  = $db->query(
             'SELECT DATE(updated_at) d, COUNT(*) c FROM orders
-             WHERE vendor_id = ? AND status = "delivered" AND DATE(updated_at) >= ?
+             WHERE vendor_id = ? AND status = "delivered" AND DATE(updated_at) >= ?' . $legacyExcl . '
              GROUP BY DATE(updated_at)',
             [$vendorId, $since]
         )->getResultArray();
@@ -497,7 +507,7 @@ class AdminStatsController extends BaseApiController
         $recentRows = $db->query(
             'SELECT o.id, o.total, o.status, o.created_at, cu.name AS customer_name
              FROM orders o LEFT JOIN users cu ON cu.id = o.customer_id
-             WHERE o.vendor_id = ?
+             WHERE o.vendor_id = ?' . $legacyExclO . '
              ORDER BY o.id DESC LIMIT 8',
             [$vendorId]
         )->getResultArray();

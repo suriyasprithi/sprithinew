@@ -11,6 +11,7 @@ import { AppHeader } from "@/components/layout/app-header";
 import { LuxuryCard } from "@/components/ui/custom/luxury-card";
 import { GradientButton } from "@/components/ui/custom/gradient-button";
 import { api, apiErrorMessage } from "@/lib/api";
+import { cleanMobile, isMobile } from "@/lib/phone";
 
 // Minimal type for the Web BarcodeDetector API (not in lib.dom yet)
 type DetectedBarcode = { rawValue: string; format: string };
@@ -76,10 +77,10 @@ export default function QrPurchasePage() {
         try {
           const codes = await detector.detect(videoRef.current);
           if (codes.length > 0) {
-            const raw = codes[0].rawValue.trim();
-            // Accept plain mobile digits, or `tel:`/`upi:` URIs that contain digits.
-            const digits = raw.replace(/\D+/g, "");
-            if (digits.length >= 7) {
+            // Accept plain mobile digits, or `tel:`/`upi:` URIs — keep the last
+            // 10 digits and require a full 10-digit mobile.
+            const digits = cleanMobile(codes[0].rawValue);
+            if (isMobile(digits)) {
               setVendorMobile(digits);
               toast.success(`Vendor: ${digits}`);
               closeScanner();
@@ -104,7 +105,8 @@ export default function QrPurchasePage() {
 
   async function pay() {
     const amt = Number(amount);
-    if (!vendorMobile || !amt) { toast.error("Vendor mobile + amount required"); return; }
+    if (!isMobile(vendorMobile)) { toast.error("Enter a valid 10-digit vendor mobile"); return; }
+    if (!amt) { toast.error("Enter an amount"); return; }
     setBusy(true);
     try {
       await api.post("/purchase/qr", { vendor_mobile: vendorMobile, amount: amt });
@@ -146,7 +148,7 @@ export default function QrPurchasePage() {
         <LuxuryCard hoverLift={false} className="space-y-4 p-5">
           <div className="space-y-1.5">
             <Label htmlFor="m">Vendor mobile</Label>
-            <Input id="m" inputMode="numeric" value={vendorMobile} onChange={(e) => setVendorMobile(e.target.value)} placeholder="9999000010" className="h-11 rounded-xl bg-surface-2/60" />
+            <Input id="m" inputMode="numeric" value={vendorMobile} onChange={(e) => setVendorMobile(cleanMobile(e.target.value))} placeholder="9999000010" className="h-11 rounded-xl bg-surface-2/60" />
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="a">Amount (₹)</Label>

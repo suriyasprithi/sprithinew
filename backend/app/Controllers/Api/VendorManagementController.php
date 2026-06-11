@@ -101,7 +101,7 @@ class VendorManagementController extends BaseApiController
         $auth = $this->authUser();
         if (! $this->validate([
             'name'               => 'required|string|max_length[100]',
-            'mobile_number'      => 'required|string|min_length[7]|max_length[15]',
+            'mobile_number'      => 'required|regex_match[/^[0-9]{10}$/]',
             'password'           => 'required|string|min_length[6]|max_length[64]',
             'shop_name'          => 'required|string|max_length[150]',
             'vendor_category_id' => 'required|is_natural_no_zero',

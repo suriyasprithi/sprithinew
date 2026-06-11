@@ -36,7 +36,7 @@ class DriverManagementController extends BaseApiController
         if ($r = $this->requireRole(['admin'])) return $r;
         if (! $this->validate([
             'name'           => 'required|string|max_length[100]',
-            'mobile_number'  => 'required|string|min_length[7]|max_length[15]',
+            'mobile_number'  => 'required|regex_match[/^[0-9]{10}$/]',
             'password'       => 'required|string|min_length[6]|max_length[64]',
             'vehicle_number' => 'permit_empty|string|max_length[20]',
             'license_number' => 'permit_empty|string|max_length[50]',
@@ -88,8 +88,15 @@ class DriverManagementController extends BaseApiController
             if (isset($payload[$k])) $payload[$k] = (float) $payload[$k];
         }
         if (array_key_exists('taluk_id', $payload)) {
-            $payload['taluk_id'] = $payload['taluk_id'] ? (int) $payload['taluk_id'] : null;
-            $payload['assigned_vendor_id'] = null;
+            $newTalukId = $payload['taluk_id'] ? (int) $payload['taluk_id'] : null;
+            $payload['taluk_id'] = $newTalukId;
+            // The assigned vendor must live in the driver's taluk, so drop the
+            // assignment ONLY when the taluk actually changes. A salary-only
+            // edit that echoes the unchanged taluk_id must keep the vendor.
+            $currentTalukId = $u['taluk_id'] ? (int) $u['taluk_id'] : null;
+            if ($newTalukId !== $currentTalukId) {
+                $payload['assigned_vendor_id'] = null;
+            }
         }
         if ($payload) $users->update($id, $payload);
         return $this->ok(null, 'Updated');

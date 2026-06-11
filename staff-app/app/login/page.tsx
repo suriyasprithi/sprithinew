@@ -12,6 +12,7 @@ import {
 import { GuestGuard } from "@/components/auth-guard";
 import { useAuth } from "@/stores/auth";
 import { api, apiErrorMessage, StaffRole, STAFF_ROLES } from "@/lib/api";
+import { cleanMobile, isMobile } from "@/lib/phone";
 
 // After login, redirect to the role-specific deployment so the existing
 // per-role build serves the dashboard. Same-origin localStorage carries tokens.
@@ -39,7 +40,8 @@ export default function LoginPage() {
   const onSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!role) return toast.error("Select your role");
-    if (!mobile || !password) return toast.error("Enter mobile and password");
+    if (!isMobile(mobile)) return toast.error("Enter a valid 10-digit mobile number");
+    if (!password) return toast.error("Enter your password");
     try {
       const user = await login(mobile.trim(), password, role);
       toast.success("Welcome");
@@ -107,7 +109,7 @@ export default function LoginPage() {
                   autoComplete="tel"
                   placeholder="9999999999"
                   value={mobile}
-                  onChange={(e) => setMobile(e.target.value)}
+                  onChange={(e) => setMobile(cleanMobile(e.target.value))}
                   disabled={isLoading}
                 />
               </div>

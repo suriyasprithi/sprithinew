@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Combobox } from "@/components/ui/combobox";
 import { Button } from "@/components/ui/button";
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
@@ -315,22 +316,15 @@ export default function VariantTypeGroupsPage() {
               </div>
               <div className="space-y-1.5 md:col-span-2">
                 <Label>Product category</Label>
-                <Select
+                <Combobox
                   value={editing?.category_id != null ? String(editing.category_id) : "none"}
                   onValueChange={(v) => setEditing((p) => p && ({ ...p, category_id: v === "none" ? null : Number(v) }))}
-                >
-                  <SelectTrigger className="h-11 rounded-xl bg-surface-2/60">
-                    <SelectValue placeholder={productCats.length ? "Pick a product category" : "Loading…"}>
-                      {(v: string) => v === "none" ? "— Unlinked" : (productCats.find((x) => String(x.id) === v)?.name ?? null)}
-                    </SelectValue>
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">— Unlinked</SelectItem>
-                    {productCats.map((c) => (
-                      <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                  options={[{ value: "none", label: "— Unlinked" }, ...productCats.map((c) => ({ value: String(c.id), label: c.name }))]}
+                  placeholder={productCats.length ? "Pick a product category" : "Loading…"}
+                  searchPlaceholder="Search category…"
+                  emptyText="No category found."
+                  className="h-11 rounded-xl bg-surface-2/60"
+                />
                 <p className="text-[11px] text-muted-foreground">Optional. Linking lets this group be reused on products in the chosen category.</p>
               </div>
             </div>

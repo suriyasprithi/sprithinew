@@ -66,7 +66,7 @@ class UserModel extends Model
 
     protected $validationRules = [
         'name'          => 'required|string|min_length[2]|max_length[100]',
-        'mobile_number' => 'required|string|min_length[7]|max_length[15]',
+        'mobile_number' => 'required|regex_match[/^[0-9]{10}$/]',
         'role'          => 'required|in_list[customer,vendor,taluk,district,state,driver,admin]',
         'status'        => 'permit_empty|in_list[active,inactive,blocked]',
         'email'         => 'permit_empty|valid_email|max_length[150]',

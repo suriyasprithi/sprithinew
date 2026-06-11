@@ -150,10 +150,10 @@ export default function StaffOrdersPage() {
                   initial={{ opacity: 0, y: 4 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: i * 0.02 }}
-                  className="grid grid-cols-[1fr_auto] items-center gap-3 px-4 py-3 transition-colors hover:bg-surface-2/40 md:grid-cols-[120px_1.4fr_140px_120px_180px]"
+                  className="flex flex-col gap-3 px-4 py-3 transition-colors hover:bg-surface-2/40 md:grid md:grid-cols-[120px_1.4fr_140px_120px_180px] md:items-center"
                 >
                   <p className="hidden font-mono text-xs text-muted-foreground md:block">#{o.id}</p>
-                  <div className="flex items-center gap-3">
+                  <div className="flex min-w-0 items-center gap-3">
                     <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-brand/10 text-brand">
                       <ShoppingBag className="h-4 w-4" />
                     </span>
@@ -165,17 +165,26 @@ export default function StaffOrdersPage() {
                       <p className="truncate text-xs text-muted-foreground">{o.item_count} items · {o.created_at}</p>
                     </div>
                   </div>
+                  {/* Desktop columns */}
                   <p className="hidden text-sm font-bold text-brand md:block">{fmtINR(o.total)}</p>
                   <div className="hidden md:block"><StatusBadge status={o.status} /></div>
-                  <div className="flex items-center gap-2 justify-self-end">
-                    <p className="text-sm font-bold text-brand md:hidden">{fmtINR(o.total)}</p>
-                    <span className="md:hidden"><StatusBadge status={o.status} /></span>
+                  <div className="hidden md:flex md:items-center md:justify-end">
                     {NEXT[o.status] && (
                       <GradientButton size="sm" onClick={() => advance(o)}>
                         Mark {NEXT[o.status]}
                       </GradientButton>
                     )}
                   </div>
+                  {/* Mobile: amount + status on one line, full-width action below */}
+                  <div className="flex items-center justify-between md:hidden">
+                    <p className="text-sm font-bold text-brand">{fmtINR(o.total)}</p>
+                    <StatusBadge status={o.status} />
+                  </div>
+                  {NEXT[o.status] && (
+                    <GradientButton size="sm" onClick={() => advance(o)} className="w-full md:hidden">
+                      Mark {NEXT[o.status]}
+                    </GradientButton>
+                  )}
                 </motion.div>
               ))}
             </div>

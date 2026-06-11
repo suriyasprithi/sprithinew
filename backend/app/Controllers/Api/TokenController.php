@@ -22,7 +22,7 @@ class TokenController extends BaseApiController
         if (! in_array($auth->role, ['admin', 'state', 'district', 'taluk'], true)) return $this->fail('Forbidden', 403);
 
         if (! $this->validate([
-            'to_mobile' => 'required|string|min_length[7]|max_length[15]',
+            'to_mobile' => 'required|regex_match[/^[0-9]{10}$/]',
             'tokens'    => 'required|integer|greater_than[0]',
         ])) return $this->fail('Validation failed', 422, $this->validator->getErrors());
 
@@ -393,7 +393,7 @@ class TokenController extends BaseApiController
         $auth = $this->authUser();
 
         if (! $this->validate([
-            'to_mobile' => 'required|string|min_length[7]|max_length[15]',
+            'to_mobile' => 'required|regex_match[/^[0-9]{10}$/]',
             'tokens'    => 'required|integer|greater_than[0]',
         ])) return $this->fail('Validation failed', 422, $this->validator->getErrors());
 

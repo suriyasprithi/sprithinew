@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Combobox } from "@/components/ui/combobox";
 import { Button } from "@/components/ui/button";
 import {
   Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
@@ -120,44 +121,38 @@ function GeoSelects<T extends { state_id?: number; district_id?: number; taluk_i
     <>
       <div className="space-y-1.5">
         <Label>State</Label>
-        <Select
-          items={stateItems}
+        <Combobox
           value={value.state_id ? String(value.state_id) : ""}
           onValueChange={(v) => v && onChange({ ...value, state_id: Number(v), district_id: undefined, taluk_id: undefined })}
-        >
-          <SelectTrigger><SelectValue placeholder="--Select State--" /></SelectTrigger>
-          <SelectContent>
-            {states.map((s) => <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>)}
-          </SelectContent>
-        </Select>
+          options={stateItems}
+          placeholder="--Select State--"
+          searchPlaceholder="Search state…"
+          emptyText="No state found."
+        />
       </div>
       <div className="space-y-1.5">
         <Label>District</Label>
-        <Select
-          items={districtItems}
+        <Combobox
           value={value.district_id ? String(value.district_id) : ""}
           onValueChange={(v) => v && onChange({ ...value, district_id: Number(v), taluk_id: undefined })}
           disabled={!value.state_id}
-        >
-          <SelectTrigger><SelectValue placeholder="--Select District--" /></SelectTrigger>
-          <SelectContent>
-            {districtOpts.map((d) => <SelectItem key={d.id} value={String(d.id)}>{d.name}</SelectItem>)}
-          </SelectContent>
-        </Select>
+          options={districtOpts.map((d) => ({ value: String(d.id), label: d.name }))}
+          placeholder="--Select District--"
+          searchPlaceholder="Search district…"
+          emptyText="No district found."
+        />
       </div>
       <div className="space-y-1.5">
         <Label>Taluk</Label>
-        <Select
-          items={talukItems}
+        <Combobox
           value={value.taluk_id ? String(value.taluk_id) : ""}
           onValueChange={(v) => v && onChange({ ...value, taluk_id: Number(v) })}
           disabled={!value.district_id}
-        >
-          <SelectTrigger><SelectValue placeholder={talukOpts.length ? "--Select Taluk--" : "No taluks"} /></SelectTrigger>
-          <SelectContent>
-            {talukOpts.map((t) => <SelectItem key={t.id} value={String(t.id)}>{t.name}</SelectItem>)}
-          </SelectContent>
-        </Select>
+          options={talukOpts.map((t) => ({ value: String(t.id), label: t.name }))}
+          placeholder={talukOpts.length ? "--Select Taluk--" : "No taluks"}
+          searchPlaceholder="Search taluk…"
+          emptyText="No taluk found."
+        />
       </div>
     </>
   );

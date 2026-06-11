@@ -10,9 +10,16 @@ class PincodeController extends BaseApiController
     public function index(): ResponseInterface
     {
         $q = (string) $this->request->getGet('q');
-        $model = (new PincodeModel())->where('status', 'active');
+        $auth = $this->authUser();
+        $isAdmin = $auth && $auth->role === 'admin';
+
+        $model = new PincodeModel();
+        // Public callers (no auth) only see active pincodes; the admin manager
+        // sees every status so inactive rows can be edited/re-enabled.
+        if (! $isAdmin) $model->where('status', 'active');
         if ($q) $model->groupStart()->like('code', $q)->orLike('area', $q)->groupEnd();
-        $rows = $model->orderBy('code', 'ASC')->findAll(50);
+
+        $rows = $model->orderBy('code', 'ASC')->findAll($isAdmin ? 1000 : 50);
         return $this->ok(['items' => $rows]);
     }
 

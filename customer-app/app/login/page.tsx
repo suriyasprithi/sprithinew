@@ -13,6 +13,7 @@ import { GradientButton } from "@/components/ui/custom/gradient-button";
 import { GuestGuard } from "@/components/auth-guard";
 import { useAuth } from "@/stores/auth";
 import { apiErrorMessage } from "@/lib/api";
+import { cleanMobile, isMobile } from "@/lib/phone";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -22,7 +23,8 @@ export default function LoginPage() {
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!mobile || !password) { toast.error("Enter mobile and password"); return; }
+    if (!isMobile(mobile)) { toast.error("Enter a valid 10-digit mobile number"); return; }
+    if (!password) { toast.error("Enter your password"); return; }
     try {
       await login(mobile.trim(), password);
       toast.success("Welcome back");
@@ -63,7 +65,7 @@ export default function LoginPage() {
                   autoComplete="tel"
                   placeholder="9999999999"
                   value={mobile}
-                  onChange={(e) => setMobile(e.target.value)}
+                  onChange={(e) => setMobile(cleanMobile(e.target.value))}
                   disabled={isLoading}
                   className="h-11 rounded-xl bg-surface-2/60"
                 />

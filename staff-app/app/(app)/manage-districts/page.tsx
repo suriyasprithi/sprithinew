@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Combobox } from "@/components/ui/combobox";
 import { Button } from "@/components/ui/button";
 import {
   Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
@@ -24,6 +25,7 @@ import { StatusBadge } from "@/components/data-table/status-badge";
 import { EmptyState } from "@/components/data-table/empty-state";
 import { TableSkeleton } from "@/components/data-table/table-skeleton";
 import { MobileHeader } from "@/components/layout/mobile-nav";
+import { cleanMobile, isMobile } from "@/lib/phone";
 import { PageHeader } from "@/components/layout/page-header";
 import { api, apiErrorMessage } from "@/lib/api";
 import { useAuth } from "@/stores/auth";
@@ -92,7 +94,7 @@ export default function ManageDistrictsPage() {
     if (!editing?.name) { toast.error("Name required"); return; }
     if (!editing.state_id) { toast.error("State required"); return; }
     if (!editing.id) {
-      if (!editing.mobile_number) { toast.error("Mobile number required"); return; }
+      if (!isMobile(editing.mobile_number ?? "")) { toast.error("Enter a valid 10-digit mobile number"); return; }
       if (!editing.password || editing.password.length < 6) { toast.error("Password (min 6 chars) required"); return; }
     }
     setSaving(true);
@@ -243,22 +245,17 @@ export default function ManageDistrictsPage() {
             <div className="space-y-1.5"><Label>Name</Label><Input value={editing?.name ?? ""} onChange={(e) => setEditing((p) => ({ ...(p ?? {}), name: e.target.value }))} /></div>
             <div className="space-y-1.5">
               <Label>State</Label>
-              <Select
+              <Combobox
                 value={editing?.state_id ? String(editing.state_id) : ""}
                 onValueChange={(v) => v && setEditing((p) => ({ ...(p ?? {}), state_id: Number(v) }))}
                 disabled={isStateRole}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select state">
-                    {(v: string) => states.find((s) => String(s.id) === v)?.name ?? null}
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectContent>
-                  {states.map((s) => <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>)}
-                </SelectContent>
-              </Select>
+                options={states.map((s) => ({ value: String(s.id), label: s.name }))}
+                placeholder="Select state"
+                searchPlaceholder="Search state…"
+                emptyText="No state found."
+              />
             </div>
-            <div className="space-y-1.5"><Label>Login mobile number</Label><Input value={editing?.mobile_number ?? ""} onChange={(e) => setEditing((p) => ({ ...(p ?? {}), mobile_number: e.target.value }))} placeholder="9999000003" inputMode="numeric" /></div>
+            <div className="space-y-1.5"><Label>Login mobile number</Label><Input value={editing?.mobile_number ?? ""} onChange={(e) => setEditing((p) => ({ ...(p ?? {}), mobile_number: cleanMobile(e.target.value) }))} placeholder="9999000003" inputMode="numeric" /></div>
             <div className="space-y-1.5">
               <Label>{editing?.id ? "New password (optional)" : "Password"}</Label>
               <Input type="password" value={editing?.password ?? ""} onChange={(e) => setEditing((p) => ({ ...(p ?? {}), password: e.target.value }))} placeholder={editing?.id ? "Leave blank to keep current" : "min 6 chars"} />

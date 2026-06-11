@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Combobox } from "@/components/ui/combobox";
 import { Button } from "@/components/ui/button";
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
@@ -255,22 +256,14 @@ export default function ProductCategoriesPage() {
             </div>
             <div className="space-y-1.5">
               <Label>Vendor category</Label>
-              <Select
+              <Combobox
                 value={editing?.vendor_category_id != null ? String(editing.vendor_category_id) : "none"}
                 onValueChange={(v) => setEditing((p) => p && ({ ...p, vendor_category_id: v === "none" ? null : Number(v) }))}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Pick a vendor category">
-                    {(v: string) => v === "none" ? "— Unlinked" : (vendorCats.find((x) => String(x.id) === v)?.name ?? null)}
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">— Unlinked</SelectItem>
-                  {vendorCats.map((v) => (
-                    <SelectItem key={v.id} value={String(v.id)}>{v.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                options={[{ value: "none", label: "— Unlinked" }, ...vendorCats.map((v) => ({ value: String(v.id), label: v.name }))]}
+                placeholder="Pick a vendor category"
+                searchPlaceholder="Search vendor category…"
+                emptyText="No vendor category found."
+              />
               <p className="text-[11px] text-muted-foreground">Vendors with this vendor category will see this product category in their product form dropdown.</p>
             </div>
             <div className="space-y-1.5">

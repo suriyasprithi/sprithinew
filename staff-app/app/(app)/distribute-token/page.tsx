@@ -12,6 +12,7 @@ import { EmptyState } from "@/components/data-table/empty-state";
 import { MobileHeader } from "@/components/layout/mobile-nav";
 import { PageHeader } from "@/components/layout/page-header";
 import { api, apiErrorMessage } from "@/lib/api";
+import { cleanMobile, isMobile } from "@/lib/phone";
 import { useAuth } from "@/stores/auth";
 
 type Row = {
@@ -71,7 +72,8 @@ export default function DistributeTokenPage() {
 
   async function distribute() {
     const t = Number(tokens);
-    if (!mobile || !t) { toast.error("Mobile + tokens required"); return; }
+    if (!isMobile(mobile)) { toast.error("Enter a valid 10-digit mobile number"); return; }
+    if (!t) { toast.error("Enter tokens"); return; }
     setBusy(true);
     try {
       await api.post("/tokens/distribute", { to_mobile: mobile, tokens: t });
@@ -99,7 +101,7 @@ export default function DistributeTokenPage() {
           <LuxuryCard hoverLift={false} className="space-y-4 p-5">
             <div className="space-y-1.5">
               <Label htmlFor="mobile">Receiver mobile ({target})</Label>
-              <Input id="mobile" inputMode="numeric" value={mobile} onChange={(e) => setMobile(e.target.value.replace(/\D/g, ""))} placeholder="9999000010" className="h-11 rounded-xl bg-surface-2/60" />
+              <Input id="mobile" inputMode="numeric" value={mobile} onChange={(e) => setMobile(cleanMobile(e.target.value))} placeholder="9999000010" className="h-11 rounded-xl bg-surface-2/60" />
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="tokens">Tokens</Label>

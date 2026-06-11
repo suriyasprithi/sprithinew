@@ -21,7 +21,7 @@ class GeoController extends BaseApiController
         if ($r = $this->requireRole(['admin'])) return $r;
         if (! $this->validate([
             'name'          => 'required|string|max_length[100]',
-            'mobile_number' => 'required|string|min_length[7]|max_length[15]',
+            'mobile_number' => 'required|regex_match[/^[0-9]{10}$/]',
             'password'      => 'required|string|min_length[6]|max_length[64]',
         ])) return $this->fail('Validation failed', 422, $this->validator->getErrors());
 
@@ -101,7 +101,7 @@ class GeoController extends BaseApiController
         if ($r = $this->requireRole(['admin', 'state'])) return $r;
         if (! $this->validate([
             'name'          => 'required|string|max_length[100]',
-            'mobile_number' => 'required|string|min_length[7]|max_length[15]',
+            'mobile_number' => 'required|regex_match[/^[0-9]{10}$/]',
             'password'      => 'required|string|min_length[6]|max_length[64]',
         ])) return $this->fail('Validation failed', 422, $this->validator->getErrors());
 
@@ -233,7 +233,7 @@ class GeoController extends BaseApiController
         if (! $this->validate([
             'district_id'   => 'required|integer',
             'name'          => 'required|string|max_length[100]',
-            'mobile_number' => 'required|string|min_length[7]|max_length[15]',
+            'mobile_number' => 'required|regex_match[/^[0-9]{10}$/]',
             'password'      => 'required|string|min_length[6]|max_length[64]',
         ])) return $this->fail('Validation failed', 422, $this->validator->getErrors());
 

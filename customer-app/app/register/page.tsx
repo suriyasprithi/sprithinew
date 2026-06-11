@@ -13,6 +13,7 @@ import { GradientButton } from "@/components/ui/custom/gradient-button";
 import { GuestGuard } from "@/components/auth-guard";
 import { useAuth } from "@/stores/auth";
 import { api, apiErrorMessage } from "@/lib/api";
+import { cleanMobile, isMobile } from "@/lib/phone";
 
 export default function RegisterPage() {
   return (
@@ -36,13 +37,16 @@ function RegisterInner() {
 
   useEffect(() => {
     const ref = sp?.get("ref");
-    if (ref) setReferrerCode(ref);
+    if (ref) setReferrerCode(cleanMobile(ref));
   }, [sp]);
 
   const register = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name || !mobile || !password) return toast.error("Name, mobile, password are required");
+    if (!name) return toast.error("Name is required");
+    if (!isMobile(mobile)) return toast.error("Enter a valid 10-digit mobile number");
+    if (!password) return toast.error("Password is required");
     if (password.length < 6) return toast.error("Password must be at least 6 characters");
+    if (referrerCode && !isMobile(referrerCode)) return toast.error("Referrer mobile must be 10 digits");
     setBusy(true);
     try {
       const res = await api.post("/auth/register", {
@@ -94,7 +98,7 @@ function RegisterInner() {
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="mobile">Mobile</Label>
-                <Input id="mobile" type="tel" inputMode="numeric" autoComplete="tel" placeholder="9999999999" value={mobile} onChange={(e) => setMobile(e.target.value)} disabled={busy || isLoading} className="h-11 rounded-xl bg-surface-2/60" />
+                <Input id="mobile" type="tel" inputMode="numeric" autoComplete="tel" placeholder="9999999999" value={mobile} onChange={(e) => setMobile(cleanMobile(e.target.value))} disabled={busy || isLoading} className="h-11 rounded-xl bg-surface-2/60" />
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="pincode">Pincode</Label>
@@ -110,7 +114,7 @@ function RegisterInner() {
               </div>
               <div className="space-y-1.5 sm:col-span-2">
                 <Label htmlFor="ref">Referral code <span className="text-muted-foreground">(optional)</span></Label>
-                <Input id="ref" placeholder="Referrer's mobile" value={referrerCode} onChange={(e) => setReferrerCode(e.target.value)} disabled={busy || isLoading} className="h-11 rounded-xl bg-surface-2/60" />
+                <Input id="ref" inputMode="numeric" placeholder="Referrer's mobile" value={referrerCode} onChange={(e) => setReferrerCode(cleanMobile(e.target.value))} disabled={busy || isLoading} className="h-11 rounded-xl bg-surface-2/60" />
               </div>
               <GradientButton type="submit" size="lg" className="w-full sm:col-span-2" disabled={busy || isLoading}>
                 {busy || isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <><Sparkles className="h-4 w-4" /> Create account</>}

@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import { GuestGuard } from "@/components/auth-guard";
 import { useAuth } from "@/stores/auth";
 import { apiErrorMessage, StaffRole, STAFF_ROLES } from "@/lib/api";
+import { cleanMobile, isMobile } from "@/lib/phone";
 
 // After /staff login, redirect to the role-specific deployment so the existing
 // per-role build serves the dashboard. Same-origin localStorage carries tokens.
@@ -43,7 +44,8 @@ export function StaffLoginForm() {
 
   const onSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    if (!mobile || !password) return toast.error("Enter mobile and password");
+    if (!isMobile(mobile)) return toast.error("Enter a valid 10-digit mobile number");
+    if (!password) return toast.error("Enter your password");
     try {
       const user = BASE_ROLE
         ? await login(mobile.trim(), password, BASE_ROLE)
@@ -86,7 +88,7 @@ export function StaffLoginForm() {
                   autoComplete="tel"
                   placeholder="9999999999"
                   value={mobile}
-                  onChange={(e) => setMobile(e.target.value)}
+                  onChange={(e) => setMobile(cleanMobile(e.target.value))}
                   disabled={isLoading}
                 />
               </div>

@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Combobox } from "@/components/ui/combobox";
 import { Button } from "@/components/ui/button";
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
@@ -688,7 +689,7 @@ export default function VendorProductsPage() {
             {/* PRODUCT CATEGORY — filtered to vendor's vendor_category */}
             <div className="space-y-1.5">
               <Label>Product category <span className="text-brand">*</span></Label>
-              <Select
+              <Combobox
                 value={editing?.category_id != null ? String(editing.category_id) : ""}
                 onValueChange={(v) => v && setEditing((p) => {
                   if (!p) return p;
@@ -696,24 +697,12 @@ export default function VendorProductsPage() {
                   if (p.category_id === newId) return p;
                   return { ...p, category_id: newId, attributes: {} };
                 })}
-              >
-                <SelectTrigger className="h-11 w-full rounded-xl bg-surface-2/60">
-                  <SelectValue placeholder={productCategories.length === 0 ? "No categories available for your vendor category" : "Pick a category — Vegetables, Fruits, Rice…"}>
-                    {(v: string | null) => {
-                      if (!v) return null;
-                      const cat = productCategories.find((c) => String(c.id) === v);
-                      return cat ? cat.name : null;
-                    }}
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectContent>
-                  {productCategories.length === 0 ? (
-                    <SelectItem value="__empty" disabled>No categories — ask admin to link some to {vendorCategory?.name ?? "your vendor category"}</SelectItem>
-                  ) : productCategories.map((c) => (
-                    <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                options={productCategories.map((c) => ({ value: String(c.id), label: c.name }))}
+                placeholder={productCategories.length === 0 ? "No categories available for your vendor category" : "Pick a category — Vegetables, Fruits, Rice…"}
+                searchPlaceholder="Search category…"
+                emptyText={`No categories — ask admin to link some to ${vendorCategory?.name ?? "your vendor category"}`}
+                className="h-11 w-full rounded-xl bg-surface-2/60"
+              />
               <p className="text-[11px] text-muted-foreground">Only categories linked to your <span className="font-medium text-foreground">{vendorCategory?.name ?? "vendor category"}</span> appear here.</p>
             </div>
 

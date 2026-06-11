@@ -15,11 +15,11 @@ class AuthController extends BaseApiController
     {
         $rules = [
             'name'          => 'required|string|min_length[2]|max_length[100]',
-            'mobile_number' => 'required|string|min_length[7]|max_length[15]',
+            'mobile_number' => 'required|regex_match[/^[0-9]{10}$/]',
             'password'      => 'required|string|min_length[6]|max_length[64]',
             'email'         => 'permit_empty|valid_email|max_length[150]',
             'pincode'       => 'permit_empty|string|max_length[10]',
-            'referrer_code' => 'permit_empty|string|max_length[15]',
+            'referrer_code' => 'permit_empty|regex_match[/^[0-9]{10}$/]',
         ];
         if (! $this->validate($rules)) {
             return $this->fail('Validation failed', 422, $this->validator->getErrors());
@@ -105,7 +105,7 @@ class AuthController extends BaseApiController
     public function login(): ResponseInterface
     {
         $rules = [
-            'mobile_number' => 'required|string',
+            'mobile_number' => 'required|regex_match[/^[0-9]{10}$/]',
             'password'      => 'required|string',
             'role'          => 'required|in_list[' . implode(',', self::ALLOWED_ROLES) . ']',
         ];
@@ -130,7 +130,7 @@ class AuthController extends BaseApiController
     public function staffLogin(): ResponseInterface
     {
         $rules = [
-            'mobile_number' => 'required|string',
+            'mobile_number' => 'required|regex_match[/^[0-9]{10}$/]',
             'password'      => 'required|string',
         ];
         if (! $this->validate($rules)) {

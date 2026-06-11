@@ -277,7 +277,7 @@ class WalletController extends BaseApiController
         if (! $auth) return $this->fail('Unauthorized', 401);
 
         if (! $this->validate([
-            'to_mobile' => 'required|string|min_length[7]|max_length[15]',
+            'to_mobile' => 'required|regex_match[/^[0-9]{10}$/]',
             'amount'    => 'required|numeric|greater_than[0]',
         ])) return $this->fail('Validation failed', 422, $this->validator->getErrors());
 

@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Combobox } from "@/components/ui/combobox";
 import { Button } from "@/components/ui/button";
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
@@ -22,6 +23,7 @@ import { EmptyState } from "@/components/data-table/empty-state";
 import { TableSkeleton } from "@/components/data-table/table-skeleton";
 import { Pagination } from "@/components/data-table/pagination";
 import { MobileHeader } from "@/components/layout/mobile-nav";
+import { cleanMobile, isMobile } from "@/lib/phone";
 import { PageHeader } from "@/components/layout/page-header";
 import { api, apiErrorMessage } from "@/lib/api";
 
@@ -166,6 +168,7 @@ export default function AdminDriversPage() {
   async function saveNew() {
     if (!adding) return;
     if (!adding.name || !adding.mobile || !adding.password) { toast.error("Name, mobile and password required"); return; }
+    if (!isMobile(adding.mobile)) { toast.error("Enter a valid 10-digit mobile number"); return; }
     setSaving(true);
     try {
       await api.post("/drivers", {
@@ -380,7 +383,7 @@ export default function AdminDriversPage() {
           </DialogHeader>
           <div className="grid gap-3 md:grid-cols-2">
             <div className="space-y-1.5 md:col-span-2"><Label>Name</Label><Input value={adding?.name ?? ""} onChange={(e) => setAdding((p) => p && ({ ...p, name: e.target.value }))} /></div>
-            <div className="space-y-1.5"><Label>Mobile</Label><Input inputMode="numeric" value={adding?.mobile ?? ""} onChange={(e) => setAdding((p) => p && ({ ...p, mobile: e.target.value.replace(/\D/g, "") }))} /></div>
+            <div className="space-y-1.5"><Label>Mobile</Label><Input inputMode="numeric" value={adding?.mobile ?? ""} onChange={(e) => setAdding((p) => p && ({ ...p, mobile: cleanMobile(e.target.value) }))} /></div>
             <div className="space-y-1.5"><Label>Password</Label><Input type="password" value={adding?.password ?? ""} onChange={(e) => setAdding((p) => p && ({ ...p, password: e.target.value }))} /></div>
             <div className="space-y-1.5"><Label>Vehicle</Label><Input value={adding?.vehicle ?? ""} onChange={(e) => setAdding((p) => p && ({ ...p, vehicle: e.target.value }))} placeholder="TN-37 AB 1234" /></div>
             <div className="space-y-1.5"><Label>License</Label><Input value={adding?.license ?? ""} onChange={(e) => setAdding((p) => p && ({ ...p, license: e.target.value }))} /></div>
@@ -390,40 +393,17 @@ export default function AdminDriversPage() {
             </div>
             <div className="space-y-1.5">
               <Label>Taluk</Label>
-              <Select value={adding?.taluk_id || ""} onValueChange={(v) => setAdding((p) => p && ({ ...p, taluk_id: v || "", km_rate: "", hour_rate: "" }))}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select taluk (optional)">
-                    {(v: string) => taluks.find((t) => String(t.id) === v)?.name ?? null}
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectContent>
-                  {taluks.map((t) => (<SelectItem key={t.id} value={String(t.id)}>{t.name}</SelectItem>))}
-                </SelectContent>
-              </Select>
+              <Combobox
+                value={adding?.taluk_id || ""}
+                onValueChange={(v) => setAdding((p) => p && ({ ...p, taluk_id: v || "", km_rate: "", hour_rate: "" }))}
+                options={taluks.map((t) => ({ value: String(t.id), label: t.name }))}
+                placeholder="Select taluk (optional)"
+                searchPlaceholder="Search taluk…"
+                emptyText="No taluk found."
+                noneLabel="— None —"
+              />
             </div>
             <div className="space-y-1.5"><Label>Monthly salary (₹)</Label><Input type="number" value={adding?.salary ?? ""} onChange={(e) => setAdding((p) => p && ({ ...p, salary: e.target.value }))} /></div>
-            <div className="space-y-1.5">
-              <Label>Delivery KM rate</Label>
-              <Select value={adding?.km_rate || ""} onValueChange={(v) => setAdding((p) => p && ({ ...p, km_rate: v }))} disabled={!adding?.taluk_id}>
-                <SelectTrigger>
-                  <SelectValue placeholder={adding?.taluk_id ? "Select KM rate" : "Pick a taluk first"}>
-                    {(v: string) => {
-                      if (!v) return null;
-                      const list = kmOptionsFor(adding?.taluk_id ? Number(adding.taluk_id) : null);
-                      const s = list.find((x) => String(x.price_per_km) === v);
-                      return s ? `${s.taluk_name ?? "—"} · ${s.from_km}-${s.to_km} km · ${fmtINR(s.price_per_km)}/km` : `${fmtINR(Number(v))}/km`;
-                    }}
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectContent>
-                  {kmOptionsFor(adding?.taluk_id ? Number(adding.taluk_id) : null).map((s) => (
-                    <SelectItem key={s.id} value={String(s.price_per_km)}>
-                      {(s.taluk_name ?? "—") + " · " + s.from_km + "-" + s.to_km + " km · " + fmtINR(s.price_per_km) + "/km"}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
             <div className="space-y-1.5">
               <Label>Delivery Time rate</Label>
               <Select value={adding?.hour_rate || ""} onValueChange={(v) => setAdding((p) => p && ({ ...p, hour_rate: v }))} disabled={!adding?.taluk_id}>
@@ -471,40 +451,17 @@ export default function AdminDriversPage() {
             </div>
             <div className="space-y-1.5">
               <Label>Taluk</Label>
-              <Select value={editing?.taluk_id || ""} onValueChange={(v) => setEditing((p) => p && ({ ...p, taluk_id: v || "", km_rate: "", hour_rate: "" }))}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select taluk (optional)">
-                    {(v: string) => taluks.find((t) => String(t.id) === v)?.name ?? null}
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectContent>
-                  {taluks.map((t) => (<SelectItem key={t.id} value={String(t.id)}>{t.name}</SelectItem>))}
-                </SelectContent>
-              </Select>
+              <Combobox
+                value={editing?.taluk_id || ""}
+                onValueChange={(v) => setEditing((p) => p && ({ ...p, taluk_id: v || "", km_rate: "", hour_rate: "" }))}
+                options={taluks.map((t) => ({ value: String(t.id), label: t.name }))}
+                placeholder="Select taluk (optional)"
+                searchPlaceholder="Search taluk…"
+                emptyText="No taluk found."
+                noneLabel="— None —"
+              />
             </div>
             <div className="space-y-1.5"><Label>Monthly salary (₹)</Label><Input type="number" value={editing?.salary ?? ""} onChange={(e) => setEditing((p) => p && ({ ...p, salary: e.target.value }))} /></div>
-            <div className="space-y-1.5">
-              <Label>Delivery KM rate</Label>
-              <Select value={editing?.km_rate || ""} onValueChange={(v) => setEditing((p) => p && ({ ...p, km_rate: v }))} disabled={!editing?.taluk_id}>
-                <SelectTrigger>
-                  <SelectValue placeholder={editing?.taluk_id ? "Select KM rate" : "Pick a taluk first"}>
-                    {(v: string) => {
-                      if (!v) return null;
-                      const list = kmOptionsFor(editing?.taluk_id ? Number(editing.taluk_id) : null);
-                      const s = list.find((x) => String(x.price_per_km) === v);
-                      return s ? `${s.taluk_name ?? "—"} · ${s.from_km}-${s.to_km} km · ${fmtINR(s.price_per_km)}/km` : `${fmtINR(Number(v))}/km`;
-                    }}
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectContent>
-                  {kmOptionsFor(editing?.taluk_id ? Number(editing.taluk_id) : null).map((s) => (
-                    <SelectItem key={s.id} value={String(s.price_per_km)}>
-                      {(s.taluk_name ?? "—") + " · " + s.from_km + "-" + s.to_km + " km · " + fmtINR(s.price_per_km) + "/km"}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
             <div className="space-y-1.5">
               <Label>Delivery Time rate</Label>
               <Select value={editing?.hour_rate || ""} onValueChange={(v) => setEditing((p) => p && ({ ...p, hour_rate: v }))} disabled={!editing?.taluk_id}>

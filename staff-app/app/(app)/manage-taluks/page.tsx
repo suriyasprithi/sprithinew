@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Combobox } from "@/components/ui/combobox";
 import { Button } from "@/components/ui/button";
 import {
   Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
@@ -24,6 +25,7 @@ import { StatusBadge } from "@/components/data-table/status-badge";
 import { EmptyState } from "@/components/data-table/empty-state";
 import { TableSkeleton } from "@/components/data-table/table-skeleton";
 import { MobileHeader } from "@/components/layout/mobile-nav";
+import { cleanMobile, isMobile } from "@/lib/phone";
 import { PageHeader } from "@/components/layout/page-header";
 import { api, apiErrorMessage } from "@/lib/api";
 import { useAuth } from "@/stores/auth";
@@ -92,7 +94,7 @@ export default function ManageTaluksPage() {
     if (!editing?.name) { toast.error("Name required"); return; }
     if (!editing.district_id) { toast.error("District required"); return; }
     if (!editing.id) {
-      if (!editing.mobile_number) { toast.error("Mobile number required"); return; }
+      if (!isMobile(editing.mobile_number ?? "")) { toast.error("Enter a valid 10-digit mobile number"); return; }
       if (!editing.password || editing.password.length < 6) { toast.error("Password (min 6 chars) required"); return; }
     }
     setSaving(true);
@@ -243,18 +245,17 @@ export default function ManageTaluksPage() {
             <div className="space-y-1.5"><Label>Name</Label><Input value={editing?.name ?? ""} onChange={(e) => setEditing((p) => ({ ...(p ?? {}), name: e.target.value }))} /></div>
             <div className="space-y-1.5">
               <Label>District</Label>
-              <Select value={editing?.district_id ? String(editing.district_id) : ""} onValueChange={(v) => v && setEditing((p) => ({ ...(p ?? {}), district_id: Number(v) }))} disabled={isDistrictRole}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select district">
-                    {(v: string) => districts.find((d) => String(d.id) === v)?.name ?? null}
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectContent>
-                  {districts.map((d) => <SelectItem key={d.id} value={String(d.id)}>{d.name}</SelectItem>)}
-                </SelectContent>
-              </Select>
+              <Combobox
+                value={editing?.district_id ? String(editing.district_id) : ""}
+                onValueChange={(v) => v && setEditing((p) => ({ ...(p ?? {}), district_id: Number(v) }))}
+                disabled={isDistrictRole}
+                options={districts.map((d) => ({ value: String(d.id), label: d.name }))}
+                placeholder="Select district"
+                searchPlaceholder="Search district…"
+                emptyText="No district found."
+              />
             </div>
-            <div className="space-y-1.5"><Label>Login mobile number</Label><Input value={editing?.mobile_number ?? ""} onChange={(e) => setEditing((p) => ({ ...(p ?? {}), mobile_number: e.target.value }))} placeholder="9999000004" inputMode="numeric" /></div>
+            <div className="space-y-1.5"><Label>Login mobile number</Label><Input value={editing?.mobile_number ?? ""} onChange={(e) => setEditing((p) => ({ ...(p ?? {}), mobile_number: cleanMobile(e.target.value) }))} placeholder="9999000004" inputMode="numeric" /></div>
             <div className="space-y-1.5">
               <Label>{editing?.id ? "New password (optional)" : "Password"}</Label>
               <Input type="password" value={editing?.password ?? ""} onChange={(e) => setEditing((p) => ({ ...(p ?? {}), password: e.target.value }))} placeholder={editing?.id ? "Leave blank to keep current" : "min 6 chars"} />

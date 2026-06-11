@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Combobox } from "@/components/ui/combobox";
 import { Button } from "@/components/ui/button";
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
@@ -233,22 +234,14 @@ export default function TalukDriversPage() {
           </DialogHeader>
           <div className="space-y-1.5">
             <Label>Vendor</Label>
-            <Select value={assigning?.vendor_id || ""} onValueChange={(v) => setAssigning((p) => p && ({ ...p, vendor_id: v || "" }))}>
-              <SelectTrigger>
-                <SelectValue placeholder="Select vendor (leave blank to unassign)">
-                  {(v: string) => {
-                    if (!v) return null;
-                    const vendor = vendors.find((x) => String(x.id) === v);
-                    return vendor ? (vendor.shop_name || vendor.name) : null;
-                  }}
-                </SelectValue>
-              </SelectTrigger>
-              <SelectContent>
-                {vendors.map((v) => (
-                  <SelectItem key={v.id} value={String(v.id)}>{v.shop_name || v.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <Combobox
+              value={assigning?.vendor_id || ""}
+              onValueChange={(v) => setAssigning((p) => p && ({ ...p, vendor_id: v || "" }))}
+              options={vendors.map((v) => ({ value: String(v.id), label: v.shop_name || v.name }))}
+              placeholder="Select vendor (leave blank to unassign)"
+              searchPlaceholder="Search vendor…"
+              emptyText="No vendor found."
+            />
           </div>
           <DialogFooter>
             <Button variant="ghost" onClick={() => setAssigning(null)} disabled={saving}>Cancel</Button>

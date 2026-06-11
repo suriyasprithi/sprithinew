@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Combobox } from "@/components/ui/combobox";
 import { Button } from "@/components/ui/button";
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
@@ -21,6 +22,7 @@ import { EmptyState } from "@/components/data-table/empty-state";
 import { TableSkeleton } from "@/components/data-table/table-skeleton";
 import { Pagination } from "@/components/data-table/pagination";
 import { MobileHeader } from "@/components/layout/mobile-nav";
+import { cleanMobile, isMobile } from "@/lib/phone";
 import { PageHeader } from "@/components/layout/page-header";
 import { api, apiErrorMessage } from "@/lib/api";
 import type { ManagedVendor } from "@/lib/mock";
@@ -137,6 +139,7 @@ export default function ManageVendorsPage() {
       toast.error("All fields required");
       return;
     }
+    if (!isMobile(adding.mobile)) { toast.error("Enter a valid 10-digit mobile number"); return; }
     if (adding.password.length < 6) {
       toast.error("Password must be at least 6 characters");
       return;
@@ -402,40 +405,31 @@ export default function ManageVendorsPage() {
             {templates.length > 0 && (
               <div className="space-y-1.5">
                 <Label>Use template <span className="text-muted-foreground">(optional)</span></Label>
-                <Select value="" onValueChange={(v) => v && applyTemplate(v)}>
-                  <SelectTrigger className="h-10 rounded-xl bg-surface-2/60">
-                    <SelectValue placeholder="Pre-fill category + commission from a saved template" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {templates.map((t) => (<SelectItem key={t.id} value={String(t.id)}>{t.name}</SelectItem>))}
-                  </SelectContent>
-                </Select>
+                <Combobox
+                  value=""
+                  onValueChange={(v) => v && applyTemplate(v)}
+                  options={templates.map((t) => ({ value: String(t.id), label: t.name }))}
+                  placeholder="Pre-fill category + commission from a saved template"
+                  searchPlaceholder="Search template…"
+                  emptyText="No template found."
+                  className="h-10 rounded-xl bg-surface-2/60"
+                />
               </div>
             )}
             <div className="space-y-1.5"><Label>Owner name</Label><Input value={adding?.name ?? ""} onChange={(e) => setAdding((p) => p && ({ ...p, name: e.target.value }))} /></div>
-            <div className="space-y-1.5"><Label>Mobile</Label><Input inputMode="numeric" value={adding?.mobile ?? ""} onChange={(e) => setAdding((p) => p && ({ ...p, mobile: e.target.value.replace(/\D/g, "") }))} /></div>
+            <div className="space-y-1.5"><Label>Mobile</Label><Input inputMode="numeric" value={adding?.mobile ?? ""} onChange={(e) => setAdding((p) => p && ({ ...p, mobile: cleanMobile(e.target.value) }))} /></div>
             <div className="space-y-1.5"><Label>Shop name</Label><Input value={adding?.shop_name ?? ""} onChange={(e) => setAdding((p) => p && ({ ...p, shop_name: e.target.value }))} /></div>
             <div className="space-y-1.5">
               <Label>Vendor category</Label>
-              <Select
+              <Combobox
                 value={adding?.vendor_category_id ?? ""}
                 onValueChange={(v) => v && setAdding((p) => p && ({ ...p, vendor_category_id: v }))}
-              >
-                <SelectTrigger className="h-10 rounded-xl bg-surface-2/60">
-                  <SelectValue placeholder={categories.length ? "Choose a category" : "Loading…"}>
-                    {(value: unknown) => {
-                      const id = Number(value);
-                      const c = categories.find((c) => c.id === id);
-                      return c ? c.name : "";
-                    }}
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectContent>
-                  {categories.map((c) => (
-                    <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                options={categories.map((c) => ({ value: String(c.id), label: c.name }))}
+                placeholder={categories.length ? "Choose a category" : "Loading…"}
+                searchPlaceholder="Search category…"
+                emptyText="No category found."
+                className="h-10 rounded-xl bg-surface-2/60"
+              />
             </div>
             <div className="space-y-1.5">
               <Label>Commission % <span className="text-muted-foreground">(of each order)</span></Label>
@@ -461,25 +455,15 @@ export default function ManageVendorsPage() {
             <div className="space-y-1.5"><Label>Shop name</Label><Input value={editing?.shop_name ?? ""} onChange={(e) => setEditing((p) => p && ({ ...p, shop_name: e.target.value }))} /></div>
             <div className="space-y-1.5">
               <Label>Vendor category</Label>
-              <Select
+              <Combobox
                 value={editing?.vendor_category_id ?? ""}
                 onValueChange={(v) => v && setEditing((p) => p && ({ ...p, vendor_category_id: v }))}
-              >
-                <SelectTrigger className="h-10 rounded-xl bg-surface-2/60">
-                  <SelectValue placeholder={categories.length ? "Choose a category" : "Loading…"}>
-                    {(value: unknown) => {
-                      const id = Number(value);
-                      const c = categories.find((c) => c.id === id);
-                      return c ? c.name : "";
-                    }}
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectContent>
-                  {categories.map((c) => (
-                    <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                options={categories.map((c) => ({ value: String(c.id), label: c.name }))}
+                placeholder={categories.length ? "Choose a category" : "Loading…"}
+                searchPlaceholder="Search category…"
+                emptyText="No category found."
+                className="h-10 rounded-xl bg-surface-2/60"
+              />
             </div>
             <div className="space-y-1.5">
               <Label>Commission % <span className="text-muted-foreground">(of each order)</span></Label>
@@ -528,16 +512,15 @@ export default function ManageVendorsPage() {
               <div className="space-y-1.5"><Label>Template name</Label><Input value={newTpl.name} onChange={(e) => setNewTpl((p) => ({ ...p, name: e.target.value }))} placeholder="e.g. Grocery · 10%" /></div>
               <div className="space-y-1.5">
                 <Label>Vendor category</Label>
-                <Select value={newTpl.vendor_category_id} onValueChange={(v) => v && setNewTpl((p) => ({ ...p, vendor_category_id: v }))}>
-                  <SelectTrigger className="h-10 rounded-xl bg-surface-2/60">
-                    <SelectValue placeholder={categories.length ? "Choose a category" : "Loading…"}>
-                      {(value: unknown) => { const c = categories.find((c) => c.id === Number(value)); return c ? c.name : ""; }}
-                    </SelectValue>
-                  </SelectTrigger>
-                  <SelectContent>
-                    {categories.map((c) => (<SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>))}
-                  </SelectContent>
-                </Select>
+                <Combobox
+                  value={newTpl.vendor_category_id}
+                  onValueChange={(v) => v && setNewTpl((p) => ({ ...p, vendor_category_id: v }))}
+                  options={categories.map((c) => ({ value: String(c.id), label: c.name }))}
+                  placeholder={categories.length ? "Choose a category" : "Loading…"}
+                  searchPlaceholder="Search category…"
+                  emptyText="No category found."
+                  className="h-10 rounded-xl bg-surface-2/60"
+                />
               </div>
               <div className="space-y-1.5"><Label>Commission %</Label><Input type="number" step="0.01" min={0} max={100} value={newTpl.commission_pct} onChange={(e) => setNewTpl((p) => ({ ...p, commission_pct: e.target.value }))} placeholder="10" /></div>
               <GradientButton onClick={saveTemplate} disabled={tplSaving}>{tplSaving ? "Saving…" : "Save template"}</GradientButton>

@@ -11,6 +11,7 @@ import { LuxuryCard } from "@/components/ui/custom/luxury-card";
 import { GradientButton } from "@/components/ui/custom/gradient-button";
 import { useAuth } from "@/stores/auth";
 import { api, apiErrorMessage } from "@/lib/api";
+import { cleanMobile, isMobile } from "@/lib/phone";
 
 const fmtINR = (n: number) => new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 2 }).format(n);
 
@@ -23,7 +24,8 @@ export default function WalletSendPage() {
 
   async function send() {
     const amt = Number(amount);
-    if (!mobile || !amt) { toast.error("Mobile + amount required"); return; }
+    if (!isMobile(mobile)) { toast.error("Enter a valid 10-digit mobile number"); return; }
+    if (!amt) { toast.error("Enter an amount"); return; }
     if (amt > (user?.wallet_balance ?? 0)) { toast.error("Insufficient balance"); return; }
     setBusy(true);
     try {
@@ -46,7 +48,7 @@ export default function WalletSendPage() {
         <LuxuryCard hoverLift={false} className="space-y-4 p-5">
           <div className="space-y-1.5">
             <Label htmlFor="m">Receiver mobile</Label>
-            <Input id="m" inputMode="numeric" value={mobile} onChange={(e) => setMobile(e.target.value)} placeholder="9876543210" className="h-11 rounded-xl bg-surface-2/60" />
+            <Input id="m" inputMode="numeric" value={mobile} onChange={(e) => setMobile(cleanMobile(e.target.value))} placeholder="9876543210" className="h-11 rounded-xl bg-surface-2/60" />
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="a">Amount (₹)</Label>
