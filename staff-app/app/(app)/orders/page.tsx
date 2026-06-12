@@ -6,9 +6,7 @@ import { ShoppingBag, Search, Hourglass, Check, Banknote } from "lucide-react";
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { GradientButton } from "@/components/ui/custom/gradient-button";
 import { StatCard } from "@/components/dashboard/stat-card";
-import { StatusBadge } from "@/components/data-table/status-badge";
 import { EmptyState } from "@/components/data-table/empty-state";
 import { TableSkeleton } from "@/components/data-table/table-skeleton";
 import { Pagination } from "@/components/data-table/pagination";
@@ -21,15 +19,24 @@ const PAGE_SIZE = 10;
 const fmtINR = (n: number) =>
   new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(n);
 
-const NEXT: Record<VendorOrder["status"], VendorOrder["status"] | null> = {
-  pending: "paid", paid: "shipped", shipped: "delivered", delivered: null, cancelled: null,
+// Statuses a vendor can set (the backend accepts exactly these).
+const SETTABLE = ["pending", "paid", "shipped", "delivered", "cancelled"] as const;
+// Display labels for every status — includes the legacy import values
+// (assigned/picked) so an order already in one of those still shows a clean
+// label in the trigger, even though they're not selectable.
+const STATUS_LABELS: Record<string, string> = {
+  pending: "Pending", assigned: "Assigned", picked: "Picked",
+  paid: "Paid", shipped: "Shipped", delivered: "Delivered", cancelled: "Cancelled",
 };
+const STATUS_ITEMS = Object.entries(STATUS_LABELS).map(([value, label]) => ({ value, label }));
 
 export default function StaffOrdersPage() {
   const [items, setItems] = useState<VendorOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
-  const [status, setStatus] = useState<"all" | VendorOrder["status"]>("all");
+  // Includes legacy-import statuses (assigned/picked) that live alongside the
+  // app's own pending/paid/shipped/delivered so they can be filtered too.
+  const [status, setStatus] = useState<"all" | VendorOrder["status"] | "assigned" | "picked">("all");
   const [page, setPage] = useState(1);
 
   useEffect(() => {
@@ -80,13 +87,12 @@ export default function StaffOrdersPage() {
   const delivered = items.filter((o) => o.status === "delivered");
   const totalRevenue = items.reduce((s, o) => s + o.total, 0);
 
-  async function advance(o: VendorOrder) {
-    const next = NEXT[o.status];
-    if (!next) return;
+  async function changeStatus(o: VendorOrder, next: string) {
+    if (!next || next === o.status) return;
     try {
       await api.patch(`/orders/${o.id}/status`, { status: next });
-      setItems((cur) => cur.map((x) => (x.id === o.id ? { ...x, status: next } : x)));
-      toast.success(`Order #${o.id} → ${next}`);
+      setItems((cur) => cur.map((x) => (x.id === o.id ? { ...x, status: next as VendorOrder["status"] } : x)));
+      toast.success(`Order #${o.id} → ${STATUS_LABELS[next] ?? next}`);
     } catch (e) {
       toast.error(apiErrorMessage(e));
     }
@@ -116,11 +122,26 @@ export default function StaffOrdersPage() {
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search order id, customer…" className="h-10 rounded-xl bg-surface-2/60 pl-9" />
             </div>
-            <Select value={status} onValueChange={(v) => v && setStatus(v as "all" | VendorOrder["status"])}>
+            <Select
+              value={status}
+              onValueChange={(v) => v && setStatus(v as "all" | VendorOrder["status"] | "assigned" | "picked")}
+              items={[
+                { value: "all", label: "Any status" },
+                { value: "pending", label: "Pending" },
+                { value: "assigned", label: "Assigned" },
+                { value: "picked", label: "Picked" },
+                { value: "paid", label: "Paid" },
+                { value: "shipped", label: "Shipped" },
+                { value: "delivered", label: "Delivered" },
+                { value: "cancelled", label: "Cancelled" },
+              ]}
+            >
               <SelectTrigger className="h-10 rounded-xl bg-surface-2/60"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">Any status</SelectItem>
                 <SelectItem value="pending">Pending</SelectItem>
+                <SelectItem value="assigned">Assigned</SelectItem>
+                <SelectItem value="picked">Picked</SelectItem>
                 <SelectItem value="paid">Paid</SelectItem>
                 <SelectItem value="shipped">Shipped</SelectItem>
                 <SelectItem value="delivered">Delivered</SelectItem>
@@ -131,15 +152,14 @@ export default function StaffOrdersPage() {
         </div>
 
         <div className="luxe-card overflow-hidden">
-          <div className="hidden grid-cols-[120px_1.4fr_140px_120px_180px] gap-3 border-b border-border bg-surface-2/40 px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground md:grid">
+          <div className="hidden grid-cols-[110px_1.5fr_140px_180px] gap-3 border-b border-border bg-surface-2/40 px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground md:grid">
             <span>Order</span>
             <span>Customer</span>
             <span>Amount</span>
             <span>Status</span>
-            <span className="text-right">Actions</span>
           </div>
           {loading ? (
-            <div className="p-3"><TableSkeleton rows={5} cols={5} /></div>
+            <div className="p-3"><TableSkeleton rows={5} cols={4} /></div>
           ) : paged.length === 0 ? (
             <EmptyState icon={ShoppingBag} title="No orders match your filters" />
           ) : (
@@ -150,7 +170,7 @@ export default function StaffOrdersPage() {
                   initial={{ opacity: 0, y: 4 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: i * 0.02 }}
-                  className="flex flex-col gap-3 px-4 py-3 transition-colors hover:bg-surface-2/40 md:grid md:grid-cols-[120px_1.4fr_140px_120px_180px] md:items-center"
+                  className="flex flex-col gap-3 px-4 py-3 transition-colors hover:bg-surface-2/40 md:grid md:grid-cols-[110px_1.5fr_140px_180px] md:items-center"
                 >
                   <p className="hidden font-mono text-xs text-muted-foreground md:block">#{o.id}</p>
                   <div className="flex min-w-0 items-center gap-3">
@@ -165,26 +185,26 @@ export default function StaffOrdersPage() {
                       <p className="truncate text-xs text-muted-foreground">{o.item_count} items · {o.created_at}</p>
                     </div>
                   </div>
-                  {/* Desktop columns */}
+                  {/* Desktop: amount + status select */}
                   <p className="hidden text-sm font-bold text-brand md:block">{fmtINR(o.total)}</p>
-                  <div className="hidden md:block"><StatusBadge status={o.status} /></div>
-                  <div className="hidden md:flex md:items-center md:justify-end">
-                    {NEXT[o.status] && (
-                      <GradientButton size="sm" onClick={() => advance(o)}>
-                        Mark {NEXT[o.status]}
-                      </GradientButton>
-                    )}
+                  <div className="hidden md:block">
+                    <Select value={o.status} onValueChange={(v) => v && void changeStatus(o, v)} items={STATUS_ITEMS}>
+                      <SelectTrigger className="h-8 w-full rounded-lg bg-surface-2/60 text-xs"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {SETTABLE.map((s) => <SelectItem key={s} value={s}>{STATUS_LABELS[s]}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
                   </div>
-                  {/* Mobile: amount + status on one line, full-width action below */}
-                  <div className="flex items-center justify-between md:hidden">
+                  {/* Mobile: amount + status select on one line */}
+                  <div className="flex items-center justify-between gap-3 md:hidden">
                     <p className="text-sm font-bold text-brand">{fmtINR(o.total)}</p>
-                    <StatusBadge status={o.status} />
+                    <Select value={o.status} onValueChange={(v) => v && void changeStatus(o, v)} items={STATUS_ITEMS}>
+                      <SelectTrigger className="h-8 w-36 rounded-lg bg-surface-2/60 text-xs"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {SETTABLE.map((s) => <SelectItem key={s} value={s}>{STATUS_LABELS[s]}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
                   </div>
-                  {NEXT[o.status] && (
-                    <GradientButton size="sm" onClick={() => advance(o)} className="w-full md:hidden">
-                      Mark {NEXT[o.status]}
-                    </GradientButton>
-                  )}
                 </motion.div>
               ))}
             </div>
