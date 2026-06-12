@@ -26,7 +26,9 @@ use App\Models\UserModel;
  *   L1 Referral     : 25.0%   → buyer's direct referrer level_1_wallet
  *   L2 Referral     : 10.0%   → grandparent level_2_wallet
  *   L3 Referral     :  1.5%   → great-grandparent level_3_wallet
- *   Admin Share     : 28.5%   → system_pools.admin_wallet
+ *   Lucky Draw      :  3.0%   → monthly_lucky_draw_pools (current month)
+ *   Token Share     :  3.5%   → system_pools.token_share (funds token-request bonuses)
+ *   Admin Share     : 22.0%   → system_pools.admin_wallet
  *
  * Slots with no eligible recipient (e.g. buyer has no upline, queue is short)
  * fall back to system_pools.admin_wallet — matches the "admin remainder" rule.
@@ -38,16 +40,17 @@ class CommissionService
 
     /** Fractions of the pool, NOT the order total. Must sum to 100. */
     public const SLOT_PCT = [
-        'global'     =>  2.5,
-        'lucky_draw' =>  3.0,
-        'buyback_1'  => 15.0,
-        'buyback_2'  => 10.0,
-        'buyback_3'  =>  5.0,
-        'buyback_4'  =>  2.5,
-        'level_1'    => 25.0,
-        'level_2'    => 10.0,
-        'level_3'    =>  1.5,
-        'admin'      => 25.5,
+        'global'      =>  2.5,
+        'lucky_draw'  =>  3.0,
+        'buyback_1'   => 15.0,
+        'buyback_2'   => 10.0,
+        'buyback_3'   =>  5.0,
+        'buyback_4'   =>  2.5,
+        'level_1'     => 25.0,
+        'level_2'     => 10.0,
+        'level_3'     =>  1.5,
+        'token_share' =>  3.5,
+        'admin'       => 22.0,
     ];
 
     public function distributeForOrder(int $orderId, int $purchaserUserId, float $orderTotal, ?int $vendorId = null): array
@@ -206,13 +209,20 @@ class CommissionService
         $luckyAmt = round($pool * self::SLOT_PCT['lucky_draw'] / 100, 2);
         (new MonthlyLuckyDrawPoolModel())->add(date('Y-m'), $luckyAmt);
 
+        // Token-share slot — funds the token-request bonuses paid up the geo
+        // chain (state/district/taluk). TokenService draws from this
+        // system_pools.token_share balance when it fulfils requests.
+        $tokenShareAmt = round($pool * self::SLOT_PCT['token_share'] / 100, 2);
+        $pools->add('token_share', $tokenShareAmt);
+
         // Admin pool slot + everything that fell through
         $adminAmt = round($pool * self::SLOT_PCT['admin'] / 100, 2) + $adminPool;
         $pools->add('admin_wallet', $adminAmt);
 
-        $applied[] = ['slot' => 'global',     'pool' => 'monthly_global_pools:' . date('Y-m'),     'amount' => $globalAmt];
-        $applied[] = ['slot' => 'lucky_draw', 'pool' => 'monthly_lucky_draw_pools:' . date('Y-m'), 'amount' => $luckyAmt];
-        $applied[] = ['slot' => 'admin',      'pool' => 'admin_wallet',                            'amount' => $adminAmt];
+        $applied[] = ['slot' => 'global',      'pool' => 'monthly_global_pools:' . date('Y-m'),     'amount' => $globalAmt];
+        $applied[] = ['slot' => 'lucky_draw',  'pool' => 'monthly_lucky_draw_pools:' . date('Y-m'), 'amount' => $luckyAmt];
+        $applied[] = ['slot' => 'token_share', 'pool' => 'token_share',                             'amount' => $tokenShareAmt];
+        $applied[] = ['slot' => 'admin',       'pool' => 'admin_wallet',                            'amount' => $adminAmt];
 
         return $applied;
     }

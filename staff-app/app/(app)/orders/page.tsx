@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
-import { ShoppingBag, Search, Hourglass, Check, Banknote } from "lucide-react";
+import { ShoppingBag, Search, Hourglass, Check, Banknote, ChevronDown, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -12,8 +12,21 @@ import { TableSkeleton } from "@/components/data-table/table-skeleton";
 import { Pagination } from "@/components/data-table/pagination";
 import { MobileHeader } from "@/components/layout/mobile-nav";
 import { PageHeader } from "@/components/layout/page-header";
+import { ProductImage } from "@/components/ui/custom/product-image";
 import { api, apiErrorMessage } from "@/lib/api";
+import { cn } from "@/lib/utils";
 import { mock, type VendorOrder } from "@/lib/mock";
+
+type OrderItem = {
+  id: number;
+  name: string | null;
+  display_name?: string | null;
+  variant_name?: string | null;
+  product_image?: string | null;
+  qty: number;
+  price: number | string;
+  subtotal: number | string;
+};
 
 const PAGE_SIZE = 10;
 const fmtINR = (n: number) =>
@@ -38,6 +51,26 @@ export default function StaffOrdersPage() {
   // app's own pending/paid/shipped/delivered so they can be filtered too.
   const [status, setStatus] = useState<"all" | VendorOrder["status"] | "assigned" | "picked">("all");
   const [page, setPage] = useState(1);
+  // On-demand item details, loaded when an order row is expanded.
+  const [openId, setOpenId] = useState<number | null>(null);
+  const [loadingId, setLoadingId] = useState<number | null>(null);
+  const [itemsById, setItemsById] = useState<Record<number, OrderItem[]>>({});
+
+  async function toggleDetail(id: number) {
+    if (openId === id) { setOpenId(null); return; }
+    setOpenId(id);
+    if (id in itemsById) return;
+    setLoadingId(id);
+    try {
+      const res = await api.get(`/orders/${id}`);
+      setItemsById((m) => ({ ...m, [id]: (res.data.data?.items ?? []) as OrderItem[] }));
+    } catch (e) {
+      toast.error(apiErrorMessage(e));
+      setItemsById((m) => ({ ...m, [id]: [] }));
+    } finally {
+      setLoadingId((cur) => (cur === id ? null : cur));
+    }
+  }
 
   useEffect(() => {
     void (async () => {
@@ -170,41 +203,79 @@ export default function StaffOrdersPage() {
                   initial={{ opacity: 0, y: 4 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: i * 0.02 }}
-                  className="flex flex-col gap-3 px-4 py-3 transition-colors hover:bg-surface-2/40 md:grid md:grid-cols-[110px_1.5fr_140px_180px] md:items-center"
+                  className="px-4 py-3 transition-colors hover:bg-surface-2/40"
                 >
-                  <p className="hidden font-mono text-xs text-muted-foreground md:block">#{o.id}</p>
-                  <div className="flex min-w-0 items-center gap-3">
-                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-brand/10 text-brand">
-                      <ShoppingBag className="h-4 w-4" />
-                    </span>
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-semibold">
-                        <span className="md:hidden">Order #{o.id} · </span>
-                        {o.customer_name}
-                      </p>
-                      <p className="truncate text-xs text-muted-foreground">{o.product_names || `${o.item_count} items`} · {o.created_at}</p>
+                  <div className="flex flex-col gap-3 md:grid md:grid-cols-[110px_1.5fr_140px_180px] md:items-center">
+                    <p className="hidden font-mono text-xs text-muted-foreground md:block">#{o.id}</p>
+                    <button type="button" onClick={() => void toggleDetail(o.id)} className="flex min-w-0 items-center gap-3 text-left">
+                      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-brand/10 text-brand">
+                        <ShoppingBag className="h-4 w-4" />
+                      </span>
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-semibold">
+                          <span className="md:hidden">Order #{o.id} · </span>
+                          {o.customer_name}
+                        </p>
+                        <p className="flex items-center gap-1 truncate text-xs text-muted-foreground">
+                          {o.product_names || `${o.item_count} items`} · {o.created_at}
+                          <ChevronDown className={cn("h-3 w-3 shrink-0 transition-transform", openId === o.id && "rotate-180")} />
+                        </p>
+                      </div>
+                    </button>
+                    {/* Desktop: amount + status select */}
+                    <p className="hidden text-sm font-bold text-brand md:block">{fmtINR(o.total)}</p>
+                    <div className="hidden md:block">
+                      <Select value={o.status} onValueChange={(v) => v && void changeStatus(o, v)} items={STATUS_ITEMS}>
+                        <SelectTrigger className="h-8 w-full rounded-lg bg-surface-2/60 text-xs"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          {SETTABLE.map((s) => <SelectItem key={s} value={s}>{STATUS_LABELS[s]}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    {/* Mobile: amount + status select on one line */}
+                    <div className="flex items-center justify-between gap-3 md:hidden">
+                      <p className="text-sm font-bold text-brand">{fmtINR(o.total)}</p>
+                      <Select value={o.status} onValueChange={(v) => v && void changeStatus(o, v)} items={STATUS_ITEMS}>
+                        <SelectTrigger className="h-8 w-36 rounded-lg bg-surface-2/60 text-xs"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          {SETTABLE.map((s) => <SelectItem key={s} value={s}>{STATUS_LABELS[s]}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
                     </div>
                   </div>
-                  {/* Desktop: amount + status select */}
-                  <p className="hidden text-sm font-bold text-brand md:block">{fmtINR(o.total)}</p>
-                  <div className="hidden md:block">
-                    <Select value={o.status} onValueChange={(v) => v && void changeStatus(o, v)} items={STATUS_ITEMS}>
-                      <SelectTrigger className="h-8 w-full rounded-lg bg-surface-2/60 text-xs"><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        {SETTABLE.map((s) => <SelectItem key={s} value={s}>{STATUS_LABELS[s]}</SelectItem>)}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  {/* Mobile: amount + status select on one line */}
-                  <div className="flex items-center justify-between gap-3 md:hidden">
-                    <p className="text-sm font-bold text-brand">{fmtINR(o.total)}</p>
-                    <Select value={o.status} onValueChange={(v) => v && void changeStatus(o, v)} items={STATUS_ITEMS}>
-                      <SelectTrigger className="h-8 w-36 rounded-lg bg-surface-2/60 text-xs"><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        {SETTABLE.map((s) => <SelectItem key={s} value={s}>{STATUS_LABELS[s]}</SelectItem>)}
-                      </SelectContent>
-                    </Select>
-                  </div>
+                  {openId === o.id && (
+                    <div className="mt-3 border-t border-border/60 pt-3">
+                      {loadingId === o.id ? (
+                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                          <Loader2 className="h-3 w-3 animate-spin" /> Loading…
+                        </div>
+                      ) : (itemsById[o.id]?.length ?? 0) > 0 ? (
+                        <ul className="space-y-3">
+                          {itemsById[o.id]!.map((it) => {
+                            const name = it.display_name || it.name || "Item";
+                            const sub = Number(it.subtotal) || Number(it.price) * Number(it.qty);
+                            return (
+                              <li key={it.id} className="flex items-center gap-3">
+                                <div className="h-12 w-12 shrink-0 overflow-hidden rounded-lg border border-border bg-surface-2">
+                                  <ProductImage src={it.product_image} alt={name} />
+                                </div>
+                                <div className="min-w-0 flex-1">
+                                  <p className="truncate text-sm font-medium">{name}</p>
+                                  {it.variant_name && it.variant_name !== name ? (
+                                    <p className="truncate text-xs text-muted-foreground">{it.variant_name}</p>
+                                  ) : null}
+                                  <p className="text-xs text-muted-foreground">Qty {it.qty} × {fmtINR(Number(it.price))}</p>
+                                </div>
+                                <p className="shrink-0 text-sm font-semibold">{fmtINR(sub)}</p>
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      ) : (
+                        <p className="text-xs text-muted-foreground">No item details.</p>
+                      )}
+                    </div>
+                  )}
                 </motion.div>
               ))}
             </div>

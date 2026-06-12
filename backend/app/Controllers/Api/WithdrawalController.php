@@ -24,9 +24,23 @@ class WithdrawalController extends BaseApiController
         $amount = (float) $d['amount'];
 
         $u = (new UserModel())->find($auth->id);
+
+        // KYC must be verified before any withdrawal can be requested.
+        if (($u['kyc_status'] ?? 'none') !== 'verified') {
+            return $this->fail('Complete and get your KYC verified before withdrawing.', 403);
+        }
         if ((float) ($u['wallet_balance'] ?? 0) < $amount) return $this->fail('Insufficient balance', 402);
 
-        $details = is_array($d['details'] ?? null) ? $d['details'] : [];
+        // Bank / UPI come from the verified KYC — snapshot them onto the request
+        // so the admin sees exactly where the payout goes.
+        $details = $d['method'] === 'upi'
+            ? ['upi' => $u['upi'] ?? '']
+            : [
+                'account_holder' => $u['account_holder'] ?? $u['name'],
+                'account_number' => $u['account_number'] ?? '',
+                'ifsc'           => $u['ifsc_code'] ?? '',
+                'bank_name'      => $u['bank_name'] ?? '',
+            ];
 
         $id = (new WithdrawalModel())->insert([
             'user_id'      => $auth->id,

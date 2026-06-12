@@ -72,6 +72,11 @@ class WalletController extends BaseApiController
             $params[] = '%[legacy purchase]%';
         }
         $where = 'user_id = ? AND (' . implode(' OR ', $conds) . ')';
+        // The referral/LEVEL view is commission-only: drop the signup referral
+        // bonuses (they live in the same level_N wallets but are shown separately).
+        if ($isReferral) {
+            $where .= " AND type != 'welcome_bonus'";
+        }
 
         // Fetch up to 2000 matching rows: totals are summed over all of them,
         // while only the latest 100 are returned for display.
@@ -135,11 +140,23 @@ class WalletController extends BaseApiController
 
         $items = array_slice($all, 0, 100);
 
-        // Current balance (for the header card). For 'referral' sum L1+L2+L3.
+        // Current balance (for the header card).
         $bal = (new \App\Services\WalletService())->balances((int) $auth->id);
-        $balance = $isReferral
-            ? (float) (($bal['level_1'] ?? 0) + ($bal['level_2'] ?? 0) + ($bal['level_3'] ?? 0))
-            : (float) ($bal[$wallet] ?? 0);
+        if ($isReferral) {
+            // Match the dashboard LEVEL card EXACTLY: L1+L2+L3 wallet balance minus
+            // the referral signup bonuses that also sit in those wallets. (The
+            // wallet balance — not the transaction sum — is authoritative; they
+            // differ slightly for legacy-imported users.)
+            $refBonus = (float) ($db->query(
+                "SELECT COALESCE(SUM(amount),0) AS s FROM wallet_transactions
+                 WHERE user_id = ? AND type = 'welcome_bonus'
+                   AND (notes LIKE '%[+level_1]%' OR notes LIKE '%[+level_2]%' OR notes LIKE '%[+level_3]%')",
+                [(int) $auth->id]
+            )->getRow()->s ?? 0);
+            $balance = round(($bal['level_1'] ?? 0) + ($bal['level_2'] ?? 0) + ($bal['level_3'] ?? 0) - $refBonus, 2);
+        } else {
+            $balance = (float) ($bal[$wallet] ?? 0);
+        }
 
         return $this->ok([
             'wallet'        => $wallet,

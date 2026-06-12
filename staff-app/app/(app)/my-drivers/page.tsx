@@ -22,6 +22,7 @@ import { TableSkeleton } from "@/components/data-table/table-skeleton";
 import { MobileHeader } from "@/components/layout/mobile-nav";
 import { PageHeader } from "@/components/layout/page-header";
 import { api, apiErrorMessage } from "@/lib/api";
+import { useAuth } from "@/stores/auth";
 
 const fmtINR = (n: number) => new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(n);
 
@@ -67,6 +68,17 @@ function normalizeVendor(raw: unknown): VendorOption {
 }
 
 export default function TalukDriversPage() {
+  const { user } = useAuth();
+  const isVendor = user?.role === "vendor";
+  const myId = user?.id ?? 0;
+  // Vendor's Actions column holds an "Assign to me" button → needs more width
+  // than the taluk's icon-only menu (56px). Full literals so Tailwind emits both.
+  const headerGrid = isVendor
+    ? "grid-cols-[1.4fr_160px_140px_120px_120px_140px]"
+    : "grid-cols-[1.4fr_160px_140px_120px_120px_56px]";
+  const rowGrid = isVendor
+    ? "md:grid-cols-[1.4fr_160px_140px_120px_120px_140px]"
+    : "md:grid-cols-[1.4fr_160px_140px_120px_120px_56px]";
   const [items, setItems] = useState<Driver[]>([]);
   const [vendors, setVendors] = useState<VendorOption[]>([]);
   const [loading, setLoading] = useState(true);
@@ -123,6 +135,17 @@ export default function TalukDriversPage() {
     }
   }
 
+  // Vendor self-service: claim a free driver for myself, or release my own.
+  async function assignSelf(driverId: number, claim: boolean) {
+    try {
+      await api.post(`/drivers/${driverId}/assign-vendor`, { vendor_id: claim ? myId : null });
+      toast.success(claim ? "Assigned to you" : "Unassigned");
+      await load();
+    } catch (err) {
+      toast.error(apiErrorMessage(err, "Could not update"));
+    }
+  }
+
   return (
     <>
       <MobileHeader title="Drivers" />
@@ -131,7 +154,9 @@ export default function TalukDriversPage() {
           eyebrow="Operations"
           icon={Truck}
           title="Drivers"
-          description="Drivers assigned to your taluk. Pick which vendor each one is delivering for."
+          description={isVendor
+            ? "Drivers in your area. Assign one to yourself to deliver your orders."
+            : "Drivers assigned to your taluk. Pick which vendor each one is delivering for."}
         />
 
         <div className="glass rounded-2xl p-3">
@@ -142,7 +167,7 @@ export default function TalukDriversPage() {
         </div>
 
         <div className="luxe-card overflow-hidden">
-          <div className="hidden grid-cols-[1.4fr_160px_140px_120px_120px_56px] gap-3 border-b border-border bg-surface-2/40 px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground md:grid">
+          <div className={`hidden ${headerGrid} gap-3 border-b border-border bg-surface-2/40 px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground md:grid`}>
             <span>Driver</span>
             <span>Vehicle</span>
             <span>Assigned to</span>
@@ -153,7 +178,7 @@ export default function TalukDriversPage() {
           {loading ? (
             <div className="p-3"><TableSkeleton rows={5} cols={6} /></div>
           ) : filtered.length === 0 ? (
-            <EmptyState icon={Truck} title="No drivers in your taluk yet" description="Admin assigns drivers to taluks. They'll appear here." />
+            <EmptyState icon={Truck} title="No drivers in your area yet" description={isVendor ? "Admin adds drivers to your area. Claim one to deliver your orders." : "Admin assigns drivers to taluks. They'll appear here."} />
           ) : (
             <div className="divide-y divide-border">
               {filtered.map((d, i) => (
@@ -162,7 +187,7 @@ export default function TalukDriversPage() {
                   initial={{ opacity: 0, y: 4 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: i * 0.02 }}
-                  className="grid grid-cols-[1fr_auto] items-center gap-3 px-4 py-3 transition-colors hover:bg-surface-2/40 md:grid-cols-[1.4fr_160px_140px_120px_120px_56px]"
+                  className={`grid grid-cols-[1fr_auto] items-center gap-3 px-4 py-3 transition-colors hover:bg-surface-2/40 ${rowGrid}`}
                 >
                   <div className="flex items-center gap-3">
                     <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-brand/10 text-brand">
@@ -175,7 +200,9 @@ export default function TalukDriversPage() {
                   </div>
                   <p className="hidden font-mono text-xs text-muted-foreground md:block">{d.vehicle || "—"}</p>
                   <p className="hidden truncate text-sm md:block">
-                    {d.assigned_vendor_name ? d.assigned_vendor_name : <span className="text-muted-foreground">—</span>}
+                    {d.assigned_vendor_id
+                      ? (isVendor && d.assigned_vendor_id === myId ? "You" : d.assigned_vendor_name)
+                      : <span className="text-muted-foreground">—</span>}
                   </p>
                   <p className="hidden text-xs text-muted-foreground md:block">
                     {fmtINR(d.km_rate)}/km · {fmtINR(d.hour_rate)}/hr
@@ -183,39 +210,53 @@ export default function TalukDriversPage() {
                   <div className="hidden md:block"><StatusBadge status={d.status} /></div>
                   <div className="flex items-center gap-2 justify-self-end">
                     <span className="md:hidden"><StatusBadge status={d.status} /></span>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger
-                        render={
-                          <button type="button" aria-label="Row actions" className="inline-flex h-8 w-8 items-center justify-center rounded-md hover:bg-accent">
-                            <MoreHorizontal className="h-4 w-4" />
-                          </button>
-                        }
-                      />
-                      <DropdownMenuContent align="end" className="w-44">
-                        <DropdownMenuItem
-                          onClick={() => setAssigning({
-                            driver_id: d.id,
-                            driver_name: d.name,
-                            current_vendor_id: d.assigned_vendor_id,
-                            vendor_id: d.assigned_vendor_id ? String(d.assigned_vendor_id) : "",
-                          })}
-                        >
-                          <Store className="h-4 w-4" /> Assign vendor
-                        </DropdownMenuItem>
-                        {d.assigned_vendor_id && (
+                    {isVendor ? (
+                      d.assigned_vendor_id === myId ? (
+                        <Button size="sm" variant="ghost" className="h-8 text-rose-400 hover:bg-rose-500/10" onClick={() => void assignSelf(d.id, false)}>
+                          <X className="h-3.5 w-3.5" /> Unassign
+                        </Button>
+                      ) : d.assigned_vendor_id ? (
+                        <span className="text-xs text-muted-foreground">—</span>
+                      ) : (
+                        <Button size="sm" className="h-8 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20" onClick={() => void assignSelf(d.id, true)}>
+                          <Truck className="h-3.5 w-3.5" /> Assign to me
+                        </Button>
+                      )
+                    ) : (
+                      <DropdownMenu>
+                        <DropdownMenuTrigger
+                          render={
+                            <button type="button" aria-label="Row actions" className="inline-flex h-8 w-8 items-center justify-center rounded-md hover:bg-accent">
+                              <MoreHorizontal className="h-4 w-4" />
+                            </button>
+                          }
+                        />
+                        <DropdownMenuContent align="end" className="w-44">
                           <DropdownMenuItem
                             onClick={() => setAssigning({
                               driver_id: d.id,
                               driver_name: d.name,
                               current_vendor_id: d.assigned_vendor_id,
-                              vendor_id: "",
+                              vendor_id: d.assigned_vendor_id ? String(d.assigned_vendor_id) : "",
                             })}
                           >
-                            <X className="h-4 w-4" /> Unassign
+                            <Store className="h-4 w-4" /> Assign vendor
                           </DropdownMenuItem>
-                        )}
-                      </DropdownMenuContent>
-                    </DropdownMenu>
+                          {d.assigned_vendor_id && (
+                            <DropdownMenuItem
+                              onClick={() => setAssigning({
+                                driver_id: d.id,
+                                driver_name: d.name,
+                                current_vendor_id: d.assigned_vendor_id,
+                                vendor_id: "",
+                              })}
+                            >
+                              <X className="h-4 w-4" /> Unassign
+                            </DropdownMenuItem>
+                          )}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    )}
                   </div>
                 </motion.div>
               ))}

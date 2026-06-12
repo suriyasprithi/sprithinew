@@ -24,6 +24,7 @@ import {
   Activity,
   Gift,
   QrCode,
+  ShieldCheck,
   type LucideIcon,
 } from "lucide-react";
 import { StaffRole } from "@/lib/api";
@@ -49,6 +50,7 @@ export const ROLE_MENU: Record<StaffRole, MenuItem[]> = {
     { href: "/dashboard",     label: "Dashboard",   icon: LayoutDashboard },
     { href: "/products",      label: "Products",    icon: Package },
     { href: "/orders",        label: "Orders",      icon: ShoppingCart },
+    { href: "/my-drivers",    label: "Drivers",     icon: Truck },
     { href: "/qr-scanner",    label: "QR Scanner",  icon: QrCode },
     { href: "/customer-purchase", label: "Customer purchase", icon: CreditCard },
     { href: "/tokens",        label: "Tokens",      icon: Coins },
@@ -59,7 +61,6 @@ export const ROLE_MENU: Record<StaffRole, MenuItem[]> = {
   taluk: [
     { href: "/dashboard",       label: "Dashboard",        icon: LayoutDashboard },
     { href: "/manage-vendors",  label: "Vendors",          icon: Store },
-    { href: "/my-drivers",      label: "Drivers",          icon: Truck },
     { href: "/distribute-token",label: "Distribute Token", icon: Coins },
     { href: "/token-request",   label: "Token Requests",   icon: ArrowDownToLine },
     { href: "/activity",        label: "Activity",         icon: Activity },
@@ -100,6 +101,7 @@ export const ROLE_MENU: Record<StaffRole, MenuItem[]> = {
     { href: "/wallet",            label: "Wallet",             icon: Wallet },
     { href: "/payments",          label: "Manual Top-ups",     icon: CreditCard },
     { href: "/withdrawals",       label: "Withdrawals",        icon: Banknote },
+    { href: "/kyc",               label: "KYC Review",         icon: ShieldCheck },
     { href: "/token-request",     label: "Token Requests",     icon: Coins },
     { href: "/drivers",           label: "Drivers",            icon: Truck },
     { href: "/delivery-rates",    label: "Delivery Rates",     icon: Route },

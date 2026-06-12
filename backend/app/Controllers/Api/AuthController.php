@@ -346,8 +346,23 @@ class AuthController extends BaseApiController
 
     private function publicUser(array $user): array
     {
+        // "Level commission" = the L1/L2/L3 wallet total MINUS the referral
+        // signup bonuses that also land in those wallets (tagged welcome_bonus),
+        // so the dashboard's LEVEL card can show purchase-commission only while
+        // the per-level cards still include the bonus.
+        $levelTotal = (float) ($user['level_1_wallet'] ?? 0)
+                    + (float) ($user['level_2_wallet'] ?? 0)
+                    + (float) ($user['level_3_wallet'] ?? 0);
+        $refBonus = (float) (\Config\Database::connect()->query(
+            "SELECT COALESCE(SUM(amount),0) AS s FROM wallet_transactions
+             WHERE user_id = ? AND type = 'welcome_bonus'
+               AND (notes LIKE '%[+level_1]%' OR notes LIKE '%[+level_2]%' OR notes LIKE '%[+level_3]%')",
+            [(int) $user['id']]
+        )->getRow()->s ?? 0);
+
         return [
             'id'             => (int) $user['id'],
+            'level_commission' => round($levelTotal - $refBonus, 2),
             'name'           => $user['name'],
             'email'          => $user['email'],
             'mobile_number'  => $user['mobile_number'],
@@ -371,6 +386,8 @@ class AuthController extends BaseApiController
             'level_1_count'  => (int) ($user['level_1_count'] ?? 0),
             'level_2_count'  => (int) ($user['level_2_count'] ?? 0),
             'level_3_count'  => (int) ($user['level_3_count'] ?? 0),
+            'kyc_status'     => $user['kyc_status'] ?? 'none',
+            'kyc_note'       => $user['kyc_note'] ?? null,
         ];
     }
 }

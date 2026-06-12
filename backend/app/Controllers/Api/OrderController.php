@@ -298,7 +298,22 @@ class OrderController extends BaseApiController
         $isVendor  = $auth->role === 'vendor' && (int) ($order['vendor_id'] ?? 0) === (int) $auth->id;
         $isAdmin   = $auth->role === 'admin';
         if (! $isOwner && ! $isVendor && ! $isAdmin) return $this->fail('Forbidden', 403);
-        $items = (new OrderItemModel())->where('order_id', $id)->findAll();
+        // Enrich each line with the product image + a real display name
+        // (legacy rows are stored as name='Item' but still link a product /
+        // variant) + the variant label, so the customer sees an e-commerce
+        // style item list. Variant images carry a '<->' suffix — strip it.
+        $items = \Config\Database::connect()->query(
+            "SELECT oi.*,
+                    COALESCE(NULLIF(oi.name, 'Item'), pv.name, p.name, 'Item')              AS display_name,
+                    COALESCE(NULLIF(p.image, ''), SUBSTRING_INDEX(NULLIF(pv.image, ''), '<->', 1)) AS product_image,
+                    pv.name AS variant_name
+             FROM order_items oi
+             LEFT JOIN products p          ON p.id  = oi.product_id
+             LEFT JOIN product_variants pv ON pv.id = oi.variation_id
+             WHERE oi.order_id = ?
+             ORDER BY oi.id",
+            [$id]
+        )->getResultArray();
 
         // Delivering driver (+ ID-card proof) for the customer, when one is stamped.
         $driver = null;

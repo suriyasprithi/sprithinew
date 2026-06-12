@@ -5,18 +5,22 @@ namespace App\Services;
 use App\Models\NotificationModel;
 use App\Models\SystemSettingsModel;
 use App\Models\UserModel;
-use App\Models\WalletTransactionModel;
 
 /**
- * Awards the referrer's welcome bonus on a referred customer signup.
+ * Awards the referral signup bonus up the new customer's 3-level upline chain.
  *
- * Rules (decided 2026-05-13, overrides BUILD_SPEC_V2.md §3):
- *   - Reads welcome.bonus_amount + welcome.bonus_active live from system_settings.
- *   - Credits referrer's level_wallet by the configured amount.
- *   - Does NOT debit admin_wallet (system credit). Admin sees aggregate via
+ * Rules (3-level cascade, decided 2026-06-12 — extends the original single-level
+ * welcome bonus):
+ *   - Fires once on a referred customer signup, in addition to the per-order %
+ *     level commission (they are separate).
+ *   - Pays each upline by DEPTH into their gated level_N wallet:
+ *       1st upline (direct referrer) → level_1_wallet  (welcome.bonus_amount, ₹15)
+ *       2nd upline                   → level_2_wallet  (welcome.bonus_l2, ₹10)
+ *       3rd upline                   → level_3_wallet  (welcome.bonus_l3, ₹5)
+ *   - Does NOT debit admin_wallet (system credit). Admin sees the aggregate via
  *     `SELECT COUNT(*), SUM(amount) FROM wallet_transactions WHERE type='welcome_bonus'`.
- *   - Logs a wallet_transactions row of type 'welcome_bonus' for that audit query.
- *   - Records an in-app notification on the referrer.
+ *   - Logs a wallet_transactions row of type 'welcome_bonus' per level for that audit query.
+ *   - Records + pushes an in-app notification on each credited upline.
  *   - Best-effort: any failure is logged and swallowed so signup never fails because of this.
  */
 class WelcomeBonusService
@@ -28,47 +32,63 @@ class WelcomeBonusService
             if ($settings->get('welcome.bonus_active', '1') !== '1') {
                 return;
             }
-            $amount = (float) $settings->get('welcome.bonus_amount', '15');
-            if ($amount <= 0) {
-                return;
-            }
 
-            $users    = new UserModel();
-            $referrer = $users->find($referrerId);
-            if (! $referrer) {
-                return;
-            }
+            // Bonus per upline depth (configurable via system_settings).
+            $amounts = [
+                1 => (float) $settings->get('welcome.bonus_amount', '15'),
+                2 => (float) $settings->get('welcome.bonus_l2', '10'),
+                3 => (float) $settings->get('welcome.bonus_l3', '5'),
+            ];
 
-            $users->update($referrerId, [
-                'level_wallet' => (float) ($referrer['level_wallet'] ?? 0) + $amount,
-            ]);
+            $users   = new UserModel();
+            $notifs  = new NotificationModel();
+            $wallet  = new WalletService();
+            $current = $users->find($referrerId);
 
-            (new WalletTransactionModel())->insert([
-                'user_id'      => $referrerId,
-                'peer_user_id' => $newCustomerId,
-                'amount'       => $amount,
-                'type'         => 'welcome_bonus',
-                'reference'    => 'signup#' . $newCustomerId,
-                'notes'        => 'Welcome bonus for referring customer',
-            ]);
+            for ($level = 1; $level <= 3; $level++) {
+                if (! $current) {
+                    break;
+                }
+                $amount = $amounts[$level] ?? 0.0;
+                if ($amount > 0) {
+                    // Referral bonus → the upline's gated level_N wallet by depth,
+                    // so it shows on their L{n} card (L1 +₹15 on a direct referral).
+                    // Tagged 'welcome_bonus' so the LEVEL commission card / history
+                    // can exclude it and stay commission-only.
+                    $wallet->credit(
+                        (int) $current['id'],
+                        "level_{$level}",
+                        $amount,
+                        'welcome_bonus',
+                        'signup#' . $newCustomerId,
+                        "Referral bonus L{$level}"
+                    );
 
-            (new NotificationModel())->recordFor(
-                $referrerId,
-                'Welcome bonus credited',
-                '₹' . number_format($amount, 2) . ' added to your level wallet',
-                ['type' => 'welcome_bonus', 'entity_id' => $newCustomerId, 'route' => '/wallet']
-            );
+                    $notifs->recordFor(
+                        (int) $current['id'],
+                        'Referral bonus credited',
+                        '₹' . number_format($amount, 2) . " added to your L{$level} wallet",
+                        ['type' => 'welcome_bonus', 'entity_id' => $newCustomerId, 'route' => '/wallet']
+                    );
 
-            // Push (best-effort — same try/catch wrapping pattern as other triggers)
-            try {
-                (new NotificationService())->sendToUser(
-                    $referrerId,
-                    'Welcome bonus credited',
-                    '₹' . number_format($amount, 2) . ' added to your level wallet',
-                    ['type' => 'welcome_bonus', 'entity_id' => (string) $newCustomerId, 'route' => '/wallet']
-                );
-            } catch (\Throwable $e) {
-                log_message('error', 'Welcome bonus push failed: ' . $e->getMessage());
+                    // Push (best-effort — same try/catch wrapping pattern as other triggers)
+                    try {
+                        (new NotificationService())->sendToUser(
+                            (int) $current['id'],
+                            'Referral bonus credited',
+                            '₹' . number_format($amount, 2) . " added to your L{$level} wallet",
+                            ['type' => 'welcome_bonus', 'entity_id' => (string) $newCustomerId, 'route' => '/wallet']
+                        );
+                    } catch (\Throwable $e) {
+                        log_message('error', 'Referral bonus push failed: ' . $e->getMessage());
+                    }
+                }
+
+                // Walk one step up the referral chain.
+                if (empty($current['referrer_id'])) {
+                    break;
+                }
+                $current = $users->find((int) $current['referrer_id']);
             }
         } catch (\Throwable $e) {
             log_message('error', 'Welcome bonus award failed: ' . $e->getMessage());

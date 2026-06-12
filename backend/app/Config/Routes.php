@@ -110,6 +110,13 @@ $routes->group('api/v1', ['filter' => 'cors'], static function ($routes) {
         $routes->delete('(:num)',       'Api\AddressController::delete/$1');
     });
 
+    // Customer-scoped: KYC documents + image upload (required before withdrawal).
+    $routes->group('customer', ['filter' => 'auth'], static function ($routes) {
+        $routes->post('upload', 'Api\KycController::upload');
+        $routes->get('kyc',     'Api\KycController::mine');
+        $routes->post('kyc',    'Api\KycController::save');
+    });
+
     // ===== Wallet + withdrawals (Phase 4 will rebuild) =====
     $routes->group('wallet', ['filter' => 'auth'], static function ($routes) {
         $routes->get('balance',      'Api\WalletController::balance');
@@ -254,6 +261,11 @@ $routes->group('api/v1', ['filter' => 'cors'], static function ($routes) {
         $routes->get('withdrawals/pending',         'Api\WithdrawalController::pending');
         $routes->post('withdrawals/(:num)/approve', 'Api\WithdrawalController::approve/$1');
         $routes->post('withdrawals/(:num)/reject',  'Api\WithdrawalController::reject/$1');
+
+        // KYC review (one-time verification before customers can withdraw)
+        $routes->get('kyc/pending',          'Api\KycController::pending');
+        $routes->post('kyc/(:num)/verify',   'Api\KycController::verify/$1');
+        $routes->post('kyc/(:num)/reject',   'Api\KycController::reject/$1');
 
         // token requests
         $routes->get('token-requests',                  'Api\TokenController::adminRequests');

@@ -105,12 +105,15 @@ export type AuthUser = {
   level_1_wallet: number;
   level_2_wallet: number;
   level_3_wallet: number;
+  level_commission: number;
   buyback_wallet: number;
   global_wallet: number;
   token_balance: number;
   level_1_count: number;
   level_2_count: number;
   level_3_count: number;
+  kyc_status: "none" | "pending" | "verified" | "rejected";
+  kyc_note: string | null;
 };
 
 export type CustomerAddress = {

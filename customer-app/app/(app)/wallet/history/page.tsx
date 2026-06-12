@@ -33,6 +33,7 @@ const LABELS: Record<string, string> = {
   wallet:  "Main wallet",
   monthly: "Monthly wallet",
   level:   "Level wallet",
+  referral: "Level wallet",
   level_1: "Level 1 wallet",
   level_2: "Level 2 wallet",
   level_3: "Level 3 wallet",

@@ -6,6 +6,7 @@ import { BadgeCheck, ChevronDown, Loader2, MapPin, ShoppingBag, Store } from "lu
 import { toast } from "sonner";
 import { AppHeader } from "@/components/layout/app-header";
 import { LuxuryCard } from "@/components/ui/custom/luxury-card";
+import { ProductImage } from "@/components/ui/custom/product-image";
 import { api, apiErrorMessage } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
@@ -37,6 +38,9 @@ type DriverInfo = { id: number; name: string; mobile: string | null; id_card_url
 type OrderItem = {
   id: number;
   name: string | null;
+  display_name?: string | null;
+  variant_name?: string | null;
+  product_image?: string | null;
   qty: number;
   price: number | string;
   subtotal: number | string;
@@ -162,17 +166,26 @@ export default function OrdersPage() {
                         ) : (
                           <>
                             {(detailById[o.id]?.items.length ?? 0) > 0 ? (
-                              <ul className="space-y-1.5">
-                                {detailById[o.id]!.items.map((it) => (
-                                  <li key={it.id} className="flex items-start justify-between gap-3 text-xs">
-                                    <span className="min-w-0">
-                                      <span className="font-medium">{it.name || "Item"}</span>
-                                      {it.variation_label ? <span className="text-muted-foreground"> · {it.variation_label}</span> : null}
-                                      <span className="text-muted-foreground"> × {it.qty}</span>
-                                    </span>
-                                    <span className="shrink-0 font-medium">{fmtINR(Number(it.subtotal) || Number(it.price) * Number(it.qty))}</span>
-                                  </li>
-                                ))}
+                              <ul className="space-y-3">
+                                {detailById[o.id]!.items.map((it) => {
+                                  const name = it.display_name || it.name || "Item";
+                                  const sub = Number(it.subtotal) || Number(it.price) * Number(it.qty);
+                                  return (
+                                    <li key={it.id} className="flex items-center gap-3">
+                                      <div className="h-14 w-14 shrink-0 overflow-hidden rounded-xl border border-border bg-surface-2">
+                                        <ProductImage src={it.product_image} alt={name} />
+                                      </div>
+                                      <div className="min-w-0 flex-1">
+                                        <p className="truncate text-sm font-medium">{name}</p>
+                                        {it.variant_name && it.variant_name !== name ? (
+                                          <p className="truncate text-xs text-muted-foreground">{it.variant_name}</p>
+                                        ) : null}
+                                        <p className="text-xs text-muted-foreground">Qty {it.qty} × {fmtINR(Number(it.price))}</p>
+                                      </div>
+                                      <p className="shrink-0 text-sm font-semibold">{fmtINR(sub)}</p>
+                                    </li>
+                                  );
+                                })}
                               </ul>
                             ) : (
                               <p className="text-xs text-muted-foreground">No item details.</p>

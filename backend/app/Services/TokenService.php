@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\DistributeTokenModel;
+use App\Models\SystemPoolModel;
 use App\Models\UserModel;
 use Config\Database;
 
@@ -245,19 +246,35 @@ class TokenService
     }
 
     /**
-     * Bonus % the requester earns when their token request is approved,
-     * keyed by the REQUESTER's own role (the level receiving the tokens).
-     * Minted by the system — the approver is not charged for the bonus.
-     * Configurable via system_settings (token.bonus.<role>).
+     * Compounded bonus MULTIPLIER the requester earns when their token request
+     * is approved, keyed by the REQUESTER's own role. Each level's bonus %
+     * applies to the PARENT level's already-bonused per-token figure, so the
+     * effective rate compounds down the geo chain:
+     *
+     *   state    m = 1 + b_state                  → 1.035000   (3.5%)
+     *   district m = 1 + b_district × m_state      → 1.031050   (3% of 1.035)
+     *   taluk    m = 1 + b_taluk    × m_district   → 1.020621   (2% of 1.03105)
+     *   vendor   m = 1                             → no bonus
+     *
+     * A request of N tokens earns a bonus of N × (m − 1). The base percentages
+     * stay configurable via system_settings (token.bonus.<role>).
      */
-    private function bonusPctForRole(string $requesterRole): float
+    private function bonusFactorForRole(string $requesterRole): float
     {
-        $svc = new SystemSettingsService();
+        $svc       = new SystemSettingsService();
+        $bState    = (float) $svc->get('token.bonus.state', '3.5') / 100;
+        $bDistrict = (float) $svc->get('token.bonus.district', '3.0') / 100;
+        $bTaluk    = (float) $svc->get('token.bonus.taluk', '2.0') / 100;
+
+        $mState    = 1 + $bState;
+        $mDistrict = 1 + $bDistrict * $mState;
+        $mTaluk    = 1 + $bTaluk * $mDistrict;
+
         return match ($requesterRole) {
-            'state'    => (float) $svc->get('token.bonus.state', '3.5'),
-            'district' => (float) $svc->get('token.bonus.district', '3.0'),
-            'taluk'    => (float) $svc->get('token.bonus.taluk', '2.0'),
-            default    => 0.0, // vendor (and anything else) gets no bonus
+            'state'    => $mState,
+            'district' => $mDistrict,
+            'taluk'    => $mTaluk,
+            default    => 1.0, // vendor (and anything else) gets no bonus
         };
     }
 
@@ -279,18 +296,27 @@ class TokenService
             throw new \DomainException("Role '{$approver['role']}' cannot fulfil a request");
         }
 
-        $bonusPct = $this->bonusPctForRole($requester['role'] ?? '');
-        $bonus    = round($tokens * $bonusPct / 100, 2);
-        $credited = round($tokens + $bonus, 2);
+        // Compounded bonus the requester would earn (see bonusFactorForRole).
+        $factor       = $this->bonusFactorForRole($requester['role'] ?? '');
+        $desiredBonus = round($tokens * ($factor - 1), 2);
+        // Effective compounded % on the base — for the ledger / notification.
+        $bonusPct     = round(($factor - 1) * 100, 4);
 
-        // Approver is debited the BASE only (bonus is minted). Admin = infinite.
+        // Approver is debited the BASE only. Admin = infinite.
         if ($approver['role'] !== 'admin' && (float) ($approver['token_balance'] ?? 0) < $tokens) {
             throw new \DomainException("{$approver['name']} has only " . (float) ($approver['token_balance'] ?? 0) . " tokens; needs {$tokens}");
         }
 
         $db    = Database::connect();
         $users = new UserModel();
+        $pools = new SystemPoolModel();
         $db->transStart();
+
+        // The bonus is funded by the commission pool's token_share slot, clamped
+        // to whatever the pool can cover — the base request always goes through;
+        // the bonus is full / partial / zero depending on the pool balance.
+        $bonus    = $pools->take('token_share', $desiredBonus);
+        $credited = round($tokens + $bonus, 2);
 
         if ($approver['role'] !== 'admin') {
             $users->update((int) $approver['id'], [
@@ -301,7 +327,9 @@ class TokenService
             'token_balance' => (float) ($requester['token_balance'] ?? 0) + $credited,
         ]);
 
-        $ledgerNote = $bonus > 0 ? "{$notes} (+{$bonus} bonus @ {$bonusPct}%)" : $notes;
+        $ledgerNote = $bonus > 0
+            ? "{$notes} (+{$bonus} bonus @ {$bonusPct}%, token_share-funded)"
+            : ($desiredBonus > 0 ? "{$notes} (bonus 0 — token_share pool empty)" : $notes);
         $id = (new DistributeTokenModel())->insert([
             'from_user_id' => (int) $approver['id'],
             'to_user_id'   => (int) $requester['id'],
@@ -315,11 +343,12 @@ class TokenService
         if ($db->transStatus() === false) throw new \RuntimeException('Fulfil failed');
 
         return [
-            'ledger_id' => (int) $id,
-            'base'      => (float) $tokens,
-            'bonus'     => $bonus,
-            'bonus_pct' => $bonusPct,
-            'credited'  => $credited,
+            'ledger_id'     => (int) $id,
+            'base'          => (float) $tokens,
+            'bonus'         => $bonus,
+            'desired_bonus' => $desiredBonus,
+            'bonus_pct'     => $bonusPct,
+            'credited'      => $credited,
         ];
     }
 

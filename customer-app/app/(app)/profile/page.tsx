@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
-import { ArrowLeft, ChevronRight, Home, LogOut, Mail, Phone, Shield, Wallet, Coins, User as UserIcon, type LucideIcon } from "lucide-react";
+import { ArrowLeft, ChevronRight, Home, LogOut, Mail, Phone, Shield, ShieldCheck, Wallet, Coins, User as UserIcon, type LucideIcon } from "lucide-react";
 import { AppHeader } from "@/components/layout/app-header";
 import { LuxuryCard } from "@/components/ui/custom/luxury-card";
 import { GradientButton } from "@/components/ui/custom/gradient-button";
@@ -14,6 +14,13 @@ import { useAuth } from "@/stores/auth";
 import { api, type CustomerAddress } from "@/lib/api";
 
 const fmtINR = (n: number) => new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 2 }).format(n);
+
+const KYC_LABEL: Record<string, string> = {
+  none:     "Not submitted — tap to complete",
+  pending:  "Submitted — pending verification",
+  verified: "Verified ✓",
+  rejected: "Rejected — tap to re-submit",
+};
 
 function InfoRow({ icon: Icon, label, value, mono }: { icon: LucideIcon; label: string; value: React.ReactNode; mono?: boolean }) {
   return (
@@ -105,6 +112,24 @@ export default function ProfilePage() {
             <InfoRow icon={Shield} label="Status"  value={user?.status} />
           </div>
         </LuxuryCard>
+
+        {/* KYC / Bank details — required before withdrawing */}
+        <Link href="/profile/kyc" className="block">
+          <LuxuryCard hoverLift={false} className="p-5 transition-colors hover:border-brand/40">
+            <div className="flex items-center gap-3">
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brand/10 text-brand">
+                <ShieldCheck className="h-4 w-4" />
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-semibold">KYC / Bank details</p>
+                <p className="mt-0.5 truncate text-sm text-muted-foreground">
+                  {KYC_LABEL[user?.kyc_status ?? "none"]}
+                </p>
+              </div>
+              <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+            </div>
+          </LuxuryCard>
+        </Link>
 
         {/* Delivery addresses — managed on a dedicated page */}
         <Link href="/profile/addresses" className="block">

@@ -4,6 +4,7 @@ namespace App\Controllers\Api;
 
 use App\Models\TalukModel;
 use App\Models\UserModel;
+use App\Models\VendorProfileModel;
 use App\Services\NotificationService;
 use CodeIgniter\HTTP\ResponseInterface;
 
@@ -16,20 +17,35 @@ class DriverManagementController extends BaseApiController
         return $this->ok(['items' => $this->decorate($rows)]);
     }
 
-    /** Drivers in the current taluk-user's taluk. */
+    /**
+     * Drivers in the caller's taluk. Used by both taluk users (their own taluk)
+     * and vendors (the taluk their vendor profile belongs to) — vendors manage
+     * driver assignments for themselves from this same list.
+     */
     public function talukIndex(): ResponseInterface
     {
-        if ($r = $this->requireRole(['taluk'])) return $r;
+        if ($r = $this->requireRole(['taluk', 'vendor'])) return $r;
         $auth = $this->authUser();
-        $taluk = (new TalukModel())->where('user_id', (int) $auth->id)->first();
-        if (! $taluk) return $this->ok(['items' => []]);
+        $talukId = $this->resolveTalukId($auth);
+        if (! $talukId) return $this->ok(['items' => []]);
 
         $rows = (new UserModel())
             ->where('role', 'driver')
-            ->where('taluk_id', (int) $taluk['id'])
+            ->where('taluk_id', $talukId)
             ->orderBy('id', 'DESC')
             ->findAll(500);
-        return $this->ok(['items' => $this->decorate($rows), 'taluk_id' => (int) $taluk['id']]);
+        return $this->ok(['items' => $this->decorate($rows), 'taluk_id' => $talukId]);
+    }
+
+    /** Taluk id for a taluk user (their taluk) or a vendor (their profile's taluk). */
+    private function resolveTalukId($auth): int
+    {
+        if ($auth->role === 'vendor') {
+            $vp = (new VendorProfileModel())->where('user_id', (int) $auth->id)->first();
+            return $vp && $vp['taluk_id'] ? (int) $vp['taluk_id'] : 0;
+        }
+        $taluk = (new TalukModel())->where('user_id', (int) $auth->id)->first();
+        return $taluk ? (int) $taluk['id'] : 0;
     }
 
     public function create(): ResponseInterface
@@ -103,10 +119,16 @@ class DriverManagementController extends BaseApiController
         return $this->ok(null, 'Updated');
     }
 
-    /** Taluk user assigns this driver to a vendor in their taluk. */
+    /**
+     * Assign / unassign a driver's delivering vendor.
+     * - taluk / admin: pick any vendor in the driver's taluk.
+     * - vendor: self-service — claim a free driver in their own taluk, or
+     *   release one already theirs. Any truthy vendor_id is forced to self;
+     *   they can never touch a driver assigned to another vendor.
+     */
     public function assignVendor(int $id): ResponseInterface
     {
-        if ($r = $this->requireRole(['taluk', 'admin'])) return $r;
+        if ($r = $this->requireRole(['taluk', 'admin', 'vendor'])) return $r;
         if (! $this->validate(['vendor_id' => 'permit_empty|is_natural'])) {
             return $this->fail('Validation failed', 422, $this->validator->getErrors());
         }
@@ -116,15 +138,27 @@ class DriverManagementController extends BaseApiController
         if (! $driver || $driver['role'] !== 'driver') return $this->fail('Driver not found', 404);
 
         $auth = $this->authUser();
+        $d = $this->request->getJSON(true) ?? $this->request->getPost();
+        $vendorId = (isset($d['vendor_id']) && $d['vendor_id']) ? (int) $d['vendor_id'] : null;
+
         if ($auth->role === 'taluk') {
             $taluk = (new TalukModel())->where('user_id', (int) $auth->id)->first();
             if (! $taluk || (int) $driver['taluk_id'] !== (int) $taluk['id']) {
                 return $this->fail('Driver not in your taluk', 403);
             }
+        } elseif ($auth->role === 'vendor') {
+            $talukId = $this->resolveTalukId($auth);
+            if (! $talukId || (int) $driver['taluk_id'] !== $talukId) {
+                return $this->fail('Driver not in your area', 403);
+            }
+            $current = $driver['assigned_vendor_id'] ? (int) $driver['assigned_vendor_id'] : null;
+            if ($current && $current !== (int) $auth->id) {
+                return $this->fail('Driver already assigned to another vendor', 409);
+            }
+            $vendorId = $vendorId ? (int) $auth->id : null; // claim → self, else release
         }
 
-        $d = $this->request->getJSON(true) ?? $this->request->getPost();
-        $vendorId = (isset($d['vendor_id']) && $d['vendor_id']) ? (int) $d['vendor_id'] : null;
+        $vendor = null;
         if ($vendorId) {
             $vendor = $users->find($vendorId);
             if (! $vendor || $vendor['role'] !== 'vendor') return $this->fail('Vendor not found', 404);

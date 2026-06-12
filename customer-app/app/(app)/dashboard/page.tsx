@@ -48,7 +48,7 @@ export default function DashboardPage() {
 
   const wallets: Tile[] = [
     { key: "wallet",  label: "Main",    value: user?.wallet_balance ?? 0, tone: "brand",  transferable: false },
-    { key: "level",   label: "Level",   value: user?.level_wallet   ?? 0, tone: "sky",    transferable: true  },
+    { key: "level",   label: "Level",   value: user?.level_commission ?? 0, tone: "sky", transferable: false },
     { key: "buyback", label: "Buyback", value: user?.buyback_wallet ?? 0, tone: "rose",   transferable: true  },
     { key: "global",  label: "Global",  value: user?.global_wallet  ?? 0, tone: "amber",  transferable: true  },
   ];
@@ -129,7 +129,7 @@ export default function DashboardPage() {
                   </p>
                   <div className="mt-auto space-y-1 pt-3">
                     <Link
-                      href={w.key === "global" ? "/wallet/global-history" : `/wallet/history?wallet=${w.key}`}
+                      href={w.key === "global" ? "/wallet/global-history" : `/wallet/history?wallet=${w.key === "level" ? "referral" : w.key}`}
                       className="block w-full rounded-lg border border-black/10 bg-white/70 py-1.5 text-center text-xs font-semibold text-[#374151] hover:border-brand/40 hover:text-brand"
                     >
                       History →

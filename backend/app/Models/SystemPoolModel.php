@@ -36,4 +36,20 @@ class SystemPoolModel extends Model
             $this->insert(['pool_key' => $key, 'balance' => $amount]);
         }
     }
+
+    /**
+     * Debit a pool, clamped to the available balance. Returns the amount
+     * actually taken (0 when the pool is empty) — callers use this to fund
+     * something only as far as the pool allows, never going negative.
+     */
+    public function take(string $key, float $amount): float
+    {
+        if ($amount <= 0) return 0.0;
+        $bal  = $this->balanceOf($key);
+        $take = round(min($bal, $amount), 2);
+        if ($take > 0) {
+            $this->update($key, ['balance' => round($bal - $take, 2)]);
+        }
+        return $take;
+    }
 }
