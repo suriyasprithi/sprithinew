@@ -64,4 +64,58 @@ class PurchaseController extends BaseApiController
 
         return $this->ok(['order_id' => (int) $orderId], 'Purchase complete');
     }
+
+    /**
+     * Vendor-initiated counterpart of fromQr(): the vendor enters the customer's
+     * mobile + amount instead of the customer scanning the vendor's QR. Same
+     * economics — debit the customer's wallet, credit the vendor 90% to the QR
+     * wallet, and run the MLM commission cascade.
+     */
+    public function fromCustomer(): ResponseInterface
+    {
+        $auth = $this->authUser();
+        if (! $auth) return $this->fail('Unauthorized', 401);
+        if ($auth->role !== 'vendor') return $this->fail('Only vendors can charge a customer', 403);
+
+        if (! $this->validate([
+            'customer_mobile' => 'required|regex_match[/^[0-9]{10}$/]',
+            'amount'          => 'required|numeric|greater_than[0]',
+        ])) return $this->fail('Validation failed', 422, $this->validator->getErrors());
+
+        $d = $this->request->getJSON(true) ?? $this->request->getPost();
+        $users = new UserModel();
+        $customer = $users->findByMobileAndRole($d['customer_mobile'], 'customer');
+        if (! $customer) return $this->fail('Customer not found', 404);
+
+        $amount = (float) $d['amount'];
+        if ((float) ($customer['wallet_balance'] ?? 0) < $amount) return $this->fail('Customer has insufficient wallet balance', 402);
+
+        $vendor = $users->find($auth->id);
+
+        // Synthetic order record (no items)
+        $orderId = (new OrderModel())->insert([
+            'customer_id' => (int) $customer['id'],
+            'vendor_id'   => (int) $auth->id,
+            'total'       => $amount,
+            'status'      => 'paid',
+            'notes'       => 'In-store purchase (vendor-entered)',
+        ], true);
+
+        // Debit customer
+        $users->update((int) $customer['id'], ['wallet_balance' => (float) $customer['wallet_balance'] - $amount]);
+        (new WalletTransactionModel())->insert(['user_id' => (int) $customer['id'], 'peer_user_id' => (int) $auth->id, 'amount' => $amount, 'type' => 'payment', 'reference' => 'qr#' . $orderId, 'notes' => 'Vendor purchase']);
+
+        // Credit vendor 90% to the QR wallet — remaining 10% is the commission pool.
+        $vendorShare = round($amount * 0.90, 2);
+        (new WalletService())->credit((int) $auth->id, 'qr', $vendorShare, 'receive', 'qr#' . $orderId, 'Sale (90% of in-store purchase)');
+
+        // 9-way commission pool distribution
+        (new CommissionService())->distributeForOrder((int) $orderId, (int) $customer['id'], $amount, (int) $auth->id);
+
+        $svc = new NotificationService();
+        $svc->sendToUser((int) $customer['id'], 'Purchase complete', "₹{$amount} paid to {$vendor['name']}");
+        $svc->sendToUser((int) $auth->id,       'New sale',          "₹{$amount} from {$customer['name']}");
+
+        return $this->ok(['order_id' => (int) $orderId], 'Purchase complete');
+    }
 }

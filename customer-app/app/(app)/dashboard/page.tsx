@@ -49,17 +49,16 @@ export default function DashboardPage() {
   const wallets: Tile[] = [
     { key: "wallet",  label: "Main",    value: user?.wallet_balance ?? 0, tone: "brand",  transferable: false },
     { key: "level",   label: "Level",   value: user?.level_wallet   ?? 0, tone: "sky",    transferable: true  },
-    { key: "level_1", label: "L1",      value: user?.level_1_wallet ?? 0, tone: "violet", transferable: false },
-    { key: "level_2", label: "L2",      value: user?.level_2_wallet ?? 0, tone: "violet", transferable: false },
-    { key: "level_3", label: "L3",      value: user?.level_3_wallet ?? 0, tone: "violet", transferable: false },
     { key: "buyback", label: "Buyback", value: user?.buyback_wallet ?? 0, tone: "rose",   transferable: true  },
     { key: "global",  label: "Global",  value: user?.global_wallet  ?? 0, tone: "amber",  transferable: true  },
   ];
 
-  const levels = [
-    { label: "Level 1", count: user?.level_1_count ?? 0 },
-    { label: "Level 2", count: user?.level_2_count ?? 0 },
-    { label: "Level 3", count: user?.level_3_count ?? 0 },
+  // Each level card combines the wallet balance with its referral head-count.
+  // Distinct tones per level, like the wallet cards above.
+  const levelCards: { key: WalletKey; label: string; value: number; users: number; tone: keyof typeof WALLET_TONE }[] = [
+    { key: "level_1", label: "L1", value: user?.level_1_wallet ?? 0, users: user?.level_1_count ?? 0, tone: "sky"   },
+    { key: "level_2", label: "L2", value: user?.level_2_wallet ?? 0, users: user?.level_2_count ?? 0, tone: "amber" },
+    { key: "level_3", label: "L3", value: user?.level_3_wallet ?? 0, users: user?.level_3_count ?? 0, tone: "rose"  },
   ];
 
   return (
@@ -143,35 +142,49 @@ export default function DashboardPage() {
               );
             })}
           </div>
-        </div>
 
-        <div>
-          <h3 className="mb-4 text-[13px] font-semibold uppercase tracking-[0.16em] text-[#6b7280]">My referrals</h3>
-          <div className="grid grid-cols-3 gap-3">
-            {levels.map((lv, i) => (
-              <motion.div
-                key={lv.label}
-                initial={{ opacity: 0, y: 6 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: i * 0.05 }}
-                whileHover={{ y: -3 }}
-                className="rounded-[20px] border p-4 transition-shadow hover:shadow-[0_14px_36px_-12px_rgba(15,23,42,0.18)]"
-                style={{
-                  background: "linear-gradient(135deg,#ffffff 0%,#fdf2f8 100%)",
-                  borderColor: "rgba(236,72,153,0.14)",
-                  boxShadow: "0 1px 0 rgba(255,255,255,0.6) inset, 0 6px 18px -10px rgba(15,23,42,0.10)",
-                }}
-              >
-                <span className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-[#fce7f3] text-[#be185d]">
-                  <Users className="h-4 w-4" />
-                </span>
-                <p className="mt-3 text-[32px] font-bold leading-none tracking-tight text-[#111827]">
-                  <AnimatedCounter value={lv.count} />
-                </p>
-                <p className="mt-1 text-[13px] font-bold uppercase tracking-wider text-[#6b7280]">{lv.label}</p>
-              </motion.div>
-            ))}
-          </div>
+          {/* Level wallets (L1–L3) combined into a single card */}
+          <motion.div
+            initial={{ opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.2 }}
+            className="mt-3 overflow-hidden rounded-[20px] border p-4"
+            style={{
+              background: WALLET_TONE.violet.bg,
+              borderColor: WALLET_TONE.violet.border,
+              boxShadow: "0 1px 0 rgba(255,255,255,0.6) inset, 0 6px 18px -10px rgba(15,23,42,0.10)",
+            }}
+          >
+            <div className="flex items-center gap-2">
+              <span className={`inline-flex h-9 w-9 items-center justify-center rounded-xl ${WALLET_TONE.violet.chip}`}>
+                <WalletIcon className="h-4 w-4" />
+              </span>
+              <p className="text-[13px] font-bold uppercase tracking-wider text-[#6b7280]">Levels</p>
+            </div>
+            <div className="mt-3 grid grid-cols-3 gap-3">
+              {levelCards.map((lc) => (
+                <div
+                  key={lc.key}
+                  className="rounded-xl border p-3 text-center"
+                  style={{ background: WALLET_TONE[lc.tone].bg, borderColor: WALLET_TONE[lc.tone].border }}
+                >
+                  <p className="text-[12px] font-bold uppercase tracking-wider text-[#6b7280]">{lc.label}</p>
+                  <p className="mt-1 text-[22px] font-bold leading-none tracking-tight text-[#111827]">
+                    <AnimatedCounter value={lc.value} format={fmtINR} />
+                  </p>
+                  <p className="mt-1 inline-flex items-center justify-center gap-1 text-[11px] font-semibold text-[#be185d]">
+                    <Users className="h-3 w-3" /> <AnimatedCounter value={lc.users} /> users
+                  </p>
+                  <Link
+                    href={`/wallet/history?wallet=${lc.key}`}
+                    className="mt-2 block rounded-lg border border-black/10 bg-white/70 py-1 text-center text-[11px] font-semibold text-[#374151] hover:border-brand/40 hover:text-brand"
+                  >
+                    History →
+                  </Link>
+                </div>
+              ))}
+            </div>
+          </motion.div>
         </div>
 
         <div>

@@ -182,7 +182,7 @@ export default function StaffOrdersPage() {
                         <span className="md:hidden">Order #{o.id} · </span>
                         {o.customer_name}
                       </p>
-                      <p className="truncate text-xs text-muted-foreground">{o.item_count} items · {o.created_at}</p>
+                      <p className="truncate text-xs text-muted-foreground">{o.product_names || `${o.item_count} items`} · {o.created_at}</p>
                     </div>
                   </div>
                   {/* Desktop: amount + status select */}

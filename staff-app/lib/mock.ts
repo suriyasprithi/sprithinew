@@ -131,7 +131,7 @@ const statsByRole: Record<string, StaffStats> = {
 
 export type VendorOrder = {
   id: number; customer_name: string; status: "pending"|"paid"|"shipped"|"delivered"|"cancelled";
-  total: number; created_at: string; item_count: number;
+  total: number; created_at: string; item_count: number; product_names?: string | null;
 };
 const vendorOrders: VendorOrder[] = [
   { id: 1062, customer_name: "Asha M.",     status: "paid",      total: 1149, created_at: "2026-05-13 09:14", item_count: 2 },

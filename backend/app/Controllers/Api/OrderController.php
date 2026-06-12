@@ -271,7 +271,8 @@ class OrderController extends BaseApiController
                     vp.pincode    AS pincode,
                     t.name        AS taluk_name,
                     d.name        AS district_name,
-                    dr.name       AS driver_name
+                    dr.name       AS driver_name,
+                    (SELECT GROUP_CONCAT(NULLIF(oi.name, \'Item\') ORDER BY oi.id SEPARATOR \', \') FROM order_items oi WHERE oi.order_id = o.id) AS product_names
              FROM orders o
              LEFT JOIN users u             ON u.id = o.vendor_id
              LEFT JOIN vendor_profiles vp  ON vp.user_id = o.vendor_id
@@ -340,7 +341,8 @@ class OrderController extends BaseApiController
                     cu.name AS customer_name,
                     ve.name AS vendor_name,
                     vp.shop_name AS shop_name,
-                    (SELECT COALESCE(SUM(qty),0) FROM order_items oi WHERE oi.order_id = o.id) AS item_count
+                    (SELECT COALESCE(SUM(qty),0) FROM order_items oi WHERE oi.order_id = o.id) AS item_count,
+                    (SELECT GROUP_CONCAT(NULLIF(oi.name, 'Item') ORDER BY oi.id SEPARATOR ', ') FROM order_items oi WHERE oi.order_id = o.id) AS product_names
              FROM orders o
              LEFT JOIN users cu            ON cu.id = o.customer_id
              LEFT JOIN users ve            ON ve.id = o.vendor_id

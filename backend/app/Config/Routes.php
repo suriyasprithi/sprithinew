@@ -60,6 +60,8 @@ $routes->group('api/v1', ['filter' => 'cors'], static function ($routes) {
     });
 
     $routes->post('purchase/qr', 'Api\PurchaseController::fromQr', ['filter' => 'auth']);
+    // Vendor-initiated in-store charge: vendor enters the customer's mobile + amount.
+    $routes->post('purchase/from-customer', 'Api\PurchaseController::fromCustomer', ['filter' => 'auth']);
 
     $routes->group('vendor/products', ['filter' => 'auth'], static function ($routes) {
         $routes->post('(:num)/variants',                 'Api\ProductVariantController::createVariant/$1');
