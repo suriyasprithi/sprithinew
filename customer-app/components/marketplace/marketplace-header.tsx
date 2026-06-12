@@ -132,6 +132,22 @@ export function MarketplaceHeader({ cartCount = 0, wishlistCount = 0, unreadCoun
           )}
         </div>
       </div>
+
+      {/* Mobile location strip — the desktop "Deliver to" button is hidden
+          below lg, so give phones a full-width tap target to open the same
+          picker. */}
+      <button
+        type="button"
+        onClick={() => setLocOpen(true)}
+        className="flex w-full items-center gap-2 border-t border-[var(--mk-border)] bg-[var(--mk-surface)] px-4 py-2 text-left lg:hidden"
+      >
+        <MapPin className="h-4 w-4 shrink-0 text-[var(--mk-brand)]" />
+        <span className="flex min-w-0 items-baseline gap-1.5 text-xs">
+          <span className="shrink-0 uppercase tracking-wider text-[var(--mk-text-muted)]">Deliver to</span>
+          <span className="truncate font-semibold text-[var(--mk-text)]">{locLabel}</span>
+        </span>
+        <ChevronDown className="ml-auto h-3.5 w-3.5 shrink-0 text-[var(--mk-text-muted)]" />
+      </button>
     </header>
   );
 }
