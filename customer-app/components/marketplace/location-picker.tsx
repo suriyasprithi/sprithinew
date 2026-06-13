@@ -31,7 +31,7 @@ export function readSavedLocation(): LocationSelection | null {
   } catch { return null; }
 }
 
-function saveLocation(v: LocationSelection) {
+export function saveLocation(v: LocationSelection) {
   if (typeof window === "undefined") return;
   localStorage.setItem(STORAGE_KEY, JSON.stringify(v));
   // Notify same-tab listeners.

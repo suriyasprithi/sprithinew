@@ -14,6 +14,7 @@ import { GuestGuard } from "@/components/auth-guard";
 import { useAuth } from "@/stores/auth";
 import { api, apiErrorMessage } from "@/lib/api";
 import { cleanMobile, isMobile } from "@/lib/phone";
+import { saveLocation } from "@/components/marketplace/location-picker";
 
 type GeoState    = { id: number; name: string };
 type GeoDistrict = { id: number; state_id: number; name: string };
@@ -137,6 +138,17 @@ function RegisterInner() {
         window.localStorage.setItem("epey.refresh_token", tokens.refresh_token);
       }
       await hydrate();
+      // Carry the chosen location into the delivery-location picker so the
+      // storefront opens pre-selected to where the customer registered.
+      const stName = states.find((s) => s.id === stateId)?.name ?? "";
+      const dName  = districts.find((d) => d.id === districtId)?.name ?? "";
+      const tName  = talukId ? (taluks.find((t) => t.id === talukId)?.name ?? "") : "";
+      saveLocation({
+        state_id: stateId,
+        district_id: districtId,
+        taluk_id: talukId,
+        label: [tName, dName, stName].filter(Boolean).join(", "),
+      });
       toast.success("Account created");
       router.replace("/home");
     } catch (err) {
