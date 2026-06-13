@@ -46,9 +46,6 @@ class CategoryController extends BaseApiController
             'vendor_category_id' => isset($data['vendor_category_id']) && $data['vendor_category_id'] !== ''
                 ? (int) $data['vendor_category_id']
                 : null,
-            'free_delivery_min'  => isset($data['free_delivery_min']) && $data['free_delivery_min'] !== ''
-                ? (float) $data['free_delivery_min']
-                : null,
             'status'             => $data['status'] ?? 'active',
         ], true);
         return $this->ok(['id' => (int) $id], 'Created');
@@ -63,11 +60,6 @@ class CategoryController extends BaseApiController
             $payload['vendor_category_id'] = $data['vendor_category_id'] === null || $data['vendor_category_id'] === ''
                 ? null
                 : (int) $data['vendor_category_id'];
-        }
-        if (array_key_exists('free_delivery_min', $data)) {
-            $payload['free_delivery_min'] = $data['free_delivery_min'] === null || $data['free_delivery_min'] === ''
-                ? null
-                : (float) $data['free_delivery_min'];
         }
         if (! $payload) return $this->fail('Nothing to update', 422);
         (new CategoryModel())->update($id, $payload);
@@ -152,7 +144,6 @@ class CategoryController extends BaseApiController
     private function decode(array $row): array
     {
         $row['vendor_category_id'] = isset($row['vendor_category_id']) ? (int) $row['vendor_category_id'] : null;
-        $row['free_delivery_min']  = isset($row['free_delivery_min']) && $row['free_delivery_min'] !== null ? (float) $row['free_delivery_min'] : null;
         return $row;
     }
 }

@@ -31,8 +31,6 @@ type CartRow = {
 const fmtINR = (n: number) =>
   new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(n);
 
-type DeliveryQuote = { free: boolean; reason: string | null; effective_fee: number };
-
 function normalize(items: unknown[]): CustomerAddress[] {
   return (items as CustomerAddress[]).map((a) => ({
     ...a,
@@ -62,7 +60,6 @@ export default function CheckoutPage() {
   type TimeRate = { id: number; time_min: number; price: number };
   const [rates, setRates] = useState<TimeRate[]>([]);
   const [rateId, setRateId] = useState<number | null>(null);
-  const [quote, setQuote] = useState<DeliveryQuote | null>(null);
 
   useEffect(() => {
     void (async () => {
@@ -118,24 +115,6 @@ export default function CheckoutPage() {
     })();
   }, [router]);
 
-  // Live free-delivery quote — the backend decides (reading the DB cart + the
-  // chosen rate), so the page can show "Free delivery" before placing the order.
-  useEffect(() => {
-    if (rateId == null) { setQuote(null); return; }
-    let cancelled = false;
-    void (async () => {
-      try {
-        const res = await api.get("/orders/delivery-quote", { params: { delivery_rate_id: rateId } });
-        if (cancelled) return;
-        const d = res.data.data;
-        setQuote({ free: Boolean(d?.free), reason: d?.reason ?? null, effective_fee: Number(d?.effective_fee ?? 0) });
-      } catch {
-        if (!cancelled) setQuote(null); // fall back to the rate price
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [rateId, items.length]);
-
   async function addNewAddress() {
     if (!addrForm.address_line.trim()) { toast.error("Full address is required"); return; }
     setSavingAddr(true);
@@ -160,11 +139,7 @@ export default function CheckoutPage() {
 
   const subtotal = items.reduce((s, i) => s + Number(i.price) * i.qty, 0);
   const selectedRate = rates.find((r) => r.id === rateId) ?? null;
-  const rateFee = selectedRate ? selectedRate.price : 0;
-  // The live quote (when available, reflecting the free-delivery rules) is
-  // authoritative for the fee shown. When the fee is ₹0 (free rule or free
-  // rate) the delivery rows are hidden — the summary is just Subtotal → Total.
-  const deliveryFee = quote ? quote.effective_fee : rateFee;
+  const deliveryFee = selectedRate ? selectedRate.price : 0;
   const total = subtotal + deliveryFee;
   const balance = user?.wallet_balance ?? 0;
   const selected = addresses.find((a) => a.id === selectedId) ?? null;
@@ -212,11 +187,9 @@ export default function CheckoutPage() {
 
         <LuxuryCard hoverLift={false} className="space-y-2 p-4 text-sm">
           <div className="flex justify-between"><span className="text-muted-foreground">Subtotal</span><span>{fmtINR(subtotal)}</span></div>
-          {/* Delivery rows show only when the customer is actually charged.
-              When delivery is free/₹0 they're hidden — just Subtotal → Total. */}
-          {deliveryFee > 0 && rates.length > 0 && (
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-muted-foreground">Delivery option</span>
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-muted-foreground">Delivery fee</span>
+            {rates.length > 0 ? (
               <select
                 value={rateId ?? ""}
                 onChange={(e) => setRateId(Number(e.target.value))}
@@ -229,14 +202,10 @@ export default function CheckoutPage() {
                   </option>
                 ))}
               </select>
-            </div>
-          )}
-          {deliveryFee > 0 && (
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-muted-foreground">Delivery fee</span>
+            ) : (
               <span>{fmtINR(deliveryFee)}</span>
-            </div>
-          )}
+            )}
+          </div>
           <div className="mt-2 flex justify-between border-t border-border pt-2 text-base font-bold"><span>Total</span><span className="text-brand">{fmtINR(total)}</span></div>
         </LuxuryCard>
 

@@ -91,7 +91,6 @@ $routes->group('api/v1', ['filter' => 'cors'], static function ($routes) {
 
     $routes->group('orders', ['filter' => 'auth'], static function ($routes) {
         $routes->post('place',         'Api\OrderController::place');
-        $routes->get('delivery-quote', 'Api\OrderController::deliveryQuote');
         $routes->get('mine',           'Api\OrderController::mine');
         $routes->get('list',           'Api\OrderController::listForRole');
         $routes->get('(:num)',         'Api\OrderController::show/$1');

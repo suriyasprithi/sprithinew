@@ -73,7 +73,10 @@ class WithdrawalController extends BaseApiController
     public function pending(): ResponseInterface
     {
         if ($r = $this->requireAdmin()) return $r;
-        $rows = (new WithdrawalModel())->where('status', 'pending')->orderBy('id', 'DESC')->findAll();
+        // All withdrawals (not just pending) so the admin list shows history +
+        // accurate stat cards; the UI filters by status client-side. Each row
+        // carries details_json (the bank/UPI snapshot) for the payout preview.
+        $rows = (new WithdrawalModel())->orderBy('id', 'DESC')->findAll(300);
         $userIds = array_unique(array_map(static fn ($r) => (int) $r['user_id'], $rows));
         $users   = $userIds ? (new UserModel())->whereIn('id', $userIds)->findAll() : [];
         $byId    = [];

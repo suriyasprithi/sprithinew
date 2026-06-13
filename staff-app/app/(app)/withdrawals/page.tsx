@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Banknote, Search, Check, X, Hourglass, MoreHorizontal } from "lucide-react";
+import { Banknote, Search, Check, X, Hourglass, MoreHorizontal, Eye } from "lucide-react";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
@@ -10,6 +10,9 @@ import { Button } from "@/components/ui/button";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle,
+} from "@/components/ui/dialog";
 import { StatCard } from "@/components/dashboard/stat-card";
 import { StatusBadge } from "@/components/data-table/status-badge";
 import { EmptyState } from "@/components/data-table/empty-state";
@@ -17,25 +20,64 @@ import { TableSkeleton } from "@/components/data-table/table-skeleton";
 import { Pagination } from "@/components/data-table/pagination";
 import { MobileHeader } from "@/components/layout/mobile-nav";
 import { PageHeader } from "@/components/layout/page-header";
+import { api, apiErrorMessage } from "@/lib/api";
 import { mock, type AdminWithdrawal } from "@/lib/mock";
 
 const PAGE_SIZE = 10;
 const fmtINR = (n: number) => new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(n);
 
+type PayoutDetails = Record<string, string>;
+type Row = AdminWithdrawal & { details: PayoutDetails };
+
+function parseDetails(raw: unknown): PayoutDetails {
+  if (!raw) return {};
+  if (typeof raw === "object") return raw as PayoutDetails;
+  try { return JSON.parse(String(raw)) as PayoutDetails; } catch { return {}; }
+}
+
 export default function AdminWithdrawalsPage() {
-  const [items, setItems] = useState<AdminWithdrawal[]>([]);
+  const [items, setItems] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState<"all" | AdminWithdrawal["status"]>("all");
   const [method, setMethod] = useState<"all" | "bank" | "upi">("all");
   const [page, setPage] = useState(1);
+  const [busyId, setBusyId] = useState<number | null>(null);
+  const [previewing, setPreviewing] = useState<Row | null>(null);
 
-  useEffect(() => {
-    void (async () => {
-      setItems(await mock.adminWithdrawals());
+  async function refresh() {
+    setLoading(true);
+    try {
+      type ApiRow = {
+        id: number | string;
+        amount: number | string;
+        method: string;
+        status: string;
+        created_at?: string | null;
+        details_json?: unknown;
+        user?: { name?: string | null; mobile_number?: string | null } | null;
+      };
+      const res = await api.get("/admin/withdrawals/pending");
+      const rows = ((res.data.data?.items ?? []) as ApiRow[]).map((r): Row => ({
+        id: Number(r.id),
+        user_name: r.user?.name || "—",
+        mobile: r.user?.mobile_number || "",
+        amount: Number(r.amount) || 0,
+        method: r.method === "upi" ? "upi" : "bank",
+        // backend marks an approved payout 'paid'
+        status: r.status === "paid" ? "approved" : r.status === "rejected" ? "rejected" : "pending",
+        created_at: (r.created_at ?? "").replace("T", " ").slice(0, 16),
+        details: parseDetails(r.details_json),
+      }));
+      setItems(rows);
+    } catch (e) {
+      toast.error(apiErrorMessage(e));
+      setItems((await mock.adminWithdrawals()).map((w) => ({ ...w, details: {} })));
+    } finally {
       setLoading(false);
-    })();
-  }, []);
+    }
+  }
+  useEffect(() => { void refresh(); }, []);
 
   const filtered = useMemo(() => items.filter((w) => {
     if (search) {
@@ -56,9 +98,17 @@ export default function AdminWithdrawalsPage() {
   const pendingValue = pending.reduce((s, w) => s + w.amount, 0);
   const approvedValue = items.filter((w) => w.status === "approved").reduce((s, w) => s + w.amount, 0);
 
-  function process(id: number, action: "approve" | "reject") {
-    setItems((cur) => cur.map((w) => (w.id === id ? { ...w, status: action === "approve" ? "approved" : "rejected" } : w)));
-    toast.success(`#${id} ${action}d`);
+  async function process(id: number, action: "approve" | "reject") {
+    setBusyId(id);
+    try {
+      await api.post(`/admin/withdrawals/${id}/${action}`);
+      toast.success(`#${id} ${action}d`);
+      await refresh();
+    } catch (e) {
+      toast.error(apiErrorMessage(e));
+    } finally {
+      setBusyId(null);
+    }
   }
 
   return (
@@ -106,7 +156,7 @@ export default function AdminWithdrawalsPage() {
         </div>
 
         <div className="luxe-card overflow-hidden">
-          <div className="hidden grid-cols-[1.2fr_140px_100px_120px_180px] gap-3 border-b border-border bg-surface-2/40 px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground md:grid">
+          <div className="hidden grid-cols-[1.2fr_140px_100px_120px_220px] gap-3 border-b border-border bg-surface-2/40 px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground md:grid">
             <span>User</span>
             <span>Amount</span>
             <span>Method</span>
@@ -125,7 +175,7 @@ export default function AdminWithdrawalsPage() {
                   initial={{ opacity: 0, y: 4 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: i * 0.02 }}
-                  className="grid grid-cols-[1fr_auto] items-center gap-3 px-4 py-3 transition-colors hover:bg-surface-2/40 md:grid-cols-[1.2fr_140px_100px_120px_180px]"
+                  className="grid grid-cols-[1fr_auto] items-center gap-3 px-4 py-3 transition-colors hover:bg-surface-2/40 md:grid-cols-[1.2fr_140px_100px_120px_220px]"
                 >
                   <div className="flex items-center gap-3">
                     <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-brand/10 text-xs font-semibold text-brand">
@@ -141,31 +191,44 @@ export default function AdminWithdrawalsPage() {
                   <div className="hidden md:block"><StatusBadge status={w.status} /></div>
                   <div className="flex items-center gap-2 justify-self-end">
                     <span className="md:hidden"><StatusBadge status={w.status} /></span>
+                    {/* Preview payout (bank/UPI) details — every row, every status */}
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="hidden h-8 w-8 text-muted-foreground hover:text-brand md:inline-flex"
+                      onClick={() => setPreviewing(w)}
+                      aria-label="View payout details"
+                    >
+                      <Eye className="h-4 w-4" />
+                    </Button>
                     {w.status === "pending" ? (
                       <div className="hidden gap-1 md:flex">
-                        <Button size="sm" className="h-8 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20" onClick={() => process(w.id, "approve")}>
+                        <Button size="sm" className="h-8 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20" disabled={busyId === w.id} onClick={() => void process(w.id, "approve")}>
                           <Check className="h-3.5 w-3.5" /> Approve
                         </Button>
-                        <Button size="sm" variant="ghost" className="h-8 text-rose-400 hover:bg-rose-500/10" onClick={() => process(w.id, "reject")}>
+                        <Button size="sm" variant="ghost" className="h-8 text-rose-400 hover:bg-rose-500/10" disabled={busyId === w.id} onClick={() => void process(w.id, "reject")}>
                           <X className="h-3.5 w-3.5" /> Reject
                         </Button>
                       </div>
                     ) : <span className="hidden text-xs text-muted-foreground md:block">—</span>}
-                    {w.status === "pending" && (
-                      <DropdownMenu>
-                        <DropdownMenuTrigger
-                          render={
-                            <button type="button" aria-label="Row actions" className="inline-flex h-8 w-8 items-center justify-center rounded-md hover:bg-accent md:hidden">
-                              <MoreHorizontal className="h-4 w-4" />
-                            </button>
-                          }
-                        />
-                        <DropdownMenuContent align="end" className="w-40">
-                          <DropdownMenuItem onClick={() => process(w.id, "approve")}><Check className="h-4 w-4" /> Approve</DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => process(w.id, "reject")} className="text-rose-400 focus:text-rose-400"><X className="h-4 w-4" /> Reject</DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    )}
+                    <DropdownMenu>
+                      <DropdownMenuTrigger
+                        render={
+                          <button type="button" aria-label="Row actions" className="inline-flex h-8 w-8 items-center justify-center rounded-md hover:bg-accent md:hidden">
+                            <MoreHorizontal className="h-4 w-4" />
+                          </button>
+                        }
+                      />
+                      <DropdownMenuContent align="end" className="w-44">
+                        <DropdownMenuItem onClick={() => setPreviewing(w)}><Eye className="h-4 w-4" /> View payout details</DropdownMenuItem>
+                        {w.status === "pending" && (
+                          <>
+                            <DropdownMenuItem onClick={() => void process(w.id, "approve")}><Check className="h-4 w-4" /> Approve</DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => void process(w.id, "reject")} className="text-rose-400 focus:text-rose-400"><X className="h-4 w-4" /> Reject</DropdownMenuItem>
+                          </>
+                        )}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </div>
                 </motion.div>
               ))}
@@ -178,6 +241,42 @@ export default function AdminWithdrawalsPage() {
           )}
         </div>
       </section>
+
+      <Dialog open={!!previewing} onOpenChange={(o) => !o && setPreviewing(null)}>
+        <DialogContent className="rounded-2xl border-border bg-popover">
+          <DialogHeader>
+            <DialogTitle>Payout details</DialogTitle>
+            <DialogDescription>
+              {previewing?.user_name}{previewing?.mobile ? ` · ${previewing.mobile}` : ""}
+            </DialogDescription>
+          </DialogHeader>
+          {previewing && (
+            <div className="divide-y divide-border rounded-xl border border-border">
+              <DetailRow label="Amount" value={fmtINR(previewing.amount)} />
+              <DetailRow label="Method" value={previewing.method.toUpperCase()} />
+              {previewing.method === "upi" ? (
+                <DetailRow label="UPI ID" value={previewing.details.upi} mono />
+              ) : (
+                <>
+                  <DetailRow label="Account holder" value={previewing.details.account_holder} />
+                  <DetailRow label="Bank name"      value={previewing.details.bank_name} />
+                  <DetailRow label="Account number" value={previewing.details.account_number} mono />
+                  <DetailRow label="IFSC"           value={previewing.details.ifsc} mono />
+                </>
+              )}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </>
+  );
+}
+
+function DetailRow({ label, value, mono }: { label: string; value?: string; mono?: boolean }) {
+  return (
+    <div className="flex items-center justify-between gap-4 px-4 py-2.5">
+      <span className="text-xs uppercase tracking-wider text-muted-foreground">{label}</span>
+      <span className={`text-sm font-medium ${mono ? "font-mono" : ""} ${value ? "" : "text-muted-foreground"}`}>{value || "Not set"}</span>
+    </div>
   );
 }

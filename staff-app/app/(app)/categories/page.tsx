@@ -33,7 +33,6 @@ type ProductCategory = {
   name: string;
   status: "active" | "inactive";
   vendor_category_id?: number | null;
-  free_delivery_min?: number | null;
 };
 
 type Draft = {
@@ -41,11 +40,10 @@ type Draft = {
   name: string;
   status: "active" | "inactive";
   vendor_category_id: number | null;
-  free_delivery_min: string;
 };
 
 function blankDraft(): Draft {
-  return { name: "", status: "active", vendor_category_id: null, free_delivery_min: "" };
+  return { name: "", status: "active", vendor_category_id: null };
 }
 
 export default function ProductCategoriesPage() {
@@ -89,7 +87,6 @@ export default function ProductCategoriesPage() {
       name: c.name,
       status: c.status,
       vendor_category_id: c.vendor_category_id ?? null,
-      free_delivery_min: c.free_delivery_min != null ? String(c.free_delivery_min) : "",
     });
   }
 
@@ -98,11 +95,9 @@ export default function ProductCategoriesPage() {
     const name = editing.name.trim();
     if (!name) { toast.error("Name required"); return; }
 
-    const fdmRaw = editing.free_delivery_min.trim();
     const payload = {
       name,
       vendor_category_id: editing.vendor_category_id,
-      free_delivery_min: fdmRaw === "" ? null : Number(fdmRaw),
       status: editing.status,
     };
 
@@ -270,18 +265,6 @@ export default function ProductCategoriesPage() {
                 emptyText="No vendor category found."
               />
               <p className="text-[11px] text-muted-foreground">Vendors with this vendor category will see this product category in their product form dropdown.</p>
-            </div>
-            <div className="space-y-1.5">
-              <Label>Free delivery min (₹)</Label>
-              <Input
-                type="number"
-                inputMode="decimal"
-                min={0}
-                value={editing?.free_delivery_min ?? ""}
-                onChange={(e) => setEditing((p) => p && ({ ...p, free_delivery_min: e.target.value }))}
-                placeholder="e.g. 500 — blank = none"
-              />
-              <p className="text-[11px] text-muted-foreground">When the Category free-delivery rule is on, an order with this category&apos;s items totalling ≥ this amount ships free.</p>
             </div>
             <div className="space-y-1.5">
               <Label>Status</Label>
