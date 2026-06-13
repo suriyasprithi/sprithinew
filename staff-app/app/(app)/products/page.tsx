@@ -184,6 +184,8 @@ export default function VendorProductsPage() {
   const [items, setItems] = useState<VendorProduct[]>([]);
   const [vendorCategory, setVendorCategory] = useState<VendorCategoryFull | null>(null);
   const [productCategories, setProductCategories] = useState<ProductCategory[]>([]);
+  const [newCat, setNewCat] = useState("");
+  const [creatingCat, setCreatingCat] = useState(false);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState<"all" | "active" | "inactive">("all");
@@ -349,6 +351,30 @@ export default function VendorProductsPage() {
     setImportOpen(false);
     setImportSearch("");
     toast.success(`Imported from ${p.name} — set new stock & save`);
+  }
+
+  // Vendor creates a new product category, filed under their own vendor
+  // category (backend POST /catalog/categories = ensure: case-insensitive,
+  // returns existing id if the name already exists). Then auto-select it.
+  async function createCategory() {
+    const name = newCat.trim();
+    if (!name) return;
+    setCreatingCat(true);
+    try {
+      const res = await api.post("/catalog/categories", { names: [name] });
+      const item = ((res.data.data?.items ?? [])[0] ?? null) as { id?: number; created?: boolean } | null;
+      const id = item?.id ? Number(item.id) : null;
+      if (!id) { toast.error("Could not create category"); return; }
+      setProductCategories((prev) =>
+        prev.some((c) => c.id === id)
+          ? prev
+          : [...prev, { id, name, commission_pct: 0, vendor_category_id: vendorCategory?.id ?? null, status: "active" }],
+      );
+      setEditing((p) => (p ? { ...p, category_id: id, attributes: {} } : p));
+      setNewCat("");
+      toast.success(item?.created ? `Category "${name}" created` : `Using existing "${name}"`);
+    } catch (e) { toast.error(apiErrorMessage(e, "Could not create category")); }
+    finally { setCreatingCat(false); }
   }
 
   async function save() {
@@ -704,6 +730,19 @@ export default function VendorProductsPage() {
                 className="h-11 w-full rounded-xl bg-surface-2/60"
               />
               <p className="text-[11px] text-muted-foreground">Only categories linked to your <span className="font-medium text-foreground">{vendorCategory?.name ?? "vendor category"}</span> appear here.</p>
+              <div className="mt-2 flex items-center gap-2">
+                <Input
+                  value={newCat}
+                  onChange={(e) => setNewCat(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); void createCategory(); } }}
+                  placeholder="Can't find it? Type a new category…"
+                  className="h-9 flex-1 rounded-lg bg-surface-2/60 text-sm"
+                  disabled={creatingCat}
+                />
+                <Button type="button" size="sm" variant="outline" className="h-9 shrink-0" onClick={() => void createCategory()} disabled={creatingCat || !newCat.trim()}>
+                  {creatingCat ? "Creating…" : <><Plus className="h-3.5 w-3.5" /> Create</>}
+                </Button>
+              </div>
             </div>
 
             {/* COMMON FIELDS — image left, details right on md+ */}
