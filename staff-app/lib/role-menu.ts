@@ -97,7 +97,6 @@ export const ROLE_MENU: Record<StaffRole, MenuItem[]> = {
     { href: "/manage-taluks",     label: "Taluks",             icon: Building2 },
     { href: "/manage-vendors",    label: "Vendors",            icon: Store },
     { href: "/wallet",            label: "Wallet",             icon: Wallet },
-    { href: "/payments",          label: "Manual Top-ups",     icon: CreditCard },
     { href: "/withdrawals",       label: "Withdrawals",        icon: Banknote },
     { href: "/kyc",               label: "KYC Review",         icon: ShieldCheck },
     { href: "/token-request",     label: "Token Requests",     icon: Coins },
