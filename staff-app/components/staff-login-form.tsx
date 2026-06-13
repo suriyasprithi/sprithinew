@@ -36,6 +36,12 @@ const BASE_ROLE: StaffRole | null = (() => {
   return null;
 })();
 
+// Title reflects the build's role (admin build → "Admin sign in"); the unified
+// build with no role falls back to the generic "Staff sign in".
+const SIGN_IN_TITLE = BASE_ROLE
+  ? `${BASE_ROLE.charAt(0).toUpperCase()}${BASE_ROLE.slice(1)} sign in`
+  : "Staff sign in";
+
 export function StaffLoginForm() {
   const { login, staffLogin, isLoading } = useAuth();
 
@@ -72,7 +78,7 @@ export function StaffLoginForm() {
               alt="SPRITHI Digital Mart"
               className="mx-auto mb-2 h-14 w-14 object-contain"
             />
-            <CardTitle className="text-2xl">Staff sign in</CardTitle>
+            <CardTitle className="text-2xl">{SIGN_IN_TITLE}</CardTitle>
             <p className="text-sm text-muted-foreground">
               Enter your mobile and password
             </p>
