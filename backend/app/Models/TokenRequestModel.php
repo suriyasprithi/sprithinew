@@ -13,7 +13,7 @@ class TokenRequestModel extends Model
     protected $useSoftDeletes   = false;
     protected $protectFields    = true;
 
-    protected $allowedFields = ['requester_id','target_user_id','amount','tokens','status','current_level','processed_by','notes'];
+    protected $allowedFields = ['requester_id','target_user_id','amount','tokens','status','current_level','processed_by','notes','attachment'];
 
     protected $useTimestamps = true;
     protected $dateFormat    = 'datetime';

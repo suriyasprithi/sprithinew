@@ -1,0 +1,2 @@
+:HL["/state/_next/static/css/9bb4905c243baff9.css","style"]
+0:{"tree":{"name":"","param":null,"prefetchHints":16,"slots":{"children":{"name":"(app)","param":null,"prefetchHints":0,"slots":{"children":{"name":"customer-purchase","param":null,"prefetchHints":0,"slots":{"children":{"name":"__PAGE__","param":null,"prefetchHints":0,"slots":null}}}}}}},"staleTime":300,"buildId":"puXtuNc5qH9KJH64Zmzwl"}

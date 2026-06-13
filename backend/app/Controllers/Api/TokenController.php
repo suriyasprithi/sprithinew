@@ -120,6 +120,7 @@ class TokenController extends BaseApiController
             'status'         => 'pending',
             'current_level'  => $startLevel,
             'notes'          => $d['notes'] ?? null,
+            'attachment'     => $d['attachment'] ?? null,
         ], true);
 
         $this->logEvent((int) $id, (int) $auth->id, 'create', null, $startLevel, $d['notes'] ?? null);
@@ -180,6 +181,29 @@ class TokenController extends BaseApiController
         } catch (\Throwable $e) { log_message('error', 'Token request self-notify failed: ' . $e->getMessage()); }
 
         return $this->ok(['id' => (int) $id, 'current_level' => $startLevel], 'Submitted');
+    }
+
+    /** Upload an optional proof (image/PDF) for a token request — returns its path + url. */
+    public function requestUpload(): ResponseInterface
+    {
+        $auth = $this->authUser();
+        if (! $auth) return $this->fail('Unauthorized', 401);
+
+        $file = $this->request->getFile('file');
+        if (! $file || ! $file->isValid() || $file->hasMoved()) return $this->fail('No file uploaded', 422);
+        if ($file->getSize() > 5 * 1024 * 1024) return $this->fail('File must be 5 MB or smaller', 422);
+        $allowed = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
+        if (! in_array($file->getMimeType(), $allowed, true)) {
+            return $this->fail('File must be a JPG, PNG, WEBP or PDF', 422);
+        }
+
+        $dir = FCPATH . 'uploads/token-requests/';
+        if (! is_dir($dir)) @mkdir($dir, 0775, true);
+        $name = $file->getRandomName();
+        $file->move($dir, $name);
+        $path = 'uploads/token-requests/' . $name;
+
+        return $this->ok(['path' => $path, 'url' => base_url($path)], 'Uploaded');
     }
 
     /**
@@ -247,7 +271,10 @@ class TokenController extends BaseApiController
         $users = $ids ? (new UserModel())->whereIn('id', $ids)->findAll() : [];
         $byId  = [];
         foreach ($users as $u) $byId[(int) $u['id']] = ['name' => $u['name'], 'mobile_number' => $u['mobile_number'], 'role' => $u['role']];
-        $items = array_map(static fn ($r) => $r + ['requester' => $byId[(int) $r['requester_id']] ?? null], $rows);
+        $items = array_map(static fn ($r) => $r + [
+            'requester'      => $byId[(int) $r['requester_id']] ?? null,
+            'attachment_url' => ! empty($r['attachment']) ? base_url($r['attachment']) : null,
+        ], $rows);
         return $this->ok(['items' => $items]);
     }
 
@@ -434,6 +461,7 @@ class TokenController extends BaseApiController
              ORDER BY e.id ASC',
             [$id]
         )->getResultArray();
+        $req['attachment_url'] = ! empty($req['attachment']) ? base_url($req['attachment']) : null;
         return $this->ok(['request' => $req, 'events' => $events]);
     }
 
@@ -455,6 +483,7 @@ class TokenController extends BaseApiController
         $auth = $this->authUser();
         if (! $auth) return $this->fail('Unauthorized', 401);
         $rows = (new TokenRequestModel())->where('requester_id', $auth->id)->orderBy('id', 'DESC')->findAll(100);
+        $rows = array_map(static fn ($r) => $r + ['attachment_url' => ! empty($r['attachment']) ? base_url($r['attachment']) : null], $rows);
         return $this->ok(['items' => $rows]);
     }
 
@@ -503,7 +532,10 @@ class TokenController extends BaseApiController
         $users = $ids ? (new UserModel())->whereIn('id', $ids)->findAll() : [];
         $byId = [];
         foreach ($users as $u) $byId[(int) $u['id']] = ['name' => $u['name'], 'mobile_number' => $u['mobile_number'], 'role' => $u['role']];
-        $items = array_map(static fn ($r) => $r + ['requester' => $byId[(int) $r['requester_id']] ?? null], $rows);
+        $items = array_map(static fn ($r) => $r + [
+            'requester'      => $byId[(int) $r['requester_id']] ?? null,
+            'attachment_url' => ! empty($r['attachment']) ? base_url($r['attachment']) : null,
+        ], $rows);
         return $this->ok(['items' => $items]);
     }
 

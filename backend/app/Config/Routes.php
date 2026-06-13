@@ -62,6 +62,8 @@ $routes->group('api/v1', ['filter' => 'cors'], static function ($routes) {
     $routes->post('purchase/qr', 'Api\PurchaseController::fromQr', ['filter' => 'auth']);
     // Vendor-initiated in-store charge: vendor enters the customer's mobile + amount.
     $routes->post('purchase/from-customer', 'Api\PurchaseController::fromCustomer', ['filter' => 'auth']);
+    // Vendor's own in-store/QR purchase history (shown on the QR scanner page).
+    $routes->get('purchase/mine', 'Api\PurchaseController::mine', ['filter' => 'auth']);
 
     $routes->group('vendor/products', ['filter' => 'auth'], static function ($routes) {
         $routes->post('(:num)/variants',                 'Api\ProductVariantController::createVariant/$1');
@@ -186,6 +188,7 @@ $routes->group('api/v1', ['filter' => 'cors'], static function ($routes) {
         $routes->get('distribute/quote',    'Api\TokenController::quote');
         $routes->get('distribute/history',  'Api\TokenController::distributeHistory');
         $routes->post('requests',           'Api\TokenController::requestCreate');
+        $routes->post('requests/upload',    'Api\TokenController::requestUpload');
         $routes->get('requests/inbox',      'Api\TokenController::inbox');
         $routes->get('requests/mine',       'Api\TokenController::requestMine');
         $routes->get('requests/(:num)',     'Api\TokenController::requestShow/$1');
@@ -228,9 +231,11 @@ $routes->group('api/v1', ['filter' => 'cors'], static function ($routes) {
     // ===== Admin (Phase 4 will rebuild payments + withdrawals admin; Phase 7 stats + exports) =====
     $routes->group('admin', ['filter' => 'auth'], static function ($routes) {
         // customers
-        $routes->get('customers',                 'Api\AdminUsersController::customers');
-        $routes->post('customers/(:num)/block',   'Api\AdminUsersController::block/$1');
-        $routes->post('customers/(:num)/unblock', 'Api\AdminUsersController::unblock/$1');
+        $routes->get('customers',                    'Api\AdminUsersController::customers');
+        $routes->patch('customers/(:num)',           'Api\AdminUsersController::update/$1');
+        $routes->post('customers/(:num)/activate',   'Api\AdminUsersController::activate/$1');
+        $routes->post('customers/(:num)/deactivate', 'Api\AdminUsersController::deactivate/$1');
+        $routes->post('customers/(:num)/wallet',     'Api\AdminUsersController::wallet/$1');
 
         // categories
         $routes->get('categories',          'Api\CategoryController::adminIndex');

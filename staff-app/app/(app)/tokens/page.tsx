@@ -37,6 +37,7 @@ type InboxRow = {
   notes: string | null;
   current_level: string;
   created_at: string;
+  attachment_url?: string | null;
   requester: { name: string; mobile_number: string; role: string } | null;
 };
 
@@ -58,6 +59,8 @@ export default function TokensPage() {
   const [requestOpen, setRequestOpen] = useState(false);
   const [reqTokens, setReqTokens] = useState("");
   const [reqNotes, setReqNotes] = useState("");
+  const [reqFile, setReqFile] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [rowBusy, setRowBusy] = useState<number | null>(null);
 
@@ -112,14 +115,28 @@ export default function TokensPage() {
     finally { setRowBusy(null); }
   }
 
+  async function uploadAttachment(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    setUploading(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", f);
+      const res = await api.post("/tokens/requests/upload", fd);
+      setReqFile(res.data.data?.path ?? null);
+      toast.success("Attached");
+    } catch (err) { toast.error(apiErrorMessage(err)); }
+    finally { setUploading(false); }
+  }
+
   async function submitRequest() {
     const t = Number(reqTokens);
     if (!t) { toast.error("Tokens required"); return; }
     setBusy(true);
     try {
-      await api.post("/tokens/requests", { tokens: t, notes: reqNotes || undefined });
+      await api.post("/tokens/requests", { tokens: t, notes: reqNotes || undefined, attachment: reqFile || undefined });
       toast.success("Request submitted");
-      setReqTokens(""); setReqNotes(""); setRequestOpen(false);
+      setReqTokens(""); setReqNotes(""); setReqFile(null); setRequestOpen(false);
       void refresh();
     } catch (e) { toast.error(apiErrorMessage(e)); }
     finally { setBusy(false); }
@@ -226,6 +243,11 @@ export default function TokensPage() {
                           <p className="truncate text-xs text-muted-foreground">
                             {r.requester?.role ?? ""} · {r.created_at} {r.notes ? `· ${r.notes}` : ""}
                           </p>
+                          {r.attachment_url && (
+                            <a href={r.attachment_url} target="_blank" rel="noopener noreferrer" className="text-[11px] font-medium text-brand underline">
+                              View attachment
+                            </a>
+                          )}
                         </div>
                       </div>
                       <p className="shrink-0 text-base font-bold text-brand">{r.tokens} tokens</p>
@@ -323,10 +345,27 @@ export default function TokensPage() {
               <Label htmlFor="reqNotes">Notes (optional)</Label>
               <Input id="reqNotes" value={reqNotes} onChange={(e) => setReqNotes(e.target.value)} placeholder="Stock replenishment" />
             </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="reqFile">Attachment (optional)</Label>
+              <input
+                id="reqFile"
+                type="file"
+                accept="image/jpeg,image/png,image/webp,application/pdf"
+                onChange={(e) => void uploadAttachment(e)}
+                disabled={uploading}
+                className="block w-full text-xs text-muted-foreground file:mr-3 file:rounded-lg file:border-0 file:bg-brand/10 file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-brand hover:file:bg-brand/20"
+              />
+              {uploading && <p className="text-[11px] text-muted-foreground">Uploading…</p>}
+              {reqFile && !uploading && (
+                <p className="flex items-center gap-1.5 text-[11px] text-emerald-500">
+                  Attached ✓ <button type="button" className="underline" onClick={() => setReqFile(null)}>remove</button>
+                </p>
+              )}
+            </div>
           </div>
           <DialogFooter>
             <Button variant="ghost" onClick={() => setRequestOpen(false)}>Cancel</Button>
-            <GradientButton onClick={() => void submitRequest()} disabled={busy}>
+            <GradientButton onClick={() => void submitRequest()} disabled={busy || uploading}>
               {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <><ArrowDownToLine className="h-4 w-4" /> Submit</>}
             </GradientButton>
           </DialogFooter>

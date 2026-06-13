@@ -28,7 +28,7 @@ import { mock, type TokenRequest } from "@/lib/mock";
 
 const PAGE_SIZE = 10;
 
-type Row = TokenRequest & { current_level?: string };
+type Row = TokenRequest & { current_level?: string; attachment_url?: string | null };
 
 export default function TokenRequestPage() {
   const { user } = useAuth();
@@ -43,6 +43,8 @@ export default function TokenRequestPage() {
   const [page, setPage] = useState(1);
   const [requestOpen, setRequestOpen] = useState(false);
   const [tokens, setTokens] = useState("");
+  const [reqFile, setReqFile] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [rowBusy, setRowBusy] = useState<number | null>(null);
   const [bonusEarned, setBonusEarned] = useState(0);
@@ -58,6 +60,7 @@ export default function TokenRequestPage() {
         current_level?: string;
         created_at: string;
         notes?: string | null;
+        attachment_url?: string | null;
         requester?: { name?: string | null; mobile_number?: string | null } | null;
       };
       const adapt = (r: ApiRow, fallbackName?: string): Row => ({
@@ -69,6 +72,7 @@ export default function TokenRequestPage() {
         created_at: r.created_at,
         notes: r.notes ?? undefined,
         current_level: r.current_level,
+        attachment_url: r.attachment_url ?? null,
       });
 
       let items: ApiRow[] = [];
@@ -115,14 +119,28 @@ export default function TokenRequestPage() {
   const approved = rows.filter((r) => r.status === "approved");
   const totalTokens = approved.reduce((s, r) => s + r.tokens, 0);
 
+  async function uploadAttachment(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    setUploading(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", f);
+      const res = await api.post("/tokens/requests/upload", fd);
+      setReqFile(res.data.data?.path ?? null);
+      toast.success("Attached");
+    } catch (err) { toast.error(apiErrorMessage(err)); }
+    finally { setUploading(false); }
+  }
+
   async function submit() {
     const t = Number(tokens);
     if (!t) { toast.error("Tokens required"); return; }
     setBusy(true);
     try {
-      await api.post("/tokens/requests", { tokens: t });
+      await api.post("/tokens/requests", { tokens: t, attachment: reqFile || undefined });
       toast.success("Request submitted");
-      setTokens(""); setRequestOpen(false);
+      setTokens(""); setReqFile(null); setRequestOpen(false);
       void refresh();
     } catch (e) { toast.error(apiErrorMessage(e)); }
     finally { setBusy(false); }
@@ -250,6 +268,9 @@ export default function TokenRequestPage() {
                     <div className="min-w-0">
                       <p className="truncate text-sm font-semibold">{r.requester_name}</p>
                       <p className="truncate text-xs text-muted-foreground md:hidden">{r.tokens} tokens · {r.created_at}</p>
+                      {r.attachment_url && (
+                        <a href={r.attachment_url} target="_blank" rel="noopener noreferrer" className="text-[11px] font-medium text-brand underline">View attachment</a>
+                      )}
                     </div>
                   </div>
                   <p className="hidden text-sm font-medium md:block">{r.tokens}</p>
@@ -310,10 +331,27 @@ export default function TokenRequestPage() {
               <Label>Tokens needed</Label>
               <Input type="number" value={tokens} onChange={(e) => setTokens(e.target.value)} placeholder="1000" />
             </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="reqFile">Attachment (optional)</Label>
+              <input
+                id="reqFile"
+                type="file"
+                accept="image/jpeg,image/png,image/webp,application/pdf"
+                onChange={(e) => void uploadAttachment(e)}
+                disabled={uploading}
+                className="block w-full text-xs text-muted-foreground file:mr-3 file:rounded-lg file:border-0 file:bg-brand/10 file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-brand hover:file:bg-brand/20"
+              />
+              {uploading && <p className="text-[11px] text-muted-foreground">Uploading…</p>}
+              {reqFile && !uploading && (
+                <p className="flex items-center gap-1.5 text-[11px] text-emerald-500">
+                  Attached ✓ <button type="button" className="underline" onClick={() => setReqFile(null)}>remove</button>
+                </p>
+              )}
+            </div>
           </div>
           <DialogFooter>
             <Button variant="ghost" onClick={() => setRequestOpen(false)}>Cancel</Button>
-            <GradientButton onClick={() => void submit()} disabled={busy}>
+            <GradientButton onClick={() => void submit()} disabled={busy || uploading}>
               {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <><ArrowDownToLine className="h-4 w-4" /> Submit</>}
             </GradientButton>
           </DialogFooter>
