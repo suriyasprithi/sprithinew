@@ -31,17 +31,6 @@ type CartRow = {
 const fmtINR = (n: number) =>
   new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(n);
 
-// Friendly label for the free-delivery rule that applied (from the quote API).
-function reasonLabel(reason: string | null): string {
-  switch (reason) {
-    case "category": return "Free delivery — category offer";
-    case "amount":   return "Free delivery — order amount";
-    case "time":     return "Free delivery — delivery hours";
-    case "eta":      return "Free delivery — scheduled delivery";
-    default:         return "Free delivery";
-  }
-}
-
 type DeliveryQuote = { free: boolean; reason: string | null; effective_fee: number };
 
 function normalize(items: unknown[]): CustomerAddress[] {
@@ -172,8 +161,9 @@ export default function CheckoutPage() {
   const subtotal = items.reduce((s, i) => s + Number(i.price) * i.qty, 0);
   const selectedRate = rates.find((r) => r.id === rateId) ?? null;
   const rateFee = selectedRate ? selectedRate.price : 0;
-  // The live quote (when available) is authoritative for the fee shown.
-  const isFreeDelivery = Boolean(quote?.free) && rateFee > 0;
+  // The live quote (when available, reflecting the free-delivery rules) is
+  // authoritative for the fee shown. When the fee is ₹0 (free rule or free
+  // rate) the delivery rows are hidden — the summary is just Subtotal → Total.
   const deliveryFee = quote ? quote.effective_fee : rateFee;
   const total = subtotal + deliveryFee;
   const balance = user?.wallet_balance ?? 0;
@@ -222,7 +212,9 @@ export default function CheckoutPage() {
 
         <LuxuryCard hoverLift={false} className="space-y-2 p-4 text-sm">
           <div className="flex justify-between"><span className="text-muted-foreground">Subtotal</span><span>{fmtINR(subtotal)}</span></div>
-          {rates.length > 0 && (
+          {/* Delivery rows show only when the customer is actually charged.
+              When delivery is free/₹0 they're hidden — just Subtotal → Total. */}
+          {deliveryFee > 0 && rates.length > 0 && (
             <div className="flex items-center justify-between gap-2">
               <span className="text-muted-foreground">Delivery option</span>
               <select
@@ -239,19 +231,11 @@ export default function CheckoutPage() {
               </select>
             </div>
           )}
-          <div className="flex items-center justify-between gap-2">
-            <span className="text-muted-foreground">Delivery fee</span>
-            {isFreeDelivery ? (
-              <span className="inline-flex items-center gap-1">
-                <span className="text-xs text-muted-foreground line-through">{fmtINR(rateFee)}</span>
-                <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-[12px] font-semibold text-emerald-600">FREE</span>
-              </span>
-            ) : (
+          {deliveryFee > 0 && (
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-muted-foreground">Delivery fee</span>
               <span>{fmtINR(deliveryFee)}</span>
-            )}
-          </div>
-          {isFreeDelivery && (
-            <p className="-mt-1 text-[11px] font-medium text-emerald-600">{reasonLabel(quote?.reason ?? null)}</p>
+            </div>
           )}
           <div className="mt-2 flex justify-between border-t border-border pt-2 text-base font-bold"><span>Total</span><span className="text-brand">{fmtINR(total)}</span></div>
         </LuxuryCard>
