@@ -31,11 +31,11 @@ export default function WalletPage() {
   const tiles: Tile[] = [
     { key: "wallet",  label: "Main wallet",     value: user?.wallet_balance ?? 0, transferable: false },
     { key: "level",   label: "Level wallet",    value: user?.level_wallet   ?? 0, transferable: true  },
+    { key: "buyback", label: "Buyback wallet",  value: user?.buyback_wallet ?? 0, transferable: true  },
+    { key: "global",  label: "Global wallet",   value: user?.global_wallet  ?? 0, transferable: true  },
     { key: "level_1", label: "Level 1 wallet",  value: user?.level_1_wallet ?? 0, transferable: false, gated: "100 referrals" },
     { key: "level_2", label: "Level 2 wallet",  value: user?.level_2_wallet ?? 0, transferable: false, gated: "10,000 referrals" },
     { key: "level_3", label: "Level 3 wallet",  value: user?.level_3_wallet ?? 0, transferable: false, gated: "100,000 referrals" },
-    { key: "buyback", label: "Buyback wallet",  value: user?.buyback_wallet ?? 0, transferable: true  },
-    { key: "global",  label: "Global wallet",   value: user?.global_wallet  ?? 0, transferable: true  },
   ];
 
   return (
