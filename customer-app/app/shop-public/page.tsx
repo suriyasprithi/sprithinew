@@ -23,6 +23,7 @@ type ApiProduct = {
 };
 type Category = { id: number; name: string };
 type VendorCategory = { id: number; name: string };
+type Vendor = { id: number; name: string; shop_name?: string | null };
 
 function adapt(raw: ApiProduct): MarketplaceProduct {
   return {
@@ -51,6 +52,7 @@ function PublicShopInner() {
   const [items, setItems] = useState<MarketplaceProduct[]>([]);
   const [cats, setCats] = useState<Category[]>([]);
   const [vcats, setVcats] = useState<VendorCategory[]>([]);
+  const [vendors, setVendors] = useState<Vendor[]>([]);
   // catId is derived from the URL so the dropdown <Link> clicks (which only
   // change the query string) actually re-filter the products.
   const catId = sp?.get("category_id") ? Number(sp.get("category_id")) : null;
@@ -64,6 +66,15 @@ function PublicShopInner() {
     const params = new URLSearchParams(sp?.toString() ?? "");
     if (id === null) params.delete("vendor_category_id");
     else params.set("vendor_category_id", String(id));
+    const qs = params.toString();
+    router.push(`/shop-public${qs ? `?${qs}` : ""}`);
+  }
+
+  // Scope products to one shop via ?vendor_id=N (vendor pill click).
+  function setVendor(id: number | null) {
+    const params = new URLSearchParams(sp?.toString() ?? "");
+    if (id === null) params.delete("vendor_id");
+    else params.set("vendor_id", String(id));
     const qs = params.toString();
     router.push(`/shop-public${qs ? `?${qs}` : ""}`);
   }
@@ -126,6 +137,27 @@ function PublicShopInner() {
     }
   }, []);
 
+  // Load the shop (vendor) pills — same location scope as the category tabs.
+  useEffect(() => {
+    const fetchVendors = async () => {
+      try {
+        const loc = readSavedLocation();
+        const params: Record<string, string> = {};
+        if (loc?.taluk_id)         params.taluk_id    = String(loc.taluk_id);
+        else if (loc?.district_id) params.district_id = String(loc.district_id);
+        else if (loc?.state_id)    params.state_id    = String(loc.state_id);
+        const res = await api.get("/public/vendors", { params });
+        setVendors((res.data.data?.items ?? []) as Vendor[]);
+      } catch { setVendors([]); }
+    };
+    void fetchVendors();
+    if (typeof window !== "undefined") {
+      const onChange = () => { void fetchVendors(); };
+      window.addEventListener("epey-location-changed", onChange);
+      return () => window.removeEventListener("epey-location-changed", onChange);
+    }
+  }, []);
+
   return (
     <div className="marketplace-theme min-h-screen pb-24 md:pb-0">
       <TopInfoBar />
@@ -142,7 +174,7 @@ function PublicShopInner() {
               <input
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
-                placeholder="Search products…"
+                placeholder="Search products or shops…"
                 className="h-11 w-full rounded-xl border border-[var(--mk-border)] bg-[var(--mk-surface-2)] pl-9 pr-3 text-sm text-[var(--mk-text)] outline-none focus:border-[var(--mk-brand)]"
               />
             </div>
@@ -169,6 +201,19 @@ function PublicShopInner() {
             <CategoryPill active={vendorCategoryId === null} onClick={() => setVendorCategory(null)}>All</CategoryPill>
             {vcats.map((c) => (
               <CategoryPill key={c.id} active={vendorCategoryId === c.id} onClick={() => setVendorCategory(c.id)}>{c.name}</CategoryPill>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* Shop (vendor) pills — pick a shop to see only its products */}
+      {vendors.length > 0 && (
+        <section className="mx-auto max-w-7xl px-4 pt-3">
+          <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-[var(--mk-text-muted)]">Shops</p>
+          <div className="flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            <CategoryPill active={vendorId === null} onClick={() => setVendor(null)}>All shops</CategoryPill>
+            {vendors.map((v) => (
+              <CategoryPill key={v.id} active={vendorId === v.id} onClick={() => setVendor(v.id)}>{v.shop_name || v.name}</CategoryPill>
             ))}
           </div>
         </section>

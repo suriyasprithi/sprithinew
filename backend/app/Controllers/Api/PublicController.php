@@ -63,7 +63,16 @@ class PublicController extends BaseApiController
         $inStock        = $this->request->getGet('in_stock');
         $model          = (new ProductModel())->where('status', 'active');
 
-        if ($q)         $model->like('name', $q);
+        if ($q) {
+            // Match the product name OR the vendor's shop/owner name, so a
+            // customer can search by shop ("SF Shop") as well as product ("rice").
+            $vNameIds = (new UserModel())->where('role', 'vendor')->like('name', $q)->findColumn('id') ?: [];
+            $vShopIds = (new VendorProfileModel())->like('shop_name', $q)->findColumn('user_id') ?: [];
+            $vIds     = array_values(array_unique(array_merge($vNameIds, $vShopIds)));
+            $model->groupStart()->like('name', $q);
+            if (! empty($vIds)) $model->orWhereIn('vendor_id', $vIds);
+            $model->groupEnd();
+        }
         if ($catId)     $model->where('category_id', $catId);
         if ($vendorId)  $model->where('vendor_id', $vendorId);
         if ($priceMin !== null && $priceMin !== '') $model->where('price >=', (float) $priceMin);
