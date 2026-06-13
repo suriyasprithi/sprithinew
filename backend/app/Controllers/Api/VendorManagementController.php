@@ -88,6 +88,13 @@ class VendorManagementController extends BaseApiController
                 'mobile_number' => $u['mobile_number'],
                 'email'         => $u['email'],
                 'status'        => $u['status'],
+                'bank'          => [
+                    'account_holder' => $u['account_holder'] ?? null,
+                    'account_number' => $u['account_number'] ?? null,
+                    'ifsc_code'      => $u['ifsc_code']      ?? null,
+                    'bank_name'      => $u['bank_name']      ?? null,
+                    'upi'            => $u['upi']            ?? null,
+                ],
                 'profile'       => $p,
             ];
         }

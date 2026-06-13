@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Store, Search, Plus, MoreHorizontal, Pencil, KeyRound, Copy, Trash2 } from "lucide-react";
+import { Store, Search, Plus, MoreHorizontal, Pencil, KeyRound, Copy, Trash2, ChevronDown } from "lucide-react";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
@@ -34,7 +34,15 @@ type EditVendor = { id: number; name: string; shop_name: string; vendor_category
 type ResetPw = { id: number; shop_name: string; password: string };
 type VendorCategoryOption = { id: number; name: string };
 type VendorTemplate = { id: number; name: string; vendor_category_id: number | null; commission_pct: number };
-type Vendor = ManagedVendor & { vendor_category_id: number | null; commission_pct: number };
+type BankInfo = { account_holder: string | null; account_number: string | null; ifsc_code: string | null; bank_name: string | null; upi: string | null };
+type Vendor = ManagedVendor & {
+  vendor_category_id: number | null;
+  commission_pct: number;
+  address: string | null;
+  area: string | null;
+  pincode: string | null;
+  bank: BankInfo;
+};
 
 function normalizeVendor(raw: unknown): Vendor {
   const r = raw as Record<string, unknown>;
@@ -47,6 +55,8 @@ function normalizeVendor(raw: unknown): Vendor {
   const commission_pct = profile?.commission_pct !== undefined && profile?.commission_pct !== null
     ? Number(profile.commission_pct) || 0
     : 10;
+  const str = (v: unknown) => (v === null || v === undefined || v === "" ? null : String(v));
+  const bankRaw = (r.bank ?? {}) as Record<string, unknown>;
   return {
     id: Number(r.id ?? 0),
     name: (r.name as string | undefined) || "",
@@ -56,6 +66,16 @@ function normalizeVendor(raw: unknown): Vendor {
     status,
     vendor_category_id,
     commission_pct,
+    address: str(profile?.address),
+    area: str(profile?.area),
+    pincode: str(profile?.pincode),
+    bank: {
+      account_holder: str(bankRaw.account_holder),
+      account_number: str(bankRaw.account_number),
+      ifsc_code: str(bankRaw.ifsc_code),
+      bank_name: str(bankRaw.bank_name),
+      upi: str(bankRaw.upi),
+    },
   };
 }
 
@@ -65,6 +85,7 @@ export default function ManageVendorsPage() {
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState<"all" | "active" | "inactive" | "blocked">("all");
   const [page, setPage] = useState(1);
+  const [openId, setOpenId] = useState<number | null>(null); // expanded bank/address row
   const [adding, setAdding] = useState<NewVendor | null>(null);
   const [editing, setEditing] = useState<EditVendor | null>(null);
   const [resetting, setResetting] = useState<ResetPw | null>(null);
@@ -345,44 +366,83 @@ export default function ManageVendorsPage() {
                   initial={{ opacity: 0, y: 4 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: i * 0.02 }}
-                  className="grid grid-cols-[1fr_auto] items-center gap-3 px-4 py-3 transition-colors hover:bg-surface-2/40 md:grid-cols-[1.4fr_1fr_140px_90px_120px_56px]"
                 >
-                  <div className="flex min-w-0 items-center gap-3">
-                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brand/10 text-xs font-semibold text-brand">
-                      {(v.shop_name || v.name || "?").charAt(0).toUpperCase()}
-                    </span>
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-semibold">{v.shop_name || "—"}</p>
-                      <p className="truncate text-xs text-muted-foreground">{v.name}</p>
+                  <div className="grid grid-cols-[1fr_auto] items-center gap-3 px-4 py-3 transition-colors hover:bg-surface-2/40 md:grid-cols-[1.4fr_1fr_140px_90px_120px_56px]">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setOpenId((cur) => (cur === v.id ? null : v.id))}
+                        aria-label={openId === v.id ? "Hide bank & address" : "Show bank & address"}
+                        aria-expanded={openId === v.id}
+                        className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-accent"
+                      >
+                        <ChevronDown className={`h-4 w-4 transition-transform ${openId === v.id ? "rotate-180" : ""}`} />
+                      </button>
+                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brand/10 text-xs font-semibold text-brand">
+                        {(v.shop_name || v.name || "?").charAt(0).toUpperCase()}
+                      </span>
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-semibold">{v.shop_name || "—"}</p>
+                        <p className="truncate text-xs text-muted-foreground">{v.name}</p>
+                      </div>
+                    </div>
+                    <p className="hidden min-w-0 truncate text-sm text-muted-foreground md:block">{v.taluk || "—"}</p>
+                    <p className="hidden min-w-0 truncate text-sm text-muted-foreground md:block">{v.mobile}</p>
+                    <p className="hidden text-sm font-medium md:block">{Number(v.commission_pct ?? 0).toFixed(2)}%</p>
+                    <div className="hidden md:block"><StatusBadge status={v.status} /></div>
+                    <div className="flex items-center gap-2 justify-self-end">
+                      <span className="md:hidden"><StatusBadge status={v.status} /></span>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger
+                          render={
+                            <button type="button" aria-label="Row actions" className="inline-flex h-8 w-8 items-center justify-center rounded-md hover:bg-accent">
+                              <MoreHorizontal className="h-4 w-4" />
+                            </button>
+                          }
+                        />
+                        <DropdownMenuContent align="end" className="w-44">
+                          <DropdownMenuItem onClick={() => startEdit(v)}>
+                            <Pencil className="h-4 w-4" /> Edit
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => setResetting({ id: v.id, shop_name: v.shop_name, password: "" })}>
+                            <KeyRound className="h-4 w-4" /> Reset password
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => toggle(v)}>
+                            {v.status === "active" ? "Block" : "Activate"}
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     </div>
                   </div>
-                  <p className="hidden min-w-0 truncate text-sm text-muted-foreground md:block">{v.taluk || "—"}</p>
-                  <p className="hidden min-w-0 truncate text-sm text-muted-foreground md:block">{v.mobile}</p>
-                  <p className="hidden text-sm font-medium md:block">{Number(v.commission_pct ?? 0).toFixed(2)}%</p>
-                  <div className="hidden md:block"><StatusBadge status={v.status} /></div>
-                  <div className="flex items-center gap-2 justify-self-end">
-                    <span className="md:hidden"><StatusBadge status={v.status} /></span>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger
-                        render={
-                          <button type="button" aria-label="Row actions" className="inline-flex h-8 w-8 items-center justify-center rounded-md hover:bg-accent">
-                            <MoreHorizontal className="h-4 w-4" />
-                          </button>
-                        }
-                      />
-                      <DropdownMenuContent align="end" className="w-44">
-                        <DropdownMenuItem onClick={() => startEdit(v)}>
-                          <Pencil className="h-4 w-4" /> Edit
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => setResetting({ id: v.id, shop_name: v.shop_name, password: "" })}>
-                          <KeyRound className="h-4 w-4" /> Reset password
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => toggle(v)}>
-                          {v.status === "active" ? "Block" : "Activate"}
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </div>
+
+                  {openId === v.id && (
+                    <div className="border-t border-border bg-surface-2/30 px-4 py-3 md:pl-[3.75rem]">
+                      <div className="grid gap-4 sm:grid-cols-2">
+                        <div>
+                          <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Bank details</p>
+                          {(v.bank.account_holder || v.bank.account_number || v.bank.ifsc_code || v.bank.bank_name || v.bank.upi) ? (
+                            <div className="mt-1.5 space-y-0.5 text-xs">
+                              {v.bank.account_holder && <p><span className="text-muted-foreground">Holder:</span> <span className="font-medium">{v.bank.account_holder}</span></p>}
+                              {v.bank.account_number && <p><span className="text-muted-foreground">A/C No:</span> <span className="font-medium font-mono">{v.bank.account_number}</span></p>}
+                              {v.bank.ifsc_code && <p><span className="text-muted-foreground">IFSC:</span> <span className="font-medium font-mono">{v.bank.ifsc_code}</span></p>}
+                              {v.bank.bank_name && <p><span className="text-muted-foreground">Bank:</span> <span className="font-medium">{v.bank.bank_name}</span></p>}
+                              {v.bank.upi && <p><span className="text-muted-foreground">UPI:</span> <span className="font-medium">{v.bank.upi}</span></p>}
+                            </div>
+                          ) : (
+                            <p className="mt-1.5 text-xs text-muted-foreground">No bank details on file</p>
+                          )}
+                        </div>
+                        <div>
+                          <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Address</p>
+                          {(v.address || v.area || v.pincode) ? (
+                            <p className="mt-1.5 text-xs">{[v.address, v.area, v.pincode].filter(Boolean).join(", ")}</p>
+                          ) : (
+                            <p className="mt-1.5 text-xs text-muted-foreground">No address on file</p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </motion.div>
               ))}
             </div>
