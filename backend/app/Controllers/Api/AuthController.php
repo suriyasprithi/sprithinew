@@ -346,6 +346,28 @@ class AuthController extends BaseApiController
         return $this->ok($this->publicUser($user), 'Updated');
     }
 
+    public function updateBank(): ResponseInterface
+    {
+        $auth = $this->authUser();
+        if (! $auth) return $this->fail('Unauthorized', 401);
+        if (! $this->validate([
+            'account_holder' => 'permit_empty|string|max_length[150]',
+            'bank_name'      => 'permit_empty|string|max_length[100]',
+            'account_number' => 'permit_empty|string|max_length[50]',
+            'ifsc_code'      => 'permit_empty|string|max_length[100]',
+            'upi'            => 'permit_empty|string|max_length[100]',
+        ])) return $this->fail('Validation failed', 422, $this->validator->getErrors());
+
+        $d = $this->request->getJSON(true) ?? $this->request->getPost();
+        $payload = [];
+        foreach (['account_holder', 'bank_name', 'account_number', 'ifsc_code', 'upi'] as $k) {
+            if (array_key_exists($k, $d)) $payload[$k] = $d[$k] === '' ? null : trim((string) $d[$k]);
+        }
+        if ($payload) (new UserModel())->update((int) $auth->id, $payload);
+        $user = (new UserModel())->find((int) $auth->id);
+        return $this->ok($this->publicUser($user), 'Bank details updated');
+    }
+
     private function issueTokens(int $userId, string $role, array $user, int $status, string $message): ResponseInterface
     {
         $jwt = new JwtService();
@@ -402,6 +424,11 @@ class AuthController extends BaseApiController
             'level_3_count'  => (int) ($user['level_3_count'] ?? 0),
             'kyc_status'     => $user['kyc_status'] ?? 'none',
             'kyc_note'       => $user['kyc_note'] ?? null,
+            'account_holder' => $user['account_holder'] ?? null,
+            'bank_name'      => $user['bank_name'] ?? null,
+            'account_number' => $user['account_number'] ?? null,
+            'ifsc_code'      => $user['ifsc_code'] ?? null,
+            'upi'            => $user['upi'] ?? null,
         ];
     }
 }

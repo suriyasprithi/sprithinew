@@ -15,6 +15,7 @@ class AdminSettingsController extends BaseApiController
      *   welcome.*      → WelcomeBonusService::award() (per-level signup bonus)
      *   mlm.level_*    → CommissionService::distributeForOrder() (L1/L2/L3 split)
      *   buyback.slot_* → CommissionService::distributeForOrder() (FIFO slot %)
+     *   delivery.free.*→ FreeDeliveryService::evaluateForCart() (free-delivery rules)
      *
      * The welcome.* keys are listed L1 → L2 → L3 → active so the "Welcome bonus"
      * card renders them in that order (array_merge keeps first-seen key position;
@@ -37,6 +38,17 @@ class AdminSettingsController extends BaseApiController
         'buyback.slot_2_pct'         => '10',
         'buyback.slot_3_pct'         => '5',
         'buyback.slot_4_pct'         => '2.5',
+        // Free-delivery rules — all OFF by default (no change until enabled).
+        // Priority when several are on: Category > Amount > Time > ETA.
+        'delivery.free.category_enabled' => '0',
+        'delivery.free.amount_enabled'   => '0',
+        'delivery.free.amount_min'       => '500',
+        'delivery.free.time_enabled'     => '0',
+        'delivery.free.time_from'        => '09:00',
+        'delivery.free.time_to'          => '18:00',
+        'delivery.free.eta_enabled'      => '0',
+        'delivery.free.eta_hours'        => '4',
+        'delivery.free.eta_min_amount'   => '500',
     ];
 
     /**

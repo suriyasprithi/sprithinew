@@ -113,6 +113,11 @@ export type AuthUser = {
   level_1_count?: number;
   level_2_count?: number;
   level_3_count?: number;
+  account_holder?: string | null;
+  bank_name?: string | null;
+  account_number?: string | null;
+  ifsc_code?: string | null;
+  upi?: string | null;
 };
 
 export type AuthTokens = {

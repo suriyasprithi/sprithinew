@@ -73,6 +73,15 @@ class OrderController extends BaseApiController
                 $deliveryMinutes = (int) $rate['time_min'];
             }
         }
+
+        // Free-delivery rules (admin-configured). Re-decided server-side so the
+        // client can never claim free delivery it isn't entitled to. When a rule
+        // grants free delivery the fee is zeroed; default-off = unchanged.
+        if ($deliveryFee > 0) {
+            $fd = (new \App\Services\FreeDeliveryService())->evaluateForCart((int) $auth->id, $deliveryMinutes);
+            if ($fd['free']) $deliveryFee = 0.0;
+        }
+
         $grandTotal = $total + $deliveryFee;
 
         // Wallet check (only when paying from wallet; COD is collected on delivery)
@@ -254,6 +263,44 @@ class OrderController extends BaseApiController
         // Empty the body so the framework's later $response->send() doesn't
         // duplicate output. Headers already sent → sendHeaders is a no-op.
         $response->setBody('');
+    }
+
+    /**
+     * Live delivery-fee quote for the customer's cart + chosen time-rate.
+     * Returns whether the free-delivery rules zero the fee, so the checkout
+     * page can show "Free delivery" before the order is placed. The backend
+     * re-decides authoritatively in place().
+     */
+    public function deliveryQuote(): ResponseInterface
+    {
+        $auth = $this->authUser();
+        if (! $auth) return $this->fail('Unauthorized', 401);
+
+        $rateId          = (int) $this->request->getGet('delivery_rate_id');
+        $originalFee     = 0.0;
+        $deliveryMinutes = null;
+        if ($rateId) {
+            $rate = (new DeliveryTimeRateModel())->find($rateId);
+            if ($rate) {
+                $originalFee     = (float) $rate['price'];
+                $deliveryMinutes = (int) $rate['time_min'];
+            }
+        }
+
+        $free   = false;
+        $reason = null;
+        if ($originalFee > 0) {
+            $fd     = (new \App\Services\FreeDeliveryService())->evaluateForCart((int) $auth->id, $deliveryMinutes);
+            $free   = $fd['free'];
+            $reason = $fd['reason'];
+        }
+
+        return $this->ok([
+            'free'          => $free,
+            'reason'        => $reason,
+            'original_fee'  => $originalFee,
+            'effective_fee' => $free ? 0.0 : $originalFee,
+        ]);
     }
 
     /** Customer: my orders, enriched with vendor + area. */

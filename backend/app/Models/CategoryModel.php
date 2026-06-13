@@ -13,7 +13,7 @@ class CategoryModel extends Model
     protected $useSoftDeletes   = false;
     protected $protectFields    = true;
 
-    protected $allowedFields = ['name','vendor_category_id','token_cost','status'];
+    protected $allowedFields = ['name','vendor_category_id','token_cost','free_delivery_min','status'];
 
     protected $useTimestamps = true;
     protected $dateFormat    = 'datetime';

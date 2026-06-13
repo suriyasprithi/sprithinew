@@ -23,6 +23,7 @@ const META: Record<string, { title: string; description: string }> = {
   welcome:    { title: "Welcome bonus",  description: "Per-level referral signup bonus (L1 / L2 / L3) credited to each upline's level wallet." },
   mlm:        { title: "MLM commission", description: "Multi-level commission split (L1 / L2 / L3)." },
   buyback:    { title: "Buyback queue",  description: "Buyback FIFO slot allocations." },
+  delivery:   { title: "Free delivery",  description: "When delivery is free. Priority when several are on: Category → Amount → Time → ETA. Each rule's on/off is 1 = on, 0 = off. Per-category limits live on the Categories page." },
 };
 
 // Friendly field labels for the keys that aren't self-explanatory.
@@ -43,6 +44,15 @@ const LABELS: Record<string, string> = {
   "buyback.slot_2_pct":         "Slot 2 (%)",
   "buyback.slot_3_pct":         "Slot 3 (%)",
   "buyback.slot_4_pct":         "Slot 4 (%)",
+  "delivery.free.category_enabled": "Category rule (1=on)",
+  "delivery.free.amount_enabled":   "Min-purchase rule (1=on)",
+  "delivery.free.amount_min":       "Min order for free (₹)",
+  "delivery.free.time_enabled":     "Time-window rule (1=on)",
+  "delivery.free.time_from":        "Free from (HH:MM)",
+  "delivery.free.time_to":          "Free until (HH:MM)",
+  "delivery.free.eta_enabled":      "Delivery-time rule (1=on)",
+  "delivery.free.eta_hours":        "ETA over (hours)",
+  "delivery.free.eta_min_amount":   "ETA rule min order (₹)",
 };
 
 // The token bonus keys get their own card; everything else by prefix.

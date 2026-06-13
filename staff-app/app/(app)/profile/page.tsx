@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
-import { LogOut, Mail, MapPin, Phone, Shield, User as UserIcon, Pencil, Settings as SettingsIcon, Home, type LucideIcon } from "lucide-react";
+import { LogOut, Mail, MapPin, Phone, Shield, User as UserIcon, Pencil, Settings as SettingsIcon, Home, Landmark, CreditCard, type LucideIcon } from "lucide-react";
 import { toast } from "sonner";
 import { LuxuryCard } from "@/components/ui/custom/luxury-card";
 import { GradientButton } from "@/components/ui/custom/gradient-button";
@@ -34,6 +34,7 @@ function InfoRow({ icon: Icon, label, value, mono }: { icon: LucideIcon; label: 
 }
 
 type AddressForm = { address_line: string; landmark: string; city: string; pincode: string };
+type BankForm = { account_holder: string; bank_name: string; account_number: string; ifsc_code: string; upi: string };
 
 export default function ProfilePage() {
   const { user, logout, setUser } = useAuth();
@@ -42,6 +43,10 @@ export default function ProfilePage() {
   const [editingAddr, setEditingAddr] = useState(false);
   const [savingAddr, setSavingAddr] = useState(false);
   const [addrForm, setAddrForm] = useState<AddressForm>({ address_line: "", landmark: "", city: "", pincode: "" });
+
+  const [editingBank, setEditingBank] = useState(false);
+  const [savingBank, setSavingBank] = useState(false);
+  const [bankForm, setBankForm] = useState<BankForm>({ account_holder: "", bank_name: "", account_number: "", ifsc_code: "", upi: "" });
 
   async function onLogout() {
     await logout();
@@ -71,6 +76,33 @@ export default function ProfilePage() {
       setSavingAddr(false);
     }
   }
+
+  function openBankEdit() {
+    setBankForm({
+      account_holder: user?.account_holder ?? "",
+      bank_name:      user?.bank_name ?? "",
+      account_number: user?.account_number ?? "",
+      ifsc_code:      user?.ifsc_code ?? "",
+      upi:            user?.upi ?? "",
+    });
+    setEditingBank(true);
+  }
+
+  async function saveBank() {
+    setSavingBank(true);
+    try {
+      const res = await api.patch("/auth/me/bank", bankForm);
+      setUser(res.data.data as AuthUser);
+      toast.success("Bank details updated");
+      setEditingBank(false);
+    } catch (err) {
+      toast.error(apiErrorMessage(err, "Save failed"));
+    } finally {
+      setSavingBank(false);
+    }
+  }
+
+  const hasBank = !!(user?.account_holder || user?.bank_name || user?.account_number || user?.ifsc_code || user?.upi);
 
   const roleLabel = user ? (ROLE_LABEL[user.role as keyof typeof ROLE_LABEL] ?? user.role) : "";
   const initial = (user?.name || "?").trim().charAt(0).toUpperCase();
@@ -129,6 +161,61 @@ export default function ProfilePage() {
                 <InfoRow icon={Mail}   label="Email"   value={user?.email} />
                 <InfoRow icon={Shield} label="Status"  value={user?.status} />
               </div>
+            </LuxuryCard>
+
+            <LuxuryCard className="mt-4 p-5">
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <Landmark className="h-4 w-4 text-brand" />
+                  <p className="text-sm font-semibold">Bank details</p>
+                </div>
+                {!editingBank && (
+                  <Button size="sm" variant="ghost" onClick={openBankEdit} className="-mr-2 h-7 gap-1.5 text-xs">
+                    <Pencil className="h-3.5 w-3.5" /> {hasBank ? "Edit" : "Add"}
+                  </Button>
+                )}
+              </div>
+
+              {editingBank ? (
+                <div className="space-y-3 pt-1">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="bank_holder">Account holder name</Label>
+                    <Input id="bank_holder" value={bankForm.account_holder} onChange={(e) => setBankForm({ ...bankForm, account_holder: e.target.value })} placeholder="As per bank records" />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="bank_name">Bank name</Label>
+                    <Input id="bank_name" value={bankForm.bank_name} onChange={(e) => setBankForm({ ...bankForm, bank_name: e.target.value })} placeholder="e.g. State Bank of India" />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1.5">
+                      <Label htmlFor="bank_acc">Account number</Label>
+                      <Input id="bank_acc" inputMode="numeric" value={bankForm.account_number} onChange={(e) => setBankForm({ ...bankForm, account_number: e.target.value.replace(/\s/g, "") })} />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="bank_ifsc">IFSC code</Label>
+                      <Input id="bank_ifsc" value={bankForm.ifsc_code} onChange={(e) => setBankForm({ ...bankForm, ifsc_code: e.target.value.toUpperCase().replace(/\s/g, "") })} />
+                    </div>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="bank_upi">UPI ID</Label>
+                    <Input id="bank_upi" value={bankForm.upi} onChange={(e) => setBankForm({ ...bankForm, upi: e.target.value })} placeholder="name@bank" />
+                  </div>
+                  <div className="flex gap-2 pt-1">
+                    <Button variant="ghost" className="flex-1" disabled={savingBank} onClick={() => setEditingBank(false)}>Cancel</Button>
+                    <GradientButton className="flex-1" disabled={savingBank} onClick={() => void saveBank()}>
+                      {savingBank ? "Saving…" : "Save bank details"}
+                    </GradientButton>
+                  </div>
+                </div>
+              ) : (
+                <div className="divide-y divide-border">
+                  <InfoRow icon={UserIcon}   label="Account holder" value={user?.account_holder} />
+                  <InfoRow icon={Landmark}   label="Bank name"      value={user?.bank_name} />
+                  <InfoRow icon={CreditCard} label="Account number" value={user?.account_number} mono />
+                  <InfoRow icon={CreditCard} label="IFSC code"      value={user?.ifsc_code} mono />
+                  <InfoRow icon={Landmark}   label="UPI ID"         value={user?.upi} />
+                </div>
+              )}
             </LuxuryCard>
 
             <LuxuryCard className="mt-4 p-5">
