@@ -118,4 +118,29 @@ class PurchaseController extends BaseApiController
 
         return $this->ok(['order_id' => (int) $orderId], 'Purchase complete');
     }
+
+    /**
+     * The current vendor's in-store / QR purchases (customer-scanned + vendor-
+     * entered), most recent first. Shown under the vendor's QR on the scanner page.
+     */
+    public function mine(): ResponseInterface
+    {
+        $auth = $this->authUser();
+        if (! $auth) return $this->fail('Unauthorized', 401);
+        if ($auth->role !== 'vendor') return $this->fail('Forbidden', 403);
+
+        $rows = \Config\Database::connect()->query(
+            "SELECT o.id, o.total, o.created_at,
+                    cu.name AS customer_name, cu.mobile_number AS customer_mobile,
+                    CASE WHEN o.notes LIKE '%vendor-entered%' THEN 'entered' ELSE 'qr' END AS source
+             FROM orders o
+             LEFT JOIN users cu ON cu.id = o.customer_id
+             WHERE o.vendor_id = ? AND o.notes LIKE 'In-store purchase%'
+             ORDER BY o.id DESC
+             LIMIT 100",
+            [(int) $auth->id]
+        )->getResultArray();
+
+        return $this->ok(['items' => $rows]);
+    }
 }

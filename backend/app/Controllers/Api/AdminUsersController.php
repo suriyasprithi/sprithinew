@@ -3,6 +3,7 @@
 namespace App\Controllers\Api;
 
 use App\Models\UserModel;
+use App\Models\WalletTransactionModel;
 use CodeIgniter\HTTP\ResponseInterface;
 
 class AdminUsersController extends BaseApiController
@@ -28,48 +29,143 @@ class AdminUsersController extends BaseApiController
         $total = $count->countAllResults(false);
         $items = $model->orderBy('id', 'DESC')->findAll($p['perPage'], $p['offset']);
 
+        $refMap = $this->referrerMap($items);
+
         // Global aggregates for the stat cards (independent of search/status filter).
         $agg = db_connect()->query(
-            "SELECT COUNT(*) total, SUM(status='active') active, SUM(status='blocked') blocked,
+            "SELECT COUNT(*) total, SUM(status='active') active,
+                    SUM(status='inactive') inactive, SUM(status='blocked') blocked,
                     COALESCE(SUM(wallet_balance), 0) wallet_sum
              FROM users WHERE role = 'customer' AND deleted_at IS NULL"
         )->getRow();
 
         return $this->ok([
-            'items' => array_map(static fn ($u) => [
-                'id'             => (int) $u['id'],
-                'name'           => $u['name'],
-                'mobile_number'  => $u['mobile_number'],
-                'email'          => $u['email'],
-                'pincode'        => $u['pincode'] ?? null,
-                'wallet_balance' => (float) ($u['wallet_balance'] ?? 0),
-                'status'         => $u['status'],
-                'created_at'     => $u['created_at'],
-            ], $items),
+            'items'    => array_map(fn ($u) => $this->formatCustomer($u, $refMap), $items),
             'total'    => $total,
             'page'     => $p['page'],
             'per_page' => $p['perPage'],
             'stats'    => [
                 'total'      => (int) $agg->total,
                 'active'     => (int) $agg->active,
+                'inactive'   => (int) $agg->inactive,
                 'blocked'    => (int) $agg->blocked,
                 'wallet_sum' => (float) $agg->wallet_sum,
             ],
         ]);
     }
 
-    public function block(int $id): ResponseInterface
-    {
-        if ($r = $this->requireAdmin()) return $r;
-        (new UserModel())->update($id, ['status' => 'blocked']);
-        return $this->ok(null, 'Blocked');
-    }
-
-    public function unblock(int $id): ResponseInterface
+    public function activate(int $id): ResponseInterface
     {
         if ($r = $this->requireAdmin()) return $r;
         (new UserModel())->update($id, ['status' => 'active']);
-        return $this->ok(null, 'Unblocked');
+        return $this->ok(null, 'Activated');
+    }
+
+    public function deactivate(int $id): ResponseInterface
+    {
+        if ($r = $this->requireAdmin()) return $r;
+        (new UserModel())->update($id, ['status' => 'inactive']);
+        return $this->ok(null, 'Deactivated');
+    }
+
+    /** Admin edits a customer's core fields and optionally sets a new password. */
+    public function update(int $id): ResponseInterface
+    {
+        if ($r = $this->requireAdmin()) return $r;
+        $model = new UserModel();
+        $u = $model->find($id);
+        if (! $u || $u['role'] !== 'customer') return $this->fail('Customer not found', 404);
+
+        $d = $this->request->getJSON(true) ?? $this->request->getPost() ?? [];
+        $data = [];
+        foreach (['name', 'email', 'mobile_number', 'pincode'] as $f) {
+            if (array_key_exists($f, $d)) {
+                $data[$f] = is_string($d[$f]) ? trim($d[$f]) : $d[$f];
+            }
+        }
+        $pw = (string) ($d['password'] ?? '');
+        if ($pw !== '') {
+            $data['password_hash']  = password_hash($pw, PASSWORD_BCRYPT);
+            $data['legacy_password'] = null;
+        }
+        if (! $data) return $this->fail('Nothing to update', 422);
+
+        if (! $model->update($id, $data)) {
+            return $this->fail('Validation failed', 422, $model->errors());
+        }
+
+        $fresh  = $model->find($id);
+        $refMap = $this->referrerMap([$fresh]);
+        return $this->ok($this->formatCustomer($fresh, $refMap), 'Saved');
+    }
+
+    /** Admin adds to or deducts from a customer's main wallet, with an audit row. */
+    public function wallet(int $id): ResponseInterface
+    {
+        if ($r = $this->requireAdmin()) return $r;
+
+        if (! $this->validate([
+            'amount'    => 'required|numeric|greater_than[0]',
+            'direction' => 'required|in_list[credit,debit]',
+        ])) return $this->fail('Validation failed', 422, $this->validator->getErrors());
+
+        $d = $this->request->getJSON(true) ?? $this->request->getPost();
+        $amount    = (float) $d['amount'];
+        $direction = $d['direction'];
+        $notes     = trim((string) ($d['notes'] ?? ''));
+
+        $model = new UserModel();
+        $u = $model->find($id);
+        if (! $u || $u['role'] !== 'customer') return $this->fail('Customer not found', 404);
+
+        $bal = (float) ($u['wallet_balance'] ?? 0);
+        if ($direction === 'debit' && $amount > $bal) {
+            return $this->fail('Insufficient balance', 422);
+        }
+        $new = $direction === 'credit' ? $bal + $amount : $bal - $amount;
+        $model->update($id, ['wallet_balance' => $new]);
+
+        (new WalletTransactionModel())->insert([
+            'user_id' => $id,
+            'amount'  => $amount,
+            'type'    => $direction === 'credit' ? 'admin_credit' : 'admin_debit',
+            'notes'   => $notes ?: null,
+        ]);
+
+        return $this->ok(['wallet_balance' => $new], 'Wallet updated');
+    }
+
+    /** Maps referrer_id -> ['id','name','mobile_number'] for the given customer rows. */
+    private function referrerMap(array $items): array
+    {
+        $refIds = array_values(array_unique(array_filter(
+            array_map(static fn ($u) => $u['referrer_id'] ?? null, $items)
+        )));
+        $map = [];
+        if ($refIds) {
+            $refs = (new UserModel())->select('id, name, mobile_number')->whereIn('id', $refIds)->findAll();
+            foreach ($refs as $r) { $map[(int) $r['id']] = $r; }
+        }
+        return $map;
+    }
+
+    private function formatCustomer(array $u, array $refMap): array
+    {
+        $refId = isset($u['referrer_id']) ? (int) $u['referrer_id'] : null;
+        $ref   = $refId && isset($refMap[$refId]) ? $refMap[$refId] : null;
+        return [
+            'id'              => (int) $u['id'],
+            'name'            => $u['name'],
+            'mobile_number'   => $u['mobile_number'],
+            'email'           => $u['email'],
+            'pincode'         => $u['pincode'] ?? null,
+            'wallet_balance'  => (float) ($u['wallet_balance'] ?? 0),
+            'status'          => $u['status'],
+            'created_at'      => $u['created_at'],
+            'referrer_id'     => $refId,
+            'referrer_name'   => $ref['name'] ?? null,
+            'referrer_mobile' => $ref['mobile_number'] ?? null,
+        ];
     }
 
     private function requireAdmin(): ?ResponseInterface

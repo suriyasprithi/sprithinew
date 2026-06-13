@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Users, Store, ShoppingCart, Banknote, CreditCard, Wallet, Coins, Package, Building2,
-  Plus, Send, Bell as BellIcon, Settings as SettingsIcon, Truck, CheckCircle,
+  Plus, Send, Bell as BellIcon, Settings as SettingsIcon, Truck, CheckCircle, QrCode,
   type LucideIcon,
 } from "lucide-react";
 import { Shimmer } from "@/components/ui/custom/shimmer";
@@ -46,6 +46,7 @@ function tilesFor(role: string, s: StaffStats): TileDef[] {
         { label: "Active products", value: s.active_products ?? 0,  href: "/products", icon: Package,      tone: "emerald", delta:  0.4, spark: SPARKS.flat },
         { label: "Token balance",   value: s.tokens_received ?? 0,  href: "/tokens",   icon: Coins,        tone: "amber",   delta: -0.8, spark: SPARKS.down },
         { label: "Wallet",          value: s.wallet ?? 0,           href: "/wallet",   icon: Wallet,       tone: "violet",  delta:  1.6, spark: SPARKS.up, format: fmtINR },
+        { label: "QR wallet",       value: s.qr_wallet ?? 0,        href: "/wallet",   icon: QrCode,       tone: "cyan",    spark: SPARKS.wave, format: fmtINR },
       ];
     case "taluk":
       return [
@@ -316,6 +317,7 @@ export default function StaffDashboardPage() {
             active_products: d.totals.active_products,
             tokens_received: d.totals.token_balance,
             wallet:          d.totals.wallet,
+            qr_wallet:       d.totals.qr_wallet,
             chart_title: "Orders — last 14 days",
             chart_unit: "orders",
             chart_series: chartSeries,

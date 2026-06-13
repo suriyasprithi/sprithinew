@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import { Loader2, Sparkles } from "lucide-react";
 import { toast } from "sonner";
@@ -14,6 +14,37 @@ import { GuestGuard } from "@/components/auth-guard";
 import { useAuth } from "@/stores/auth";
 import { api, apiErrorMessage } from "@/lib/api";
 import { cleanMobile, isMobile } from "@/lib/phone";
+
+type GeoState    = { id: number; name: string };
+type GeoDistrict = { id: number; state_id: number; name: string };
+type GeoTaluk    = { id: number; district_id: number; name: string };
+
+// Whole years between a YYYY-MM-DD date and today.
+function ageFrom(dob: string): number {
+  const d = new Date(dob);
+  if (Number.isNaN(d.getTime())) return -1;
+  const today = new Date();
+  let age = today.getFullYear() - d.getFullYear();
+  const m = today.getMonth() - d.getMonth();
+  if (m < 0 || (m === 0 && today.getDate() < d.getDate())) age--;
+  return age;
+}
+
+// Latest DOB allowed for an 18-year-old (used as the date input's max).
+function maxDobForAdult(): string {
+  const d = new Date();
+  d.setFullYear(d.getFullYear() - 18);
+  return d.toISOString().slice(0, 10);
+}
+
+const selectClass =
+  "h-11 w-full appearance-none rounded-xl bg-surface-2/60 border border-input px-3 pr-9 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50";
+const selectStyle: React.CSSProperties = {
+  backgroundImage:
+    "url(\"data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23999' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E\")",
+  backgroundRepeat: "no-repeat",
+  backgroundPosition: "right 0.75rem center",
+};
 
 export default function RegisterPage() {
   return (
@@ -31,21 +62,60 @@ function RegisterInner() {
   const [mobile, setMobile] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [pincode, setPincode] = useState("");
+  const [dob, setDob] = useState("");
   const [referrerCode, setReferrerCode] = useState("");
   const [busy, setBusy] = useState(false);
+
+  const [states, setStates] = useState<GeoState[]>([]);
+  const [districts, setDistricts] = useState<GeoDistrict[]>([]);
+  const [taluks, setTaluks] = useState<GeoTaluk[]>([]);
+  const [stateId, setStateId] = useState<number | null>(null);
+  const [districtId, setDistrictId] = useState<number | null>(null);
+  const [talukId, setTalukId] = useState<number | null>(null);
 
   useEffect(() => {
     const ref = sp?.get("ref");
     if (ref) setReferrerCode(cleanMobile(ref));
   }, [sp]);
 
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const r = await api.get("/public/locations");
+        if (cancelled) return;
+        setStates(r.data?.data?.states ?? []);
+        setDistricts(r.data?.data?.districts ?? []);
+        setTaluks(r.data?.data?.taluks ?? []);
+      } catch {
+        if (!cancelled) toast.error("Could not load locations");
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  const districtsForState = useMemo(
+    () => (stateId == null ? [] : districts.filter((d) => d.state_id === stateId)),
+    [districts, stateId],
+  );
+  const taluksForDistrict = useMemo(
+    () => (districtId == null ? [] : taluks.filter((t) => t.district_id === districtId)),
+    [taluks, districtId],
+  );
+
   const register = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name) return toast.error("Name is required");
     if (!isMobile(mobile)) return toast.error("Enter a valid 10-digit mobile number");
+    if (!dob) return toast.error("Date of birth is required");
+    if (ageFrom(dob) < 18) return toast.error("You must be at least 18 to register");
+    if (stateId == null) return toast.error("Select your state");
+    if (districtId == null) return toast.error("Select your district");
     if (!password) return toast.error("Password is required");
     if (password.length < 6) return toast.error("Password must be at least 6 characters");
+    if (password !== confirmPassword) return toast.error("Passwords do not match");
     if (referrerCode && !isMobile(referrerCode)) return toast.error("Referrer mobile must be 10 digits");
     setBusy(true);
     try {
@@ -55,6 +125,10 @@ function RegisterInner() {
         password,
         email: email.trim() || undefined,
         pincode: pincode.trim() || undefined,
+        dob,
+        state_id: stateId,
+        district_id: districtId,
+        taluk_id: talukId ?? undefined,
         referrer_code: referrerCode.trim() || undefined,
       });
       const tokens = res.data.data;
@@ -105,12 +179,62 @@ function RegisterInner() {
                 <Input id="pincode" inputMode="numeric" placeholder="600001" value={pincode} onChange={(e) => setPincode(e.target.value)} disabled={busy || isLoading} className="h-11 rounded-xl bg-surface-2/60" />
               </div>
               <div className="space-y-1.5 sm:col-span-2">
+                <Label htmlFor="dob">Date of birth</Label>
+                <Input id="dob" type="date" max={maxDobForAdult()} value={dob} onChange={(e) => setDob(e.target.value)} disabled={busy || isLoading} className="h-11 rounded-xl bg-surface-2/60" />
+              </div>
+              <div className="space-y-1.5 sm:col-span-2">
+                <Label htmlFor="state">State</Label>
+                <select
+                  id="state"
+                  value={stateId ?? ""}
+                  onChange={(e) => { const v = e.target.value ? Number(e.target.value) : null; setStateId(v); setDistrictId(null); setTalukId(null); }}
+                  disabled={busy || isLoading || states.length === 0}
+                  className={selectClass}
+                  style={selectStyle}
+                >
+                  <option value="">{states.length === 0 ? "Loading…" : "Select your state"}</option>
+                  {states.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                </select>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="district">District</Label>
+                <select
+                  id="district"
+                  value={districtId ?? ""}
+                  onChange={(e) => { const v = e.target.value ? Number(e.target.value) : null; setDistrictId(v); setTalukId(null); }}
+                  disabled={busy || isLoading || stateId == null}
+                  className={selectClass}
+                  style={selectStyle}
+                >
+                  <option value="">{stateId == null ? "Pick a state first" : (districtsForState.length === 0 ? "No districts" : "Select district")}</option>
+                  {districtsForState.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
+                </select>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="taluk">Taluk <span className="text-muted-foreground">(optional)</span></Label>
+                <select
+                  id="taluk"
+                  value={talukId ?? ""}
+                  onChange={(e) => setTalukId(e.target.value ? Number(e.target.value) : null)}
+                  disabled={busy || isLoading || districtId == null}
+                  className={selectClass}
+                  style={selectStyle}
+                >
+                  <option value="">{districtId == null ? "Pick a district first" : (taluksForDistrict.length === 0 ? "No taluks" : "Any (district-wide)")}</option>
+                  {taluksForDistrict.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                </select>
+              </div>
+              <div className="space-y-1.5 sm:col-span-2">
                 <Label htmlFor="email">Email <span className="text-muted-foreground">(optional)</span></Label>
                 <Input id="email" type="email" autoComplete="email" placeholder="you@example.com" value={email} onChange={(e) => setEmail(e.target.value)} disabled={busy || isLoading} className="h-11 rounded-xl bg-surface-2/60" />
               </div>
-              <div className="space-y-1.5 sm:col-span-2">
+              <div className="space-y-1.5">
                 <Label htmlFor="password">Password</Label>
                 <Input id="password" type="password" autoComplete="new-password" placeholder="Min 6 characters" value={password} onChange={(e) => setPassword(e.target.value)} disabled={busy || isLoading} className="h-11 rounded-xl bg-surface-2/60" />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="confirmPassword">Confirm password</Label>
+                <Input id="confirmPassword" type="password" autoComplete="new-password" placeholder="Re-enter password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} disabled={busy || isLoading} className="h-11 rounded-xl bg-surface-2/60" />
               </div>
               <div className="space-y-1.5 sm:col-span-2">
                 <Label htmlFor="ref">Referral code <span className="text-muted-foreground">(optional)</span></Label>

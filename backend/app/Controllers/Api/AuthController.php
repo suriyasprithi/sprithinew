@@ -20,6 +20,10 @@ class AuthController extends BaseApiController
             'email'         => 'permit_empty|valid_email|max_length[150]',
             'pincode'       => 'permit_empty|string|max_length[10]',
             'referrer_code' => 'permit_empty|regex_match[/^[0-9]{10}$/]',
+            'dob'           => 'required|valid_date',
+            'state_id'      => 'required|is_natural_no_zero',
+            'district_id'   => 'required|is_natural_no_zero',
+            'taluk_id'      => 'permit_empty|is_natural_no_zero',
         ];
         if (! $this->validate($rules)) {
             return $this->fail('Validation failed', 422, $this->validator->getErrors());
@@ -27,6 +31,12 @@ class AuthController extends BaseApiController
 
         $data = $this->request->getJSON(true) ?? $this->request->getPost();
         $role = 'customer';
+
+        // Block under-18 sign-ups (CI4 has no built-in min-age rule).
+        $age = (int) (new \DateTime($data['dob']))->diff(new \DateTime('today'))->y;
+        if ($age < 18) {
+            return $this->fail('You must be at least 18 to register', 422);
+        }
 
         $users = new UserModel();
         if ($users->mobileExistsForRole($data['mobile_number'], $role)) {
@@ -52,6 +62,10 @@ class AuthController extends BaseApiController
             'status'        => 'active',
             'pincode'       => $data['pincode'] ?? null,
             'referrer_id'   => $referrerId,
+            'dob'           => $data['dob'],
+            'state_id'      => (int) $data['state_id'],
+            'district_id'   => (int) $data['district_id'],
+            'taluk_id'      => ! empty($data['taluk_id']) ? (int) $data['taluk_id'] : null,
         ], true);
 
         if (! $userId) {

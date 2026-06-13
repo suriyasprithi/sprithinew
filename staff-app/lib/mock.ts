@@ -18,6 +18,7 @@ export type StaffStats = {
   tokens_received?: number;
   active_products?: number;
   wallet?: number;
+  qr_wallet?: number;
   team_below?: number;
   pending_deliveries?: number;
   delivered_today?: number;
@@ -309,10 +310,14 @@ const managedVendors: ManagedVendor[] = [
   { id: 12, name: "Comfort Wear",       mobile: "9999000012", shop_name: "Comfort Wear",       taluk: "Coimbatore South", status: "active" },
 ];
 
-export type ManagedCustomer = { id: number; name: string; mobile: string; pincode: string; wallet_balance: number; status: "active"|"blocked" };
+export type ManagedCustomer = {
+  id: number; name: string; mobile: string; email: string; pincode: string;
+  wallet_balance: number; status: "active"|"inactive"; created_at: string;
+  referrer_name?: string | null; referrer_mobile?: string | null;
+};
 const managedCustomers: ManagedCustomer[] = [
-  { id: 100, name: "Asha M.",     mobile: "9876543210", pincode: "641001", wallet_balance: 320,  status: "active" },
-  { id: 101, name: "Karthik R.", mobile: "9876543212", pincode: "641002", wallet_balance: 1240, status: "active" },
+  { id: 100, name: "Asha M.",    mobile: "9876543210", email: "asha@example.com",    pincode: "641001", wallet_balance: 320,  status: "active", created_at: "2026-01-12 10:00:00", referrer_name: "Karthik R.", referrer_mobile: "9876543212" },
+  { id: 101, name: "Karthik R.", mobile: "9876543212", email: "karthik@example.com", pincode: "641002", wallet_balance: 1240, status: "active", created_at: "2026-01-05 09:30:00", referrer_name: null, referrer_mobile: null },
 ];
 
 // ----- Payments / Withdrawals (admin) ---------------------------------------
@@ -384,9 +389,6 @@ const systemPools: SystemPool[] = [
 
 export type SystemSetting = { setting_key: string; value: string };
 const systemSettings: SystemSetting[] = [
-  { setting_key: "delivery.base_fee",         value: "0" },
-  { setting_key: "delivery.rate_per_km",      value: "5" },
-  { setting_key: "delivery.rate_per_hour",    value: "30" },
   { setting_key: "token.low_threshold",       value: "50" },
   { setting_key: "welcome.bonus_amount",      value: "15" },
   { setting_key: "welcome.bonus_active",      value: "1" },
@@ -397,6 +399,11 @@ const systemSettings: SystemSetting[] = [
   { setting_key: "buyback.slot_2_pct",        value: "10" },
   { setting_key: "buyback.slot_3_pct",        value: "5" },
   { setting_key: "buyback.slot_4_pct",        value: "2.5" },
+  { setting_key: "commission.lucky_draw_pct", value: "3" },
+  { setting_key: "commission.token_share_pct", value: "3.5" },
+  { setting_key: "token.bonus.state",         value: "3.5" },
+  { setting_key: "token.bonus.district",      value: "3" },
+  { setting_key: "token.bonus.taluk",         value: "2" },
 ];
 
 // ----- Driver-side orders ---------------------------------------------------

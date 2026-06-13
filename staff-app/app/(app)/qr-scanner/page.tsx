@@ -1,14 +1,26 @@
 "use client";
 
-import { useMemo } from "react";
-import { Download, QrCode, Share2 } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { Download, QrCode, Share2, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { LuxuryCard } from "@/components/ui/custom/luxury-card";
 import { MobileHeader } from "@/components/layout/mobile-nav";
 import { PageHeader } from "@/components/layout/page-header";
+import { api } from "@/lib/api";
 import { useAuth } from "@/stores/auth";
+
+const fmtINR = (n: number) => new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(n);
+
+type QrPurchase = {
+  id: number;
+  total: number | string;
+  created_at: string | null;
+  customer_name: string | null;
+  customer_mobile: string | null;
+  source: "qr" | "entered";
+};
 
 /**
  * Vendor QR display. Encodes the vendor's mobile_number so the customer-app's
@@ -18,6 +30,22 @@ export default function QrScannerPage() {
   const { user } = useAuth();
   const mobile = user?.mobile_number ?? "";
   const name   = user?.name ?? "Vendor";
+
+  const [purchases, setPurchases] = useState<QrPurchase[]>([]);
+  const [loadingPurchases, setLoadingPurchases] = useState(true);
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const res = await api.get("/purchase/mine");
+        setPurchases((res.data.data?.items ?? []) as QrPurchase[]);
+      } catch {
+        setPurchases([]);
+      } finally {
+        setLoadingPurchases(false);
+      }
+    })();
+  }, []);
 
   // QR payload: just the mobile number. Customer-app's /qr endpoint already
   // accepts `vendor_mobile` so plain digits keep it forward-compatible.
@@ -91,6 +119,41 @@ export default function QrScannerPage() {
             </LuxuryCard>
           </motion.div>
         )}
+
+        <LuxuryCard hoverLift={false} className="p-5">
+          <div className="mb-3 flex items-center justify-between">
+            <p className="text-sm font-semibold">Recent QR purchases</p>
+            {purchases.length > 0 && (
+              <span className="rounded-full bg-brand/10 px-2 py-0.5 text-[11px] font-semibold text-brand">{purchases.length}</span>
+            )}
+          </div>
+          {loadingPurchases ? (
+            <div className="flex items-center gap-2 py-2 text-xs text-muted-foreground">
+              <Loader2 className="h-3.5 w-3.5 animate-spin" /> Loading…
+            </div>
+          ) : purchases.length === 0 ? (
+            <p className="py-2 text-xs text-muted-foreground">No purchases yet. They'll appear here when a customer pays via your QR.</p>
+          ) : (
+            <ul className="divide-y divide-border">
+              {purchases.map((p) => (
+                <li key={p.id} className="flex items-center justify-between gap-3 py-2.5">
+                  <div className="flex min-w-0 items-center gap-3">
+                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brand/10 text-xs font-semibold text-brand">
+                      {(p.customer_name || p.customer_mobile || "C").charAt(0).toUpperCase()}
+                    </span>
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium">{p.customer_name || p.customer_mobile || "Customer"}</p>
+                      <p className="truncate text-[11px] text-muted-foreground">
+                        {(p.created_at ?? "").replace("T", " ").slice(0, 16)} · {p.source === "entered" ? "Vendor entered" : "Scanned QR"}
+                      </p>
+                    </div>
+                  </div>
+                  <p className="shrink-0 text-sm font-bold text-brand">{fmtINR(Number(p.total))}</p>
+                </li>
+              ))}
+            </ul>
+          )}
+        </LuxuryCard>
 
         <LuxuryCard hoverLift={false} className="p-5 text-xs text-muted-foreground">
           <p className="font-medium text-foreground">How it works</p>

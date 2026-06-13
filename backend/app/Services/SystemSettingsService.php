@@ -26,7 +26,7 @@ class SystemSettingsService
         $model = new SystemSettingsModel();
         $existing = $model->find($key);
         if ($existing) $model->update($key, ['value' => $value]);
-        else           $model->insert(['key_name' => $key, 'value' => $value]);
+        else           $model->insert(['setting_key' => $key, 'value' => $value]);
         self::$cache[$key] = $value;
     }
 
@@ -34,7 +34,7 @@ class SystemSettingsService
     {
         $rows = (new SystemSettingsModel())->findAll();
         $out = [];
-        foreach ($rows as $r) $out[$r['key_name']] = $r['value'];
+        foreach ($rows as $r) $out[$r['setting_key']] = $r['value'];
         return $out;
     }
 }

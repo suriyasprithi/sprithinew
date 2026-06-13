@@ -92,6 +92,26 @@ class CommissionService
         $settingsModel = new \App\Models\SystemSettingsModel();
         $eligibleId    = (int) ($settingsModel->get('buyback.eligible_user_id', '') ?: 0);
         $eligibleSince = (string) ($settingsModel->get('buyback.eligible_since', '') ?: '');
+
+        // L1/L2/L3 referral commission percentages — admin-tunable via
+        // system_settings (mlm.level_N_pct), defaulting to the SLOT_PCT
+        // constants. The admin slot absorbs any delta so the 10% pool still
+        // sums to 100% (see $adminPctEffective below).
+        $levelPct = [
+            1 => max(0.0, (float) $settingsModel->get('mlm.level_1_pct', (string) self::SLOT_PCT['level_1'])),
+            2 => max(0.0, (float) $settingsModel->get('mlm.level_2_pct', (string) self::SLOT_PCT['level_2'])),
+            3 => max(0.0, (float) $settingsModel->get('mlm.level_3_pct', (string) self::SLOT_PCT['level_3'])),
+        ];
+
+        // Buyback FIFO slot percentages — admin-tunable (buyback.slot_N_pct),
+        // defaulting to the SLOT_PCT constants. The admin slot absorbs any
+        // delta from the constant total so the pool still sums to 100%.
+        $buybackPct = [
+            1 => max(0.0, (float) $settingsModel->get('buyback.slot_1_pct', (string) self::SLOT_PCT['buyback_1'])),
+            2 => max(0.0, (float) $settingsModel->get('buyback.slot_2_pct', (string) self::SLOT_PCT['buyback_2'])),
+            3 => max(0.0, (float) $settingsModel->get('buyback.slot_3_pct', (string) self::SLOT_PCT['buyback_3'])),
+            4 => max(0.0, (float) $settingsModel->get('buyback.slot_4_pct', (string) self::SLOT_PCT['buyback_4'])),
+        ];
         $buybackRecipient = null;
         if ($eligibleId && $eligibleId !== (int) $purchaserUserId) {
             $u = $users->find($eligibleId);
@@ -118,7 +138,7 @@ class CommissionService
         $applied   = [];
         $adminPool = 0.0;
 
-        $awardUser = function (?array $upline, string $walletKind, int $level, float $amt) use ($wallet, $log, $notif, $orderId, $purchaserUserId, &$applied, &$adminPool) {
+        $awardUser = function (?array $upline, string $walletKind, int $level, float $amt) use ($wallet, $log, $notif, $orderId, $purchaserUserId, $levelPct, &$applied, &$adminPool) {
             if (! $upline) { $adminPool += $amt; return; }
             $wallet->credit((int) $upline['id'], $walletKind, $amt, 'commission', 'order#' . $orderId, "L{$level} commission");
             $log->insert([
@@ -126,25 +146,25 @@ class CommissionService
                 'beneficiary_id' => (int) $upline['id'],
                 'source_user_id' => $purchaserUserId,
                 'level'          => $level,
-                'percent'        => self::SLOT_PCT["level_{$level}"],
+                'percent'        => $levelPct[$level] ?? self::SLOT_PCT["level_{$level}"],
                 'amount'         => $amt,
             ]);
             try { $notif->sendToUser((int) $upline['id'], 'Commission earned', "₹{$amt} (L{$level}) from order #{$orderId}"); } catch (\Throwable $e) { /* non-fatal */ }
             $applied[] = ['slot' => "level_{$level}", 'beneficiary_id' => (int) $upline['id'], 'amount' => $amt];
         };
 
-        // L1 / L2 / L3 referral slots
-        $awardUser($l1, 'level_1', 1, round($pool * self::SLOT_PCT['level_1'] / 100, 2));
-        $awardUser($l2, 'level_2', 2, round($pool * self::SLOT_PCT['level_2'] / 100, 2));
-        $awardUser($l3, 'level_3', 3, round($pool * self::SLOT_PCT['level_3'] / 100, 2));
+        // L1 / L2 / L3 referral slots (percentages admin-tunable; see $levelPct)
+        $awardUser($l1, 'level_1', 1, round($pool * $levelPct[1] / 100, 2));
+        $awardUser($l2, 'level_2', 2, round($pool * $levelPct[2] / 100, 2));
+        $awardUser($l3, 'level_3', 3, round($pool * $levelPct[3] / 100, 2));
 
         // Buyback — single slot per purchase to the currently eligible user.
         // Unused 3 slots' percentage falls to admin pool this order.
-        $allBuybackPct = self::SLOT_PCT['buyback_1'] + self::SLOT_PCT['buyback_2'] + self::SLOT_PCT['buyback_3'] + self::SLOT_PCT['buyback_4'];
+        $allBuybackPct = $buybackPct[1] + $buybackPct[2] + $buybackPct[3] + $buybackPct[4];
 
         if ($buybackRecipient) {
             $currentSlot = (int) $buybackRecipient['buyback_next_slot'];
-            $slotPct     = self::SLOT_PCT["buyback_{$currentSlot}"];
+            $slotPct     = $buybackPct[$currentSlot] ?? self::SLOT_PCT["buyback_{$currentSlot}"];
             $amt         = round($pool * $slotPct / 100, 2);
             $wallet->credit(
                 (int) $buybackRecipient['id'], 'buyback', $amt, 'commission',
@@ -205,18 +225,33 @@ class CommissionService
         (new MonthlyGlobalPoolModel())->add(date('Y-m'), $globalAmt);
 
         // Lucky draw slot — accrues into the CURRENT month's bucket. Admin
-        // picks the winner manually via /admin/lucky-draw page.
-        $luckyAmt = round($pool * self::SLOT_PCT['lucky_draw'] / 100, 2);
+        // picks the winner manually via /admin/lucky-draw page. The % is
+        // admin-tunable via system_settings; the admin slot absorbs the delta
+        // so the pool still sums to 100% (clamped so admin can't go negative).
+        $luckyPct = max(0.0, (float) $settingsModel->get('commission.lucky_draw_pct', (string) self::SLOT_PCT['lucky_draw']));
+        $luckyAmt = round($pool * $luckyPct / 100, 2);
         (new MonthlyLuckyDrawPoolModel())->add(date('Y-m'), $luckyAmt);
 
         // Token-share slot — funds the token-request bonuses paid up the geo
         // chain (state/district/taluk). TokenService draws from this
-        // system_pools.token_share balance when it fulfils requests.
-        $tokenShareAmt = round($pool * self::SLOT_PCT['token_share'] / 100, 2);
+        // system_pools.token_share balance when it fulfils requests. % is
+        // admin-tunable; the admin slot absorbs the delta (see below).
+        $tokenSharePct = max(0.0, (float) $settingsModel->get('commission.token_share_pct', (string) self::SLOT_PCT['token_share']));
+        $tokenShareAmt = round($pool * $tokenSharePct / 100, 2);
         $pools->add('token_share', $tokenShareAmt);
 
-        // Admin pool slot + everything that fell through
-        $adminAmt = round($pool * self::SLOT_PCT['admin'] / 100, 2) + $adminPool;
+        // Admin pool slot + everything that fell through. The admin slot absorbs
+        // the lucky-draw and token-share deltas so the total still sums to 100%
+        // (clamped so admin can't go negative on extreme misconfiguration).
+        $adminPctEffective = self::SLOT_PCT['admin']
+            + (self::SLOT_PCT['lucky_draw']  - $luckyPct)
+            + (self::SLOT_PCT['token_share'] - $tokenSharePct)
+            + (self::SLOT_PCT['level_1'] - $levelPct[1])
+            + (self::SLOT_PCT['level_2'] - $levelPct[2])
+            + (self::SLOT_PCT['level_3'] - $levelPct[3])
+            + ((self::SLOT_PCT['buyback_1'] + self::SLOT_PCT['buyback_2'] + self::SLOT_PCT['buyback_3'] + self::SLOT_PCT['buyback_4']) - $allBuybackPct);
+        $adminPctEffective = max(0.0, $adminPctEffective);
+        $adminAmt = round($pool * $adminPctEffective / 100, 2) + $adminPool;
         $pools->add('admin_wallet', $adminAmt);
 
         $applied[] = ['slot' => 'global',      'pool' => 'monthly_global_pools:' . date('Y-m'),     'amount' => $globalAmt];

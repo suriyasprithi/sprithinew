@@ -40,6 +40,7 @@ export type VendorDashboard = {
     active_products: number;
     token_balance: number;
     wallet: number;
+    qr_wallet: number;
   };
   orders_series: { date: string; orders: number; revenue: number }[];
   recent_orders: {
