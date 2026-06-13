@@ -244,8 +244,8 @@ export default function TokensPage() {
                             {r.requester?.role ?? ""} · {r.created_at} {r.notes ? `· ${r.notes}` : ""}
                           </p>
                           {r.attachment_url && (
-                            <a href={r.attachment_url} target="_blank" rel="noopener noreferrer" className="text-[11px] font-medium text-brand underline">
-                              View attachment
+                            <a href={r.attachment_url} target="_blank" rel="noopener noreferrer" className="mt-1 inline-flex w-fit items-center gap-1 rounded-md bg-brand/10 px-2 py-0.5 text-[11px] font-semibold text-brand hover:bg-brand/20">
+                              📎 Attachment
                             </a>
                           )}
                         </div>

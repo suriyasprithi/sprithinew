@@ -269,7 +269,7 @@ export default function TokenRequestPage() {
                       <p className="truncate text-sm font-semibold">{r.requester_name}</p>
                       <p className="truncate text-xs text-muted-foreground md:hidden">{r.tokens} tokens · {r.created_at}</p>
                       {r.attachment_url && (
-                        <a href={r.attachment_url} target="_blank" rel="noopener noreferrer" className="text-[11px] font-medium text-brand underline">View attachment</a>
+                        <a href={r.attachment_url} target="_blank" rel="noopener noreferrer" className="mt-1 inline-flex w-fit items-center gap-1 rounded-md bg-brand/10 px-2 py-0.5 text-[11px] font-semibold text-brand hover:bg-brand/20">📎 Attachment</a>
                       )}
                     </div>
                   </div>
