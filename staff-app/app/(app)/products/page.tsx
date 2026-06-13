@@ -354,14 +354,14 @@ export default function VendorProductsPage() {
   }
 
   // Vendor creates a new product category, filed under their own vendor
-  // category (backend POST /catalog/categories = ensure: case-insensitive,
+  // category (backend POST /vendor/categories = ensure: case-insensitive,
   // returns existing id if the name already exists). Then auto-select it.
   async function createCategory() {
     const name = newCat.trim();
     if (!name) return;
     setCreatingCat(true);
     try {
-      const res = await api.post("/catalog/categories", { names: [name] });
+      const res = await api.post("/vendor/categories", { names: [name] });
       const item = ((res.data.data?.items ?? [])[0] ?? null) as { id?: number; created?: boolean } | null;
       const id = item?.id ? Number(item.id) : null;
       if (!id) { toast.error("Could not create category"); return; }
