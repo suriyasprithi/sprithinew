@@ -76,9 +76,7 @@ class AuthController extends BaseApiController
         // L1 welcome bonus. The activity feed reads from the referrals table,
         // so without those rows the new signup wouldn't appear there.
         if ($referrerId) {
-            $welcomeAmount = (float) (new \App\Models\SystemSettingsModel())
-                ->get('welcome.bonus_amount', '15');
-            $this->bumpUplineLevelCounts($referrerId, (int) $userId, $welcomeAmount);
+            $this->bumpUplineLevelCounts($referrerId, (int) $userId);
             (new WelcomeBonusService())->award($referrerId, (int) $userId);
         }
 
@@ -87,14 +85,26 @@ class AuthController extends BaseApiController
 
     /**
      * Walk up to 3 levels and: (a) bump level_*_count on each ancestor,
-     * (b) insert a referrals row for each ancestor so the activity feed
-     * shows the signup. L1 carries the welcome bonus amount; L2/L3 carry 0.
+     * (b) insert a referrals row for each ancestor so the activity feed shows
+     * the signup. Each row records the per-level welcome-bonus amount that
+     * WelcomeBonusService::award() actually credits (L1/L2/L3), so the activity
+     * feed and ReferralController's total_bonus reflect real earnings — not just
+     * L1. Kept in sync with that service + legacy:backfill-referrals.
      */
-    private function bumpUplineLevelCounts(int $referrerId, int $newCustomerId = 0, float $welcomeAmount = 15.0): void
+    private function bumpUplineLevelCounts(int $referrerId, int $newCustomerId = 0): void
     {
         $users    = new UserModel();
         $current  = $users->find($referrerId);
         $refModel = new \App\Models\ReferralModel();
+
+        $settings = new \App\Models\SystemSettingsModel();
+        $active   = $settings->get('welcome.bonus_active', '1') === '1';
+        $amount   = [
+            1 => $active ? (float) $settings->get('welcome.bonus_amount', '15') : 0.0,
+            2 => $active ? (float) $settings->get('welcome.bonus_l2', '10') : 0.0,
+            3 => $active ? (float) $settings->get('welcome.bonus_l3', '5') : 0.0,
+        ];
+
         for ($level = 1; $level <= 3; $level++) {
             if (! $current) break;
             $col = "level_{$level}_count";
@@ -105,7 +115,7 @@ class AuthController extends BaseApiController
                         'referrer_id'  => (int) $current['id'],
                         'referred_id'  => $newCustomerId,
                         'level'        => $level,
-                        'bonus_amount' => $level === 1 ? $welcomeAmount : 0,
+                        'bonus_amount' => $amount[$level] ?? 0,
                     ]);
                 } catch (\Throwable $e) {
                     log_message('error', 'Referral insert failed: ' . $e->getMessage());
