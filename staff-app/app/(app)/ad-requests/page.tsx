@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Video, Check, X, ExternalLink, Loader2 } from "lucide-react";
+import { Video, Check, X, ExternalLink, Loader2, Image as ImageIcon } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/data-table/status-badge";
@@ -44,6 +44,18 @@ export default function AdRequestsPage() {
       await api.post(`/admin/ad-requests/${id}/${action}`);
       toast.success(`Request ${action === "approve" ? "approved" : "rejected"}`);
       void refresh();
+    } catch (e) {
+      toast.error(apiErrorMessage(e));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function useAsBanner(id: number) {
+    setBusy(id);
+    try {
+      await api.post(`/admin/ad-requests/${id}/use-as-banner`);
+      toast.success("Draft banner created — open Home Banners to set the slot/title and publish");
     } catch (e) {
       toast.error(apiErrorMessage(e));
     } finally {
@@ -100,6 +112,11 @@ export default function AdRequestsPage() {
                           <X className="h-3.5 w-3.5" /> Reject
                         </Button>
                       </>
+                    )}
+                    {r.status === "approved" && r.type === "banner" && (
+                      <Button size="sm" variant="ghost" className="h-7 gap-1 text-xs text-brand" disabled={busy === r.id} onClick={() => void useAsBanner(r.id)}>
+                        {busy === r.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ImageIcon className="h-3.5 w-3.5" />} Use as banner
+                      </Button>
                     )}
                   </div>
                 </div>

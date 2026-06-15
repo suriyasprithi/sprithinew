@@ -110,6 +110,42 @@ class AdRequestController extends BaseApiController
     public function approve(int $id): ResponseInterface { return $this->decide($id, 'approved'); }
     public function reject(int $id): ResponseInterface  { return $this->decide($id, 'rejected'); }
 
+    /**
+     * Create a DRAFT (inactive) home banner from an approved banner request's
+     * image. Admin then sets the slot/title and publishes on the Banners page.
+     * The image is inlined as a base64 data URI to match how banners are stored.
+     */
+    public function useAsBanner(int $id): ResponseInterface
+    {
+        $auth = $this->authUser();
+        if (! $auth) return $this->fail('Unauthorized', 401);
+        if ($auth->role !== 'admin') return $this->fail('Forbidden', 403);
+
+        $row = (new AdRequestModel())->find($id);
+        if (! $row) return $this->fail('Not found', 404);
+        if ($row['type'] !== 'banner')      return $this->fail('Only banner requests can become banners', 422);
+        if ($row['status'] !== 'approved')  return $this->fail('Approve the request first', 409);
+        if (empty($row['attachment']))      return $this->fail('No image on this request', 422);
+
+        $filePath = FCPATH . $row['attachment'];
+        if (! is_file($filePath)) return $this->fail('Creative file is missing', 404);
+        $mime    = @mime_content_type($filePath) ?: 'image/jpeg';
+        $dataUri = 'data:' . $mime . ';base64,' . base64_encode((string) file_get_contents($filePath));
+
+        $vendor = (new UserModel())->find((int) $row['vendor_id']);
+        $title  = $row['notes'] ?: (($vendor['name'] ?? 'Vendor') . ' ad');
+
+        $bannerId = (new \App\Models\HomeBannerModel())->insert([
+            'slot'       => 'hero_center',   // placeholder — admin sets the real slot
+            'sort_order' => 0,
+            'title'      => mb_substr((string) $title, 0, 200),
+            'image_url'  => $dataUri,
+            'status'     => 'inactive',      // draft until admin publishes
+        ], true);
+
+        return $this->ok(['banner_id' => (int) $bannerId], 'Draft banner created — set it up on Home Banners');
+    }
+
     private function decide(int $id, string $status): ResponseInterface
     {
         $auth = $this->authUser();

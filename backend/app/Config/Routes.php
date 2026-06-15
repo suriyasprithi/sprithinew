@@ -243,6 +243,7 @@ $routes->group('api/v1', ['filter' => 'cors'], static function ($routes) {
         $routes->get('ad-requests',                  'Api\AdRequestController::adminIndex');
         $routes->post('ad-requests/(:num)/approve',  'Api\AdRequestController::approve/$1');
         $routes->post('ad-requests/(:num)/reject',   'Api\AdRequestController::reject/$1');
+        $routes->post('ad-requests/(:num)/use-as-banner', 'Api\AdRequestController::useAsBanner/$1');
         // customers
         $routes->get('customers',                    'Api\AdminUsersController::customers');
         $routes->patch('customers/(:num)',           'Api\AdminUsersController::update/$1');
