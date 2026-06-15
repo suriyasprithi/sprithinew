@@ -24,6 +24,12 @@ export const api = axios.create({
 api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
   const token = storage.get(STORAGE_KEYS.ACCESS);
   if (token) config.headers.Authorization = `Bearer ${token}`;
+  // For multipart uploads, drop the JSON default Content-Type so the browser
+  // sets `multipart/form-data` with the correct boundary — otherwise the file
+  // never reaches the backend ("No file uploaded").
+  if (typeof FormData !== "undefined" && config.data instanceof FormData) {
+    config.headers.delete("Content-Type");
+  }
   return config;
 });
 
