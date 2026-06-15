@@ -69,6 +69,20 @@ export default function DigitalPointPage() {
   const Icon = section.icon;
   const p = data[section.key];
 
+  // For the Referral section, break the total into L1 / L2 / L3 (sum + count).
+  const levelTotals = useMemo(() => {
+    const t: Record<1 | 2 | 3, { total: number; count: number }> = {
+      1: { total: 0, count: 0 }, 2: { total: 0, count: 0 }, 3: { total: 0, count: 0 },
+    };
+    if (section.key === "referral" && p) {
+      for (const it of p.items) {
+        const lvl = levelOf(it);
+        if (lvl && it.direction === "credit") { t[lvl].total += it.amount; t[lvl].count += 1; }
+      }
+    }
+    return t;
+  }, [p, section.key]);
+
   return (
     <>
       <AppHeader title="Digital Point" />
@@ -155,6 +169,18 @@ export default function DigitalPointPage() {
               </div>
             </div>
 
+            {section.key === "referral" && (
+              <div className="mt-4 grid grid-cols-3 gap-2">
+                {([1, 2, 3] as const).map((lvl) => (
+                  <div key={lvl} className="rounded-xl border border-black/5 bg-white/70 p-3 text-center">
+                    <p className="text-[11px] font-semibold uppercase tracking-wider text-[#6b7280]">L{lvl}</p>
+                    <p className="mt-0.5 text-sm font-bold text-[#111827]">{fmtINR(levelTotals[lvl].total)}</p>
+                    <p className="text-[10px] text-[#9ca3af]">{levelTotals[lvl].count} credits</p>
+                  </div>
+                ))}
+              </div>
+            )}
+
             <div className="mt-5 overflow-hidden rounded-xl border border-black/5 bg-white/70">
               {(p?.items.length ?? 0) === 0 ? (
                 <div className="flex items-center justify-center gap-2 p-6 text-xs text-[#6b7280]">
@@ -207,4 +233,17 @@ function labelForSource(src: string): string {
   if (src === "level_2") return "L2 referral";
   if (src === "level_3") return "L3 referral";
   return src;
+}
+
+/** Which referral level a credit belongs to — from its source, else its notes. */
+function levelOf(it: Item): 1 | 2 | 3 | null {
+  const s = (it.source ?? "").toLowerCase();
+  if (s === "level_1") return 1;
+  if (s === "level_2") return 2;
+  if (s === "level_3") return 3;
+  const n = (it.notes ?? "").toLowerCase();
+  if (n.includes("level 1")) return 1;
+  if (n.includes("level 2")) return 2;
+  if (n.includes("level 3")) return 3;
+  return null;
 }
