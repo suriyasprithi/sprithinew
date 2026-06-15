@@ -86,10 +86,14 @@ export default function TokenRequestPage() {
       setRows(items.map((r) => adapt(r, user?.name)));
 
       // "Bonus balance" = the user's live bonus pot. A downline siphons a % of
-      // it when their request is approved, so it can go DOWN over time. Read
-      // straight from the user object (kept fresh by the auth store).
+      // it when their request is approved, so it can go DOWN over time. Fetch it
+      // fresh (the auth-store user only hydrates on app load, so it wouldn't
+      // update right after an approval).
       if (isApprover) {
-        setBonusEarned(Math.round((Number(user?.bonus_balance) || 0) * 100) / 100);
+        try {
+          const me = await api.get("/auth/me");
+          setBonusEarned(Math.round((Number(me.data.data?.bonus_balance) || 0) * 100) / 100);
+        } catch { /* non-fatal — leave the previous value */ }
       }
     } catch (e) {
       toast.error(apiErrorMessage(e));
