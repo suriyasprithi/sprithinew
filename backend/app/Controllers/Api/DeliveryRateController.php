@@ -162,11 +162,24 @@ class DeliveryRateController extends BaseApiController
             'price'    => 'required|numeric',
         ])) return $this->fail('Validation failed', 422, $this->validator->getErrors());
 
-        $d = $this->request->getJSON(true) ?? $this->request->getPost();
-        $id = (new DeliveryTimeRateModel())->insert([
-            'taluk_id' => (int) $d['taluk_id'],
-            'time_min' => (int) $d['time_min'],
-            'price'    => (float) $d['price'],
+        $d       = $this->request->getJSON(true) ?? $this->request->getPost();
+        $talukId = (int) $d['taluk_id'];
+        $timeMin = (int) $d['time_min'];
+        $price   = (float) $d['price'];
+
+        // One rate per (taluk, time). If it already exists, update the price
+        // instead of inserting a duplicate row.
+        $model    = new DeliveryTimeRateModel();
+        $existing = $model->where('taluk_id', $talukId)->where('time_min', $timeMin)->first();
+        if ($existing) {
+            $model->update((int) $existing['id'], ['price' => $price]);
+            return $this->ok(['id' => (int) $existing['id']], 'Rate updated for this taluk & time');
+        }
+
+        $id = $model->insert([
+            'taluk_id' => $talukId,
+            'time_min' => $timeMin,
+            'price'    => $price,
         ], true);
         return $this->ok(['id' => (int) $id], 'Created');
     }
@@ -174,14 +187,25 @@ class DeliveryRateController extends BaseApiController
     public function updateTime(int $id): ResponseInterface
     {
         if ($r = $this->requireRole(['admin'])) return $r;
-        $model = new DeliveryTimeRateModel();
-        if (! $model->find($id)) return $this->fail('Not found', 404);
+        $model   = new DeliveryTimeRateModel();
+        $current = $model->find($id);
+        if (! $current) return $this->fail('Not found', 404);
 
         $d = $this->request->getJSON(true) ?? $this->request->getPost();
         $payload = array_intersect_key($d, array_flip(['taluk_id', 'time_min', 'price']));
         if (isset($payload['taluk_id'])) $payload['taluk_id'] = (int) $payload['taluk_id'];
         if (isset($payload['time_min'])) $payload['time_min'] = (int) $payload['time_min'];
         if (isset($payload['price']))    $payload['price']    = (float) $payload['price'];
+
+        // Don't let an edit collide with another row for the same taluk+time.
+        $newTaluk = $payload['taluk_id'] ?? (int) $current['taluk_id'];
+        $newTime  = $payload['time_min'] ?? (int) $current['time_min'];
+        $clash = $model->where('taluk_id', $newTaluk)->where('time_min', $newTime)
+            ->where('id !=', $id)->first();
+        if ($clash) {
+            return $this->fail('Another rate already exists for this taluk & time.', 409);
+        }
+
         if ($payload) $model->update($id, $payload);
         return $this->ok(null, 'Updated');
     }
