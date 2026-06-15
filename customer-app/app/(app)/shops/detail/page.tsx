@@ -9,7 +9,7 @@ import { toast } from "sonner";
 import { AppHeader } from "@/components/layout/app-header";
 import { LuxuryCard } from "@/components/ui/custom/luxury-card";
 import { ProductImage } from "@/components/ui/custom/product-image";
-import { api, apiErrorMessage } from "@/lib/api";
+import { api, apiErrorMessage, fileUrl } from "@/lib/api";
 import { cartBadge } from "@/lib/cart";
 
 type Shop = { id: number; name: string; shop_name: string; area: string; pincode: string; address: string; image: string; product_count: number };
@@ -64,6 +64,13 @@ function ShopDetailInner() {
     <>
       <AppHeader title={shop.name} />
       <section className="mx-auto max-w-md space-y-4 p-4 pb-24 md:max-w-4xl md:p-8">
+        {shop.image && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+            <div className="aspect-[16/9] w-full overflow-hidden rounded-2xl md:aspect-[3/1]">
+              <img src={fileUrl(shop.image) ?? ""} alt={shop.name} className="h-full w-full object-cover" />
+            </div>
+          </motion.div>
+        )}
         <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}>
           <LuxuryCard hoverLift={false} className="flex items-center gap-3 p-4">
             <span className="flex h-14 w-14 items-center justify-center rounded-xl brand-gradient text-brand-foreground brand-glow">

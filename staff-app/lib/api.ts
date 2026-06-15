@@ -132,6 +132,7 @@ export type AuthUser = {
   ifsc_code?: string | null;
   upi?: string | null;
   gst?: string | null;
+  shop_image?: string | null;
 };
 
 export type AuthTokens = {
