@@ -3,6 +3,18 @@ import { storage, STORAGE_KEYS } from "./storage";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080";
 
+/**
+ * Build an absolute URL for a backend-stored file path (e.g. "uploads/kyc/x.jpg").
+ * Uses the SAME origin the app talks to (NEXT_PUBLIC_API_URL), so it resolves on
+ * localhost, cloudflare tunnels and prod alike — unlike the backend's base_url()
+ * which is hard-coded to app.baseURL and breaks behind a tunnel / different port.
+ */
+export function fileUrl(path?: string | null): string | null {
+  if (!path) return null;
+  if (/^https?:\/\//i.test(path)) return path; // already absolute
+  return `${API_BASE}/${String(path).replace(/^\/+/, "")}`;
+}
+
 export const api = axios.create({
   baseURL: `${API_BASE}/api/v1`,
   headers: { "Content-Type": "application/json" },
@@ -119,6 +131,7 @@ export type AuthUser = {
   account_number?: string | null;
   ifsc_code?: string | null;
   upi?: string | null;
+  gst?: string | null;
 };
 
 export type AuthTokens = {

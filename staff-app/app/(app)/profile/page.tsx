@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
-import { LogOut, Mail, MapPin, Phone, Shield, User as UserIcon, Pencil, Settings as SettingsIcon, Home, Landmark, CreditCard, type LucideIcon } from "lucide-react";
+import { LogOut, Mail, MapPin, Phone, Shield, User as UserIcon, Pencil, Settings as SettingsIcon, Home, Landmark, CreditCard, FileText, type LucideIcon } from "lucide-react";
 import { toast } from "sonner";
 import { LuxuryCard } from "@/components/ui/custom/luxury-card";
 import { GradientButton } from "@/components/ui/custom/gradient-button";
@@ -34,7 +34,7 @@ function InfoRow({ icon: Icon, label, value, mono }: { icon: LucideIcon; label: 
 }
 
 type AddressForm = { address_line: string; landmark: string; city: string; pincode: string };
-type BankForm = { account_holder: string; bank_name: string; account_number: string; ifsc_code: string; upi: string };
+type BankForm = { account_holder: string; bank_name: string; account_number: string; ifsc_code: string; upi: string; gst: string };
 
 export default function ProfilePage() {
   const { user, logout, setUser } = useAuth();
@@ -46,7 +46,8 @@ export default function ProfilePage() {
 
   const [editingBank, setEditingBank] = useState(false);
   const [savingBank, setSavingBank] = useState(false);
-  const [bankForm, setBankForm] = useState<BankForm>({ account_holder: "", bank_name: "", account_number: "", ifsc_code: "", upi: "" });
+  const [bankForm, setBankForm] = useState<BankForm>({ account_holder: "", bank_name: "", account_number: "", ifsc_code: "", upi: "", gst: "" });
+  const isVendor = user?.role === "vendor";
 
   async function onLogout() {
     await logout();
@@ -84,6 +85,7 @@ export default function ProfilePage() {
       account_number: user?.account_number ?? "",
       ifsc_code:      user?.ifsc_code ?? "",
       upi:            user?.upi ?? "",
+      gst:            user?.gst ?? "",
     });
     setEditingBank(true);
   }
@@ -102,7 +104,7 @@ export default function ProfilePage() {
     }
   }
 
-  const hasBank = !!(user?.account_holder || user?.bank_name || user?.account_number || user?.ifsc_code || user?.upi);
+  const hasBank = !!(user?.account_holder || user?.bank_name || user?.account_number || user?.ifsc_code || user?.upi || user?.gst);
 
   const roleLabel = user ? (ROLE_LABEL[user.role as keyof typeof ROLE_LABEL] ?? user.role) : "";
   const initial = (user?.name || "?").trim().charAt(0).toUpperCase();
@@ -200,6 +202,12 @@ export default function ProfilePage() {
                     <Label htmlFor="bank_upi">UPI ID</Label>
                     <Input id="bank_upi" value={bankForm.upi} onChange={(e) => setBankForm({ ...bankForm, upi: e.target.value })} placeholder="name@bank" />
                   </div>
+                  {isVendor && (
+                    <div className="space-y-1.5">
+                      <Label htmlFor="bank_gst">GST number</Label>
+                      <Input id="bank_gst" value={bankForm.gst} onChange={(e) => setBankForm({ ...bankForm, gst: e.target.value.toUpperCase().replace(/\s/g, "") })} placeholder="e.g. 33ABCDE1234F1Z5" />
+                    </div>
+                  )}
                   <div className="flex gap-2 pt-1">
                     <Button variant="ghost" className="flex-1" disabled={savingBank} onClick={() => setEditingBank(false)}>Cancel</Button>
                     <GradientButton className="flex-1" disabled={savingBank} onClick={() => void saveBank()}>
@@ -214,6 +222,7 @@ export default function ProfilePage() {
                   <InfoRow icon={CreditCard} label="Account number" value={user?.account_number} mono />
                   <InfoRow icon={CreditCard} label="IFSC code"      value={user?.ifsc_code} mono />
                   <InfoRow icon={Landmark}   label="UPI ID"         value={user?.upi} />
+                  {isVendor && <InfoRow icon={FileText} label="GST number" value={user?.gst} mono />}
                 </div>
               )}
             </LuxuryCard>

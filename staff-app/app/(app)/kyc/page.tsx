@@ -14,15 +14,17 @@ import { EmptyState } from "@/components/data-table/empty-state";
 import { TableSkeleton } from "@/components/data-table/table-skeleton";
 import { MobileHeader } from "@/components/layout/mobile-nav";
 import { PageHeader } from "@/components/layout/page-header";
-import { api, apiErrorMessage } from "@/lib/api";
+import { api, apiErrorMessage, fileUrl } from "@/lib/api";
 
 type KycRow = {
   id: number;
   name: string;
   mobile_number: string;
   aadhar: string | null;
+  aadhar_image: string | null;
   aadhar_image_url: string | null;
   pan: string | null;
+  pan_image: string | null;
   pan_image_url: string | null;
   account_holder: string | null;
   account_number: string | null;
@@ -143,8 +145,8 @@ export default function KycReviewPage() {
                 </div>
 
                 <div className="grid gap-4 md:grid-cols-2">
-                  <DocImage label="Aadhaar image" url={r.aadhar_image_url} />
-                  <DocImage label="PAN image" url={r.pan_image_url} />
+                  <DocImage label="Aadhaar image" url={fileUrl(r.aadhar_image) ?? r.aadhar_image_url} />
+                  <DocImage label="PAN image" url={fileUrl(r.pan_image) ?? r.pan_image_url} />
                 </div>
 
                 <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">

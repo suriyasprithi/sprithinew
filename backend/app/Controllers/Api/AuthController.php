@@ -366,6 +366,7 @@ class AuthController extends BaseApiController
             'account_number' => 'permit_empty|string|max_length[50]',
             'ifsc_code'      => 'permit_empty|string|max_length[100]',
             'upi'            => 'permit_empty|string|max_length[100]',
+            'gst'            => 'permit_empty|string|max_length[30]',
         ])) return $this->fail('Validation failed', 422, $this->validator->getErrors());
 
         $d = $this->request->getJSON(true) ?? $this->request->getPost();
@@ -374,6 +375,15 @@ class AuthController extends BaseApiController
             if (array_key_exists($k, $d)) $payload[$k] = $d[$k] === '' ? null : trim((string) $d[$k]);
         }
         if ($payload) (new UserModel())->update((int) $auth->id, $payload);
+
+        // GST is stored on the vendor profile, not the users row (PK = user_id).
+        if (array_key_exists('gst', $d) && $auth->role === 'vendor') {
+            $vp = new \App\Models\VendorProfileModel();
+            if ($vp->where('user_id', (int) $auth->id)->first()) {
+                $vp->update((int) $auth->id, ['gst' => $d['gst'] === '' ? null : trim((string) $d['gst'])]);
+            }
+        }
+
         $user = (new UserModel())->find((int) $auth->id);
         return $this->ok($this->publicUser($user), 'Bank details updated');
     }
@@ -405,6 +415,14 @@ class AuthController extends BaseApiController
                AND (notes LIKE '%[+level_1]%' OR notes LIKE '%[+level_2]%' OR notes LIKE '%[+level_3]%')",
             [(int) $user['id']]
         )->getRow()->s ?? 0);
+
+        // GST lives on the vendor's profile (not the users row) — surface it so
+        // the vendor can see/edit it on their profile page.
+        $gst = null;
+        if (($user['role'] ?? '') === 'vendor') {
+            $prof = (new \App\Models\VendorProfileModel())->where('user_id', (int) $user['id'])->first();
+            $gst  = $prof['gst'] ?? null;
+        }
 
         return [
             'id'             => (int) $user['id'],
@@ -440,6 +458,7 @@ class AuthController extends BaseApiController
             'account_number' => $user['account_number'] ?? null,
             'ifsc_code'      => $user['ifsc_code'] ?? null,
             'upi'            => $user['upi'] ?? null,
+            'gst'            => $gst,
         ];
     }
 }
