@@ -80,7 +80,16 @@ class WithdrawalController extends BaseApiController
         $userIds = array_unique(array_map(static fn ($r) => (int) $r['user_id'], $rows));
         $users   = $userIds ? (new UserModel())->whereIn('id', $userIds)->findAll() : [];
         $byId    = [];
-        foreach ($users as $u) $byId[(int) $u['id']] = ['name' => $u['name'], 'mobile_number' => $u['mobile_number']];
+        foreach ($users as $u) $byId[(int) $u['id']] = [
+            'name'          => $u['name'],
+            'mobile_number' => $u['mobile_number'],
+            'role'          => $u['role'] ?? null,
+            'address'       => trim(implode(', ', array_filter([
+                $u['address_line'] ?? null,
+                $u['city']         ?? null,
+                $u['pincode']      ?? null,
+            ]))) ?: null,
+        ];
         $items = array_map(static fn ($r) => $r + ['user' => $byId[(int) $r['user_id']] ?? ['name' => '?', 'mobile_number' => '?']], $rows);
         return $this->ok(['items' => $items]);
     }

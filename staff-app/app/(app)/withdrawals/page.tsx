@@ -27,7 +27,7 @@ const PAGE_SIZE = 10;
 const fmtINR = (n: number) => new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(n);
 
 type PayoutDetails = Record<string, string>;
-type Row = AdminWithdrawal & { details: PayoutDetails };
+type Row = AdminWithdrawal & { details: PayoutDetails; role: string | null; address: string | null };
 
 function parseDetails(raw: unknown): PayoutDetails {
   if (!raw) return {};
@@ -41,6 +41,7 @@ export default function AdminWithdrawalsPage() {
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState<"all" | AdminWithdrawal["status"]>("all");
   const [method, setMethod] = useState<"all" | "bank" | "upi">("all");
+  const [typeFilter, setTypeFilter] = useState<"all" | "customer" | "vendor" | "taluk" | "district" | "state">("all");
   const [page, setPage] = useState(1);
   const [busyId, setBusyId] = useState<number | null>(null);
   const [previewing, setPreviewing] = useState<Row | null>(null);
@@ -57,7 +58,7 @@ export default function AdminWithdrawalsPage() {
         status: string;
         created_at?: string | null;
         details_json?: unknown;
-        user?: { name?: string | null; mobile_number?: string | null } | null;
+        user?: { name?: string | null; mobile_number?: string | null; role?: string | null; address?: string | null } | null;
       };
       const res = await api.get("/admin/withdrawals/pending");
       const rows = ((res.data.data?.items ?? []) as ApiRow[]).map((r): Row => ({
@@ -70,6 +71,8 @@ export default function AdminWithdrawalsPage() {
         status: r.status === "paid" ? "approved" : r.status === "rejected" ? "rejected" : "pending",
         created_at: (r.created_at ?? "").replace("T", " ").slice(0, 16),
         details: parseDetails(r.details_json),
+        role: r.user?.role ?? null,
+        address: r.user?.address ?? null,
       }));
       setItems(rows);
     } catch (e) {
@@ -88,10 +91,11 @@ export default function AdminWithdrawalsPage() {
     }
     if (status !== "all" && w.status !== status) return false;
     if (method !== "all" && w.method !== method) return false;
+    if (typeFilter !== "all" && w.role !== typeFilter) return false;
     return true;
-  }), [items, search, status, method]);
+  }), [items, search, status, method, typeFilter]);
 
-  useEffect(() => setPage(1), [search, status, method]);
+  useEffect(() => setPage(1), [search, status, method, typeFilter]);
   const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const safePage = Math.min(page, pageCount);
   const paged = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
@@ -151,11 +155,22 @@ export default function AdminWithdrawalsPage() {
         </div>
 
         <div className="glass rounded-2xl p-3">
-          <div className="grid gap-2 md:grid-cols-[1fr_180px_180px]">
+          <div className="grid gap-2 md:grid-cols-[1fr_150px_150px_150px]">
             <div className="relative">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search user, mobile…" className="h-10 rounded-xl bg-surface-2/60 pl-9" />
             </div>
+            <Select value={typeFilter} onValueChange={(v) => v && setTypeFilter(v as typeof typeFilter)}>
+              <SelectTrigger className="h-10 rounded-xl bg-surface-2/60"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Any type</SelectItem>
+                <SelectItem value="customer">Customer</SelectItem>
+                <SelectItem value="vendor">Vendor</SelectItem>
+                <SelectItem value="taluk">Taluk</SelectItem>
+                <SelectItem value="district">District</SelectItem>
+                <SelectItem value="state">State</SelectItem>
+              </SelectContent>
+            </Select>
             <Select value={status} onValueChange={(v) => v && setStatus(v as "all" | AdminWithdrawal["status"])}>
               <SelectTrigger className="h-10 rounded-xl bg-surface-2/60"><SelectValue /></SelectTrigger>
               <SelectContent>
@@ -177,11 +192,13 @@ export default function AdminWithdrawalsPage() {
         </div>
 
         <div className="luxe-card overflow-hidden">
-          <div className="hidden grid-cols-[1.2fr_140px_100px_120px_220px] gap-3 border-b border-border bg-surface-2/40 px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground md:grid">
+          <div className="hidden grid-cols-[1.1fr_90px_110px_80px_110px_1.1fr_150px] gap-3 border-b border-border bg-surface-2/40 px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground md:grid">
             <span>User</span>
+            <span>Type</span>
             <span>Amount</span>
             <span>Method</span>
             <span>Status</span>
+            <span>Address</span>
             <span className="text-right">Actions</span>
           </div>
           {loading ? (
@@ -196,7 +213,7 @@ export default function AdminWithdrawalsPage() {
                   initial={{ opacity: 0, y: 4 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: i * 0.02 }}
-                  className="grid grid-cols-[1fr_auto] items-center gap-3 px-4 py-3 transition-colors hover:bg-surface-2/40 md:grid-cols-[1.2fr_140px_100px_120px_220px]"
+                  className="grid grid-cols-[1fr_auto] items-center gap-3 px-4 py-3 transition-colors hover:bg-surface-2/40 md:grid-cols-[1.1fr_90px_110px_80px_110px_1.1fr_150px]"
                 >
                   <div className="flex items-center gap-3">
                     <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-brand/10 text-xs font-semibold text-brand">
@@ -205,11 +222,14 @@ export default function AdminWithdrawalsPage() {
                     <div className="min-w-0">
                       <p className="truncate text-sm font-semibold">{w.user_name}</p>
                       <p className="truncate text-xs text-muted-foreground">{w.mobile} · {w.created_at}</p>
+                      <p className="truncate text-[11px] capitalize text-brand md:hidden">{w.role ?? "—"}{w.address ? ` · ${w.address}` : ""}</p>
                     </div>
                   </div>
+                  <span className="hidden md:flex"><span className="inline-flex items-center rounded-md bg-brand/10 px-2 py-0.5 text-[11px] font-semibold capitalize text-brand">{w.role ?? "—"}</span></span>
                   <p className="hidden text-sm font-medium text-emerald-400 md:block">{fmtINR(w.amount)}</p>
                   <p className="hidden text-xs uppercase text-muted-foreground md:block">{w.method}</p>
                   <div className="hidden md:block"><StatusBadge status={w.status} /></div>
+                  <p className="hidden truncate text-xs text-muted-foreground md:block" title={w.address ?? ""}>{w.address ?? "—"}</p>
                   <div className="flex items-center gap-2 justify-self-end">
                     <span className="md:hidden"><StatusBadge status={w.status} /></span>
                     {/* Preview payout (bank/UPI) details — every row, every status */}
