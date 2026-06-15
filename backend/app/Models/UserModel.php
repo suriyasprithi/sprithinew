@@ -26,6 +26,7 @@ class UserModel extends Model
         'level_2_count',
         'level_3_count',
         'wallet_balance',
+        'bonus_balance',
         'level_wallet',
         'level_1_wallet',
         'level_2_wallet',

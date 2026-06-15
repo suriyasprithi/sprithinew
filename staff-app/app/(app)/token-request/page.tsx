@@ -85,15 +85,11 @@ export default function TokenRequestPage() {
       }
       setRows(items.map((r) => adapt(r, user?.name)));
 
-      // "Bonus earned" = the bonus minted into THIS user's own approved
-      // requests (state 3.5% / district 3% / taluk 2%). It lands on their
-      // received token ledger, not in the request inbox listed above.
+      // "Bonus balance" = the user's live bonus pot. A downline siphons a % of
+      // it when their request is approved, so it can go DOWN over time. Read
+      // straight from the user object (kept fresh by the auth store).
       if (isApprover) {
-        try {
-          const h = await api.get("/tokens/distribute/history");
-          const recv = (h.data.data?.received ?? []) as Array<{ bonus?: number | string }>;
-          setBonusEarned(Math.round(recv.reduce((s, x) => s + (Number(x.bonus) || 0), 0) * 100) / 100);
-        } catch { /* non-fatal — leave the previous value */ }
+        setBonusEarned(Math.round((Number(user?.bonus_balance) || 0) * 100) / 100);
       }
     } catch (e) {
       toast.error(apiErrorMessage(e));
@@ -211,8 +207,8 @@ export default function TokenRequestPage() {
                   <Coins className="h-5 w-5" />
                 </span>
                 <div>
-                  <p className="text-sm font-semibold">Bonus earned</p>
-                  <p className="text-xs text-muted-foreground">Extra tokens credited when your upstream approves your requests</p>
+                  <p className="text-sm font-semibold">Bonus balance</p>
+                  <p className="text-xs text-muted-foreground">Your bonus pot — your downline draws a % of it when you approve their request</p>
                 </div>
               </div>
               <p className="text-2xl font-bold text-amber-400">{bonusEarned > 0 ? "+" : ""}{bonusEarned.toLocaleString("en-IN")}</p>

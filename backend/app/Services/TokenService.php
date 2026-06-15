@@ -246,35 +246,20 @@ class TokenService
     }
 
     /**
-     * Compounded bonus MULTIPLIER the requester earns when their token request
-     * is approved, keyed by the REQUESTER's own role. Each level's bonus %
-     * applies to the PARENT level's already-bonused per-token figure, so the
-     * effective rate compounds down the geo chain:
-     *
-     *   state    m = 1 + b_state                  → 1.035000   (3.5%)
-     *   district m = 1 + b_district × m_state      → 1.031050   (3% of 1.035)
-     *   taluk    m = 1 + b_taluk    × m_district   → 1.020621   (2% of 1.03105)
-     *   vendor   m = 1                             → no bonus
-     *
-     * A request of N tokens earns a bonus of N × (m − 1). The base percentages
-     * stay configurable via system_settings (token.bonus.<role>).
+     * Base bonus RATE for the requester's role (state 3.5% / district 3% /
+     * taluk 2% / vendor 0%) — the raw configured %, not compounded. Drives the
+     * siphon-down-the-chain model: the requester draws this % of the upline's
+     * bonus pot (or, at the admin hop, mints this % of the requested tokens).
+     * Configurable via system_settings (token.bonus.<role>).
      */
-    private function bonusFactorForRole(string $requesterRole): float
+    private function baseBonusRate(string $requesterRole): float
     {
-        $svc       = new SystemSettingsService();
-        $bState    = (float) $svc->get('token.bonus.state', '3.5') / 100;
-        $bDistrict = (float) $svc->get('token.bonus.district', '3.0') / 100;
-        $bTaluk    = (float) $svc->get('token.bonus.taluk', '2.0') / 100;
-
-        $mState    = 1 + $bState;
-        $mDistrict = 1 + $bDistrict * $mState;
-        $mTaluk    = 1 + $bTaluk * $mDistrict;
-
+        $svc = new SystemSettingsService();
         return match ($requesterRole) {
-            'state'    => $mState,
-            'district' => $mDistrict,
-            'taluk'    => $mTaluk,
-            default    => 1.0, // vendor (and anything else) gets no bonus
+            'state'    => (float) $svc->get('token.bonus.state', '3.5') / 100,
+            'district' => (float) $svc->get('token.bonus.district', '3.0') / 100,
+            'taluk'    => (float) $svc->get('token.bonus.taluk', '2.0') / 100,
+            default    => 0.0, // vendor (and anything else) gets no bonus
         };
     }
 
@@ -282,10 +267,15 @@ class TokenService
      * One-hop fulfilment of a token request: approver → requester only.
      * No chain cascading — each level handles its immediate-below requests.
      *
-     * The requester is credited base + bonus, where the bonus (state +3.5%,
-     * district +3%, taluk +2%, vendor 0%) is MINTED by the system. The
-     * approver is debited only the base amount (admin is the infinite source
-     * and is never debited). No ₹ changes hands.
+     * The requester is credited base + bonus. The bonus is sourced two ways:
+     *   - admin approver (top hop): MINTED = requestedTokens × roleRate, drawn
+     *     from the token_share pool (clamped). Seeds the requester's bonus pot.
+     *     Admin is the infinite source and is never debited.
+     *   - staff approver (state/district/taluk): SIPHONED = approver's own bonus
+     *     pot × roleRate, transferred out of the approver. The approver pays
+     *     base + bonus from its token_balance and its bonus pot drops by the
+     *     bonus; the requester's pot rises by it (so its own downline can later
+     *     siphon). No ₹ changes hands.
      *
      * @return array{ledger_id:int, base:float, bonus:float, bonus_pct:float, credited:float}
      */
@@ -296,15 +286,17 @@ class TokenService
             throw new \DomainException("Role '{$approver['role']}' cannot fulfil a request");
         }
 
-        // Compounded bonus the requester would earn (see bonusFactorForRole).
-        $factor       = $this->bonusFactorForRole($requester['role'] ?? '');
-        $desiredBonus = round($tokens * ($factor - 1), 2);
-        // Effective compounded % on the base — for the ledger / notification.
-        $bonusPct     = round(($factor - 1) * 100, 4);
+        // Base (non-compounded) bonus rate for the requester's role.
+        $rate     = $this->baseBonusRate($requester['role'] ?? '');
+        $bonusPct  = round($rate * 100, 4);
 
-        // Approver is debited the BASE only. Admin = infinite.
-        if ($approver['role'] !== 'admin' && (float) ($approver['token_balance'] ?? 0) < $tokens) {
-            throw new \DomainException("{$approver['name']} has only " . (float) ($approver['token_balance'] ?? 0) . " tokens; needs {$tokens}");
+        $approverIsAdmin = $approver['role'] === 'admin';
+        $approverTokens  = (float) ($approver['token_balance'] ?? 0);
+        $approverPot     = (float) ($approver['bonus_balance'] ?? 0);
+
+        // Non-admin approvers pay the base from their own tokens.
+        if (! $approverIsAdmin && $approverTokens < $tokens) {
+            throw new \DomainException("{$approver['name']} has only {$approverTokens} tokens; needs {$tokens}");
         }
 
         $db    = Database::connect();
@@ -312,24 +304,32 @@ class TokenService
         $pools = new SystemPoolModel();
         $db->transStart();
 
-        // The bonus is funded by the commission pool's token_share slot, clamped
-        // to whatever the pool can cover — the base request always goes through;
-        // the bonus is full / partial / zero depending on the pool balance.
-        $bonus    = $pools->take('token_share', $desiredBonus);
-        $credited = round($tokens + $bonus, 2);
-
-        if ($approver['role'] !== 'admin') {
+        if ($approverIsAdmin) {
+            // Top hop: mint roleRate × requested tokens from the token_share pool.
+            $desiredBonus = round($tokens * $rate, 2);
+            $bonus        = $pools->take('token_share', $desiredBonus);
+            $fundNote     = $bonus > 0 ? 'token_share-funded' : 'token_share pool empty';
+        } else {
+            // Staff hop: siphon roleRate × the approver's own bonus pot, clamped
+            // so the approver can always cover base + bonus from its tokens.
+            $desiredBonus = round($approverPot * $rate, 2);
+            $bonus        = round(min($desiredBonus, $approverPot, max(0.0, $approverTokens - $tokens)), 2);
             $users->update((int) $approver['id'], [
-                'token_balance' => (float) $approver['token_balance'] - $tokens,
+                'token_balance' => round($approverTokens - $tokens - $bonus, 2),
+                'bonus_balance' => round($approverPot - $bonus, 2),
             ]);
+            $fundNote = $bonus > 0 ? ('siphoned from ' . ($approver['name'] ?? 'upline')) : 'upline bonus pot empty';
         }
+
+        $credited = round($tokens + $bonus, 2);
         $users->update((int) $requester['id'], [
-            'token_balance' => (float) ($requester['token_balance'] ?? 0) + $credited,
+            'token_balance' => round((float) ($requester['token_balance'] ?? 0) + $credited, 2),
+            'bonus_balance' => round((float) ($requester['bonus_balance'] ?? 0) + $bonus, 2),
         ]);
 
         $ledgerNote = $bonus > 0
-            ? "{$notes} (+{$bonus} bonus @ {$bonusPct}%, token_share-funded)"
-            : ($desiredBonus > 0 ? "{$notes} (bonus 0 — token_share pool empty)" : $notes);
+            ? "{$notes} (+{$bonus} bonus @ {$bonusPct}%, {$fundNote})"
+            : ($desiredBonus > 0 ? "{$notes} (bonus 0 — {$fundNote})" : $notes);
         $id = (new DistributeTokenModel())->insert([
             'from_user_id' => (int) $approver['id'],
             'to_user_id'   => (int) $requester['id'],
