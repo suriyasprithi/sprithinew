@@ -26,6 +26,14 @@ $routes->group('api/v1', ['filter' => 'cors'], static function ($routes) {
         $routes->post('logout', 'Api\AuthController::logout');
         $routes->patch('me/address', 'Api\AuthController::updateAddress');
         $routes->patch('me/bank',    'Api\AuthController::updateBank');
+        $routes->post('me/shop-image', 'Api\AuthController::updateShopImage');
+    });
+
+    // ===== Ad requests (vendor submits banner/video; admin reviews) =====
+    $routes->group('ads', ['filter' => 'auth'], static function ($routes) {
+        $routes->post('requests/upload', 'Api\AdRequestController::upload');
+        $routes->post('requests',        'Api\AdRequestController::create');
+        $routes->get('requests/mine',    'Api\AdRequestController::mine');
     });
 
     // ===== Devices + notifications (Phase 1 + push infra) =====
@@ -231,6 +239,10 @@ $routes->group('api/v1', ['filter' => 'cors'], static function ($routes) {
 
     // ===== Admin (Phase 4 will rebuild payments + withdrawals admin; Phase 7 stats + exports) =====
     $routes->group('admin', ['filter' => 'auth'], static function ($routes) {
+        // ad requests (vendor banner/video) — review inbox
+        $routes->get('ad-requests',                  'Api\AdRequestController::adminIndex');
+        $routes->post('ad-requests/(:num)/approve',  'Api\AdRequestController::approve/$1');
+        $routes->post('ad-requests/(:num)/reject',   'Api\AdRequestController::reject/$1');
         // customers
         $routes->get('customers',                    'Api\AdminUsersController::customers');
         $routes->patch('customers/(:num)',           'Api\AdminUsersController::update/$1');

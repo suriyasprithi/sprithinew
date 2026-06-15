@@ -388,6 +388,35 @@ class AuthController extends BaseApiController
         return $this->ok($this->publicUser($user), 'Bank details updated');
     }
 
+    /** Vendor uploads their shop cover image (multipart `image`) → vendor_profiles.image. */
+    public function updateShopImage(): ResponseInterface
+    {
+        $auth = $this->authUser();
+        if (! $auth) return $this->fail('Unauthorized', 401);
+        if ($auth->role !== 'vendor') return $this->fail('Only vendors have a shop image', 403);
+
+        $file = $this->request->getFile('image');
+        if (! $file || ! $file->isValid() || $file->hasMoved()) return $this->fail('No image uploaded', 422);
+        if ($file->getSize() > 5 * 1024 * 1024) return $this->fail('Image must be 5 MB or smaller', 422);
+        if (! in_array($file->getMimeType(), ['image/jpeg', 'image/png', 'image/webp'], true)) {
+            return $this->fail('Image must be a JPG, PNG or WEBP', 422);
+        }
+
+        $dir = FCPATH . 'uploads/shops/';
+        if (! is_dir($dir)) @mkdir($dir, 0775, true);
+        $name = $file->getRandomName();
+        $file->move($dir, $name);
+        $path = 'uploads/shops/' . $name;
+
+        $vp = new \App\Models\VendorProfileModel();
+        if ($vp->where('user_id', (int) $auth->id)->first()) {
+            $vp->update((int) $auth->id, ['image' => $path]);
+        }
+
+        $user = (new UserModel())->find((int) $auth->id);
+        return $this->ok($this->publicUser($user), 'Shop image updated');
+    }
+
     private function issueTokens(int $userId, string $role, array $user, int $status, string $message): ResponseInterface
     {
         $jwt = new JwtService();
@@ -416,12 +445,14 @@ class AuthController extends BaseApiController
             [(int) $user['id']]
         )->getRow()->s ?? 0);
 
-        // GST lives on the vendor's profile (not the users row) — surface it so
-        // the vendor can see/edit it on their profile page.
-        $gst = null;
+        // GST + shop image live on the vendor's profile (not the users row) —
+        // surface them so the vendor can see/edit them on their profile pages.
+        $gst       = null;
+        $shopImage = null;
         if (($user['role'] ?? '') === 'vendor') {
-            $prof = (new \App\Models\VendorProfileModel())->where('user_id', (int) $user['id'])->first();
-            $gst  = $prof['gst'] ?? null;
+            $prof      = (new \App\Models\VendorProfileModel())->where('user_id', (int) $user['id'])->first();
+            $gst       = $prof['gst'] ?? null;
+            $shopImage = $prof['image'] ?? null;
         }
 
         return [
@@ -459,6 +490,7 @@ class AuthController extends BaseApiController
             'ifsc_code'      => $user['ifsc_code'] ?? null,
             'upi'            => $user['upi'] ?? null,
             'gst'            => $gst,
+            'shop_image'     => $shopImage,
         ];
     }
 }
