@@ -44,6 +44,8 @@ export default function AdminWithdrawalsPage() {
   const [page, setPage] = useState(1);
   const [busyId, setBusyId] = useState<number | null>(null);
   const [previewing, setPreviewing] = useState<Row | null>(null);
+  const [rejecting, setRejecting] = useState<Row | null>(null);
+  const [rejectNote, setRejectNote] = useState("");
 
   async function refresh() {
     setLoading(true);
@@ -103,6 +105,25 @@ export default function AdminWithdrawalsPage() {
     try {
       await api.post(`/admin/withdrawals/${id}/${action}`);
       toast.success(`#${id} ${action}d`);
+      await refresh();
+    } catch (e) {
+      toast.error(apiErrorMessage(e));
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  // Reject needs a reason the user will see (in their notification + withdrawal
+  // history), so it goes through a dialog instead of an instant action.
+  async function confirmReject() {
+    if (!rejecting) return;
+    const id = rejecting.id;
+    setBusyId(id);
+    try {
+      await api.post(`/admin/withdrawals/${id}/reject`, { notes: rejectNote.trim() });
+      toast.success(`#${id} rejected`);
+      setRejecting(null);
+      setRejectNote("");
       await refresh();
     } catch (e) {
       toast.error(apiErrorMessage(e));
@@ -206,7 +227,7 @@ export default function AdminWithdrawalsPage() {
                         <Button size="sm" className="h-8 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20" disabled={busyId === w.id} onClick={() => void process(w.id, "approve")}>
                           <Check className="h-3.5 w-3.5" /> Approve
                         </Button>
-                        <Button size="sm" variant="ghost" className="h-8 text-rose-400 hover:bg-rose-500/10" disabled={busyId === w.id} onClick={() => void process(w.id, "reject")}>
+                        <Button size="sm" variant="ghost" className="h-8 text-rose-400 hover:bg-rose-500/10" disabled={busyId === w.id} onClick={() => { setRejectNote(""); setRejecting(w); }}>
                           <X className="h-3.5 w-3.5" /> Reject
                         </Button>
                       </div>
@@ -224,7 +245,7 @@ export default function AdminWithdrawalsPage() {
                         {w.status === "pending" && (
                           <>
                             <DropdownMenuItem onClick={() => void process(w.id, "approve")}><Check className="h-4 w-4" /> Approve</DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => void process(w.id, "reject")} className="text-rose-400 focus:text-rose-400"><X className="h-4 w-4" /> Reject</DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => { setRejectNote(""); setRejecting(w); }} className="text-rose-400 focus:text-rose-400"><X className="h-4 w-4" /> Reject</DropdownMenuItem>
                           </>
                         )}
                       </DropdownMenuContent>
@@ -266,6 +287,37 @@ export default function AdminWithdrawalsPage() {
               )}
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!rejecting} onOpenChange={(o) => { if (!o) { setRejecting(null); setRejectNote(""); } }}>
+        <DialogContent className="rounded-2xl border-border bg-popover">
+          <DialogHeader>
+            <DialogTitle>Reject withdrawal</DialogTitle>
+            <DialogDescription>
+              {rejecting?.user_name}{rejecting?.mobile ? ` · ${rejecting.mobile}` : ""}{rejecting ? ` — ${fmtINR(rejecting.amount)}` : ""}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <p className="text-sm font-medium">Reason <span className="font-normal text-muted-foreground">(shown to the user)</span></p>
+            <textarea
+              value={rejectNote}
+              onChange={(e) => setRejectNote(e.target.value)}
+              rows={3}
+              placeholder="e.g. Bank details don't match your KYC. Please update and re-request."
+              className="w-full rounded-xl border border-border bg-surface-2/60 px-3 py-2 text-sm outline-none focus:border-brand"
+            />
+          </div>
+          <div className="mt-2 flex justify-end gap-2">
+            <Button variant="ghost" onClick={() => { setRejecting(null); setRejectNote(""); }}>Cancel</Button>
+            <Button
+              className="bg-rose-500 text-white hover:bg-rose-600"
+              disabled={busyId === rejecting?.id || !rejectNote.trim()}
+              onClick={() => void confirmReject()}
+            >
+              <X className="h-4 w-4" /> Reject
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
     </>

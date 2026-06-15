@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowDownLeft, Loader2, Building2, Smartphone, ShieldAlert } from "lucide-react";
@@ -15,6 +15,7 @@ import { api, apiErrorMessage } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 type Method = "bank" | "upi";
+type Wd = { id: number; amount: number | string; method: string; status: string; notes: string | null; created_at: string };
 
 export default function WithdrawPage() {
   const router = useRouter();
@@ -22,6 +23,16 @@ export default function WithdrawPage() {
   const [method, setMethod] = useState<Method>("upi");
   const [amount, setAmount] = useState("");
   const [busy, setBusy] = useState(false);
+  const [history, setHistory] = useState<Wd[]>([]);
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const res = await api.get("/withdrawals/mine");
+        setHistory((res.data.data?.items ?? []) as Wd[]);
+      } catch { /* non-fatal */ }
+    })();
+  }, []);
 
   const verified = user?.kyc_status === "verified";
 
@@ -105,6 +116,31 @@ export default function WithdrawPage() {
               {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <><ArrowDownLeft className="h-4 w-4" /> Submit request</>}
             </GradientButton>
           </LuxuryCard>
+        )}
+
+        {history.length > 0 && (
+          <div className="space-y-2">
+            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Recent withdrawals</p>
+            {history.map((w) => {
+              const st = String(w.status);
+              const label = st === "paid" ? "approved" : st;
+              const tone = st === "paid" ? "text-emerald-500" : st === "rejected" ? "text-rose-500" : "text-amber-500";
+              return (
+                <LuxuryCard key={w.id} hoverLift={false} className="p-3 text-sm">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="font-semibold">₹{Number(w.amount).toFixed(2)} · {String(w.method).toUpperCase()}</p>
+                      <p className="text-[11px] text-muted-foreground">{w.created_at}</p>
+                    </div>
+                    <span className={`text-xs font-semibold capitalize ${tone}`}>{label}</span>
+                  </div>
+                  {st === "rejected" && w.notes && (
+                    <p className="mt-2 rounded-lg bg-rose-500/10 px-2.5 py-1.5 text-[11px] text-rose-600">Reason: {w.notes}</p>
+                  )}
+                </LuxuryCard>
+              );
+            })}
+          </div>
         )}
       </section>
     </>
