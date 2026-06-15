@@ -3,7 +3,7 @@
 import { useRef, useState } from "react";
 import { ImagePlus, Loader2, X } from "lucide-react";
 import { toast } from "sonner";
-import { api, apiErrorMessage } from "@/lib/api";
+import { api, apiErrorMessage, fileUrl } from "@/lib/api";
 
 /**
  * Single-image uploader for KYC documents. Uploads to POST /customer/upload and
@@ -34,7 +34,9 @@ export function ImageUpload({
         headers: { "Content-Type": "multipart/form-data" },
       });
       const d = res.data.data as { path: string; url: string };
-      onChange(d.path, d.url);
+      // Preview from the API origin (not the backend's base_url, which is
+      // hard-coded to localhost:8080 and won't load behind a tunnel/other port).
+      onChange(d.path, fileUrl(d.path));
     } catch (e) {
       toast.error(apiErrorMessage(e));
     } finally {

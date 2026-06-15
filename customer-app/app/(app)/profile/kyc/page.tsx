@@ -11,7 +11,7 @@ import { LuxuryCard } from "@/components/ui/custom/luxury-card";
 import { GradientButton } from "@/components/ui/custom/gradient-button";
 import { ImageUpload } from "@/components/ui/custom/image-upload";
 import { useAuth } from "@/stores/auth";
-import { api, apiErrorMessage } from "@/lib/api";
+import { api, apiErrorMessage, fileUrl } from "@/lib/api";
 
 type Kyc = {
   aadhar: string;
@@ -58,6 +58,10 @@ export default function KycPage() {
         setK({
           ...EMPTY,
           ...d,
+          // Rebuild preview URLs from the API origin (backend base_url won't
+          // load behind a tunnel / different port).
+          aadhar_image_url: fileUrl(d.aadhar_image ?? null),
+          pan_image_url: fileUrl(d.pan_image ?? null),
           aadhar: d.aadhar ?? "",
           pan: d.pan ?? "",
           account_holder: d.account_holder ?? "",
