@@ -24,6 +24,7 @@ import { MobileHeader } from "@/components/layout/mobile-nav";
 import { PageHeader } from "@/components/layout/page-header";
 import { useAuth } from "@/stores/auth";
 import { api, apiErrorMessage } from "@/lib/api";
+import { UpstreamBankCard } from "@/components/upstream-bank-card";
 import { mock, type TokenRequest } from "@/lib/mock";
 
 const PAGE_SIZE = 10;
@@ -219,6 +220,8 @@ export default function TokenRequestPage() {
             </div>
           </motion.div>
         )}
+
+        <UpstreamBankCard />
 
         <div className="glass rounded-2xl p-3">
           <div className="grid gap-2 md:grid-cols-[1fr_200px]">

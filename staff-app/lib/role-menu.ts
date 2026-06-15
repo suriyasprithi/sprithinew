@@ -97,6 +97,7 @@ export const ROLE_MENU: Record<StaffRole, MenuItem[]> = {
     { href: "/categories",        label: "Product Categories", icon: Tags },
     { href: "/banners",           label: "Home Banners",       icon: ImageIcon },
     { href: "/ad-requests",       label: "Ad requests",        icon: Video },
+    { href: "/shop-images",       label: "Shop image approval",icon: ImageIcon },
     { href: "/manage-states",     label: "States",             icon: Building2 },
     { href: "/manage-districts",  label: "Districts",          icon: Building2 },
     { href: "/manage-taluks",     label: "Taluks",             icon: Building2 },

@@ -13,6 +13,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { LuxuryCard } from "@/components/ui/custom/luxury-card";
 import { AnimatedCounter } from "@/components/ui/custom/animated-counter";
+import { UpstreamBankCard } from "@/components/upstream-bank-card";
 import { GradientButton } from "@/components/ui/custom/gradient-button";
 import { EmptyState } from "@/components/data-table/empty-state";
 import { MobileHeader } from "@/components/layout/mobile-nav";
@@ -181,6 +182,8 @@ export default function TokensPage() {
             </div>
           </LuxuryCard>
         </motion.div>
+
+        <UpstreamBankCard />
 
         {totalBonus > 0 && (
           <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>

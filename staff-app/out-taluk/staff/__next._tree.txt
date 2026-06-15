@@ -1,2 +1,2 @@
-:HL["/taluk/_next/static/css/50024995f996d7ce.css","style"]
-0:{"tree":{"name":"","param":null,"prefetchHints":16,"slots":{"children":{"name":"staff","param":null,"prefetchHints":0,"slots":{"children":{"name":"__PAGE__","param":null,"prefetchHints":0,"slots":null}}}}},"staleTime":300,"buildId":"shmYfkuV6MqEmZ7YdNmjk"}
+:HL["/taluk/_next/static/css/5f5f3cc7172b2c9b.css","style"]
+0:{"tree":{"name":"","param":null,"prefetchHints":16,"slots":{"children":{"name":"staff","param":null,"prefetchHints":0,"slots":{"children":{"name":"__PAGE__","param":null,"prefetchHints":0,"slots":null}}}}},"staleTime":300,"buildId":"qvd8WNNJjcR_cWZa8vQ8t"}

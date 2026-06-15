@@ -12,6 +12,64 @@ use CodeIgniter\HTTP\ResponseInterface;
 class TokenController extends BaseApiController
 {
     /**
+     * Bank details of the caller's immediate upstream tier — vendor→taluk,
+     * taluk→district, district→state, state→admin — so each tier knows where
+     * to pay when topping up tokens. Returns { upstream: {...} | null }.
+     */
+    public function upstreamBank(): ResponseInterface
+    {
+        $auth = $this->authUser();
+        if (! $auth) return $this->fail('Unauthorized', 401);
+
+        $users          = new UserModel();
+        $upstreamUserId = null;
+        $upstreamRole   = null;
+
+        if ($auth->role === 'vendor') {
+            $upstreamRole = 'taluk';
+            $prof    = (new \App\Models\VendorProfileModel())->where('user_id', (int) $auth->id)->first();
+            $talukId = (int) ($prof['taluk_id'] ?? 0);
+            if ($talukId) {
+                $taluk = (new \App\Models\TalukModel())->find($talukId);
+                $upstreamUserId = (int) ($taluk['user_id'] ?? 0) ?: null;
+            }
+        } elseif ($auth->role === 'taluk') {
+            $upstreamRole = 'district';
+            $taluk = (new \App\Models\TalukModel())->where('user_id', (int) $auth->id)->first();
+            if ($taluk && ! empty($taluk['district_id'])) {
+                $dist = (new \App\Models\DistrictModel())->find((int) $taluk['district_id']);
+                $upstreamUserId = (int) ($dist['user_id'] ?? 0) ?: null;
+            }
+        } elseif ($auth->role === 'district') {
+            $upstreamRole = 'state';
+            $dist = (new \App\Models\DistrictModel())->where('user_id', (int) $auth->id)->first();
+            if ($dist && ! empty($dist['state_id'])) {
+                $state = (new \App\Models\StateModel())->find((int) $dist['state_id']);
+                $upstreamUserId = (int) ($state['user_id'] ?? 0) ?: null;
+            }
+        } elseif ($auth->role === 'state') {
+            $upstreamRole = 'admin';
+            $admin = $users->where('role', 'admin')->where('status', 'active')->orderBy('id', 'ASC')->first();
+            $upstreamUserId = $admin ? (int) $admin['id'] : null;
+        }
+
+        if (! $upstreamUserId) return $this->ok(['upstream' => null]);
+        $u = $users->find($upstreamUserId);
+        if (! $u) return $this->ok(['upstream' => null]);
+
+        return $this->ok(['upstream' => [
+            'role'           => $upstreamRole,
+            'name'           => $u['name'] ?? null,
+            'mobile_number'  => $u['mobile_number'] ?? null,
+            'account_holder' => $u['account_holder'] ?? null,
+            'bank_name'      => $u['bank_name'] ?? null,
+            'account_number' => $u['account_number'] ?? null,
+            'ifsc_code'      => $u['ifsc_code'] ?? null,
+            'upi'            => $u['upi'] ?? null,
+        ]]);
+    }
+
+    /**
      * Distribute tokens one step down the chain (admin→state→district→taluk→vendor).
      * Markups + balance moves happen inside TokenService::distribute().
      */

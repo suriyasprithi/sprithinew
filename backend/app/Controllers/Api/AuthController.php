@@ -408,13 +408,19 @@ class AuthController extends BaseApiController
         $file->move($dir, $name);
         $path = 'uploads/shops/' . $name;
 
+        // Goes to pending review — the live `image` keeps showing to customers
+        // until an admin approves. Re-uploading after a rejection resets to pending.
         $vp = new \App\Models\VendorProfileModel();
         if ($vp->where('user_id', (int) $auth->id)->first()) {
-            $vp->update((int) $auth->id, ['image' => $path]);
+            $vp->update((int) $auth->id, [
+                'image_pending'       => $path,
+                'image_status'        => 'pending',
+                'image_reject_reason' => null,
+            ]);
         }
 
         $user = (new UserModel())->find((int) $auth->id);
-        return $this->ok($this->publicUser($user), 'Shop image updated');
+        return $this->ok($this->publicUser($user), 'Shop image submitted for approval');
     }
 
     private function issueTokens(int $userId, string $role, array $user, int $status, string $message): ResponseInterface
@@ -449,10 +455,16 @@ class AuthController extends BaseApiController
         // surface them so the vendor can see/edit them on their profile pages.
         $gst       = null;
         $shopImage = null;
+        $shopImagePending = null;
+        $shopImageStatus  = null;
+        $shopImageReject  = null;
         if (($user['role'] ?? '') === 'vendor') {
-            $prof      = (new \App\Models\VendorProfileModel())->where('user_id', (int) $user['id'])->first();
-            $gst       = $prof['gst'] ?? null;
-            $shopImage = $prof['image'] ?? null;
+            $prof             = (new \App\Models\VendorProfileModel())->where('user_id', (int) $user['id'])->first();
+            $gst              = $prof['gst'] ?? null;
+            $shopImage        = $prof['image'] ?? null;
+            $shopImagePending = $prof['image_pending'] ?? null;
+            $shopImageStatus  = $prof['image_status'] ?? null;
+            $shopImageReject  = $prof['image_reject_reason'] ?? null;
         }
 
         return [
@@ -490,7 +502,10 @@ class AuthController extends BaseApiController
             'ifsc_code'      => $user['ifsc_code'] ?? null,
             'upi'            => $user['upi'] ?? null,
             'gst'            => $gst,
-            'shop_image'     => $shopImage,
+            'shop_image'         => $shopImage,
+            'shop_image_pending' => $shopImagePending,
+            'shop_image_status'  => $shopImageStatus,
+            'shop_image_reject_reason' => $shopImageReject,
         ];
     }
 }

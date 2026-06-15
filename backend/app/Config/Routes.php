@@ -193,6 +193,7 @@ $routes->group('api/v1', ['filter' => 'cors'], static function ($routes) {
 
     // ===== Tokens (Phase 5 will rebuild) =====
     $routes->group('tokens', ['filter' => 'auth'], static function ($routes) {
+        $routes->get('upstream-bank',       'Api\TokenController::upstreamBank');
         $routes->post('distribute',         'Api\TokenController::distribute');
         $routes->get('distribute/quote',    'Api\TokenController::quote');
         $routes->get('distribute/history',  'Api\TokenController::distributeHistory');
@@ -244,6 +245,10 @@ $routes->group('api/v1', ['filter' => 'cors'], static function ($routes) {
         $routes->post('ad-requests/(:num)/approve',  'Api\AdRequestController::approve/$1');
         $routes->post('ad-requests/(:num)/reject',   'Api\AdRequestController::reject/$1');
         $routes->post('ad-requests/(:num)/use-as-banner', 'Api\AdRequestController::useAsBanner/$1');
+        // shop image approval (vendor uploads → admin approves/rejects)
+        $routes->get('shop-images',                  'Api\AdminShopImageController::index');
+        $routes->post('shop-images/(:num)/approve',  'Api\AdminShopImageController::approve/$1');
+        $routes->post('shop-images/(:num)/reject',   'Api\AdminShopImageController::reject/$1');
         // customers
         $routes->get('customers',                    'Api\AdminUsersController::customers');
         $routes->patch('customers/(:num)',           'Api\AdminUsersController::update/$1');

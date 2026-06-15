@@ -139,6 +139,9 @@ export type AuthUser = {
   upi?: string | null;
   gst?: string | null;
   shop_image?: string | null;
+  shop_image_pending?: string | null;
+  shop_image_status?: "pending" | "approved" | "rejected" | null;
+  shop_image_reject_reason?: string | null;
 };
 
 export type AuthTokens = {

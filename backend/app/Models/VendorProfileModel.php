@@ -13,7 +13,7 @@ class VendorProfileModel extends Model
     protected $useSoftDeletes   = false;
     protected $protectFields    = true;
 
-    protected $allowedFields = ['user_id','vendor_category_id','commission_pct','shop_name','address','area','state_id','district_id','taluk_id','pincode','gst','image'];
+    protected $allowedFields = ['user_id','vendor_category_id','commission_pct','shop_name','address','area','state_id','district_id','taluk_id','pincode','gst','image','image_pending','image_status','image_reject_reason','image_reviewed_by'];
 
     protected $useTimestamps = true;
     protected $dateFormat    = 'datetime';
