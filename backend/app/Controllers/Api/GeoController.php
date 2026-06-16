@@ -26,6 +26,9 @@ class GeoController extends BaseApiController
         ])) return $this->fail('Validation failed', 422, $this->validator->getErrors());
 
         $d = $this->request->getJSON(true) ?? $this->request->getPost();
+        if ($this->stateNameExists($d['name'])) {
+            return $this->fail('A state with this name already exists', 409);
+        }
         $users = new UserModel();
         if ($users->mobileExistsForRole($d['mobile_number'], 'state')) {
             return $this->fail('Mobile already used for state', 409);
@@ -55,6 +58,10 @@ class GeoController extends BaseApiController
         $states = new StateModel();
         $row = $states->find($id);
         if (! $row) return $this->fail('State not found', 404);
+
+        if (isset($d['name']) && $this->stateNameExists($d['name'], $id)) {
+            return $this->fail('A state with this name already exists', 409);
+        }
 
         $payload = array_intersect_key($d, array_flip(['name', 'status']));
         if ($payload) $states->update($id, $payload);
@@ -404,6 +411,23 @@ class GeoController extends BaseApiController
             'password_hash' => password_hash($d['password'], PASSWORD_BCRYPT),
         ]);
         return $this->ok(null, 'Password updated');
+    }
+
+    /**
+     * True if another state already has this name, compared case- and
+     * whitespace-insensitively ("Tamil nadu" == "tamilnadu" == "  TAMILNADU ").
+     * Pass $excludeId when renaming so a state doesn't clash with itself.
+     */
+    private function stateNameExists(string $name, ?int $excludeId = null): bool
+    {
+        $norm   = static fn ($s) => preg_replace('/\s+/u', '', mb_strtolower(trim((string) $s)));
+        $target = $norm($name);
+        if ($target === '') return false;
+        foreach ((new StateModel())->findAll() as $row) {
+            if ($excludeId !== null && (int) $row['id'] === $excludeId) continue;
+            if ($norm($row['name'] ?? '') === $target) return true;
+        }
+        return false;
     }
 
     private function requireRole(array $roles): ?ResponseInterface
