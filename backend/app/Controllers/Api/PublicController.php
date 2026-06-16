@@ -227,7 +227,7 @@ class PublicController extends BaseApiController
                 'address'   => $p['address']   ?? null,
                 'area'      => $p['area']      ?? null,
                 'pincode'   => $p['pincode']   ?? null,
-                'image'     => $p['image']     ?? null,
+                'image'     => (($p['image_status'] ?? '') === 'inactive') ? null : ($p['image'] ?? null),
                 'gst'       => $p['gst']       ?? null,
             ];
         }, $rows);

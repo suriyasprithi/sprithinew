@@ -16,13 +16,17 @@ use CodeIgniter\HTTP\ResponseInterface;
  */
 class AdminShopImageController extends BaseApiController
 {
-    /** Pending shop-image submissions, newest first, with vendor + shop name. */
+    /**
+     * Shop images the admin can act on: pending submissions (approve/reject),
+     * live images (deactivate) and deactivated ones (reactivate). Each row's
+     * `state` tells the UI which actions to show.
+     */
     public function index(): ResponseInterface
     {
         if ($r = $this->requireAdmin()) return $r;
 
         $rows = (new VendorProfileModel())
-            ->where('image_status', 'pending')
+            ->where("((image IS NOT NULL AND image <> '') OR (image_pending IS NOT NULL AND image_pending <> ''))")
             ->orderBy('updated_at', 'DESC')
             ->findAll(300);
 
@@ -32,18 +36,60 @@ class AdminShopImageController extends BaseApiController
         foreach ($vendors as $v) { $vmap[(int) $v['id']] = $v; }
 
         $items = array_map(static function ($r) use ($vmap) {
-            $v = $vmap[(int) $r['user_id']] ?? [];
+            $v          = $vmap[(int) $r['user_id']] ?? [];
+            $status     = $r['image_status'] ?? null;
+            $hasPending = ! empty($r['image_pending']);
+            $hasLive    = ! empty($r['image']);
+            // pending → review; inactive → reactivate; otherwise a live image → deactivate.
+            $state = ($status === 'pending' && $hasPending) ? 'pending'
+                   : ($status === 'inactive' ? 'inactive' : ($hasLive ? 'live' : 'pending'));
             return [
                 'vendor_id'         => (int) $r['user_id'],
                 'vendor_name'       => $v['name'] ?? '—',
                 'shop_name'         => $r['shop_name'] ?? null,
-                'image_url'         => ! empty($r['image']) ? base_url($r['image']) : null,
-                'image_pending_url' => ! empty($r['image_pending']) ? base_url($r['image_pending']) : null,
+                'state'             => $state,
+                // Root-relative so the <img> resolves against whatever origin the
+                // app is served from (localhost:8000 / prod domain). base_url() is
+                // pinned to app.baseURL (8080 here) and breaks on a different port.
+                'image_url'         => $hasLive ? '/' . ltrim($r['image'], '/') : null,
+                'image_pending_url' => $hasPending ? '/' . ltrim($r['image_pending'], '/') : null,
                 'updated_at'        => $r['updated_at'] ?? null,
             ];
         }, $rows);
 
         return $this->ok(['items' => $items]);
+    }
+
+    /** Hide an approved/live shop image from customers (keeps it stored). */
+    public function deactivate(int $userId): ResponseInterface
+    {
+        if ($r = $this->requireAdmin()) return $r;
+
+        $vp  = new VendorProfileModel();
+        $row = $vp->find($userId);
+        if (! $row) return $this->fail('Not found', 404);
+        if (empty($row['image'])) return $this->fail('No live image to deactivate', 422);
+        if (($row['image_status'] ?? null) === 'inactive') return $this->fail('Already inactive', 409);
+
+        $vp->update($userId, ['image_status' => 'inactive', 'image_reviewed_by' => (int) $this->authUser()->id]);
+        $this->notify($userId, 'Shop image hidden', 'An admin hid your shop image from customers.');
+        return $this->ok(null, 'Deactivated');
+    }
+
+    /** Re-show a previously deactivated shop image to customers. */
+    public function reactivate(int $userId): ResponseInterface
+    {
+        if ($r = $this->requireAdmin()) return $r;
+
+        $vp  = new VendorProfileModel();
+        $row = $vp->find($userId);
+        if (! $row) return $this->fail('Not found', 404);
+        if (($row['image_status'] ?? null) !== 'inactive') return $this->fail('Not inactive', 409);
+        if (empty($row['image'])) return $this->fail('No image to reactivate', 422);
+
+        $vp->update($userId, ['image_status' => 'approved', 'image_reviewed_by' => (int) $this->authUser()->id]);
+        $this->notify($userId, 'Shop image live again', 'Your shop image is showing to customers again.');
+        return $this->ok(null, 'Reactivated');
     }
 
     /** Approve: pending image becomes the live image shown to customers. */

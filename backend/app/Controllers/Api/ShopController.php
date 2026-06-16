@@ -62,7 +62,7 @@ class ShopController extends BaseApiController
             'area'          => $byId[(int) $u['id']]['area']    ?? '',
             'pincode'       => $byId[(int) $u['id']]['pincode'] ?? '',
             'mobile'        => $u['mobile_number']              ?? '',
-            'image'         => $byId[(int) $u['id']]['image']   ?? '',
+            'image'         => (($byId[(int) $u['id']]['image_status'] ?? '') === 'inactive') ? '' : ($byId[(int) $u['id']]['image'] ?? ''),
             'product_count' => $countBy[(int) $u['id']] ?? 0,
         ], $rows);
 
@@ -114,7 +114,7 @@ class ShopController extends BaseApiController
                 'area'      => $profile['area']    ?? '',
                 'pincode'   => $profile['pincode'] ?? '',
                 'address'   => $profile['address'] ?? '',
-                'image'     => $profile['image']   ?? '',
+                'image'     => (($profile['image_status'] ?? '') === 'inactive') ? '' : ($profile['image'] ?? ''),
                 'product_count' => count($products),
             ],
             'products'   => $products,
