@@ -42,7 +42,7 @@ export function ProductImage({ src, alt, className }: Props) {
       )}
     >
       <span className="flex h-1/3 max-h-12 min-h-8 w-1/3 max-w-12 min-w-8 items-center justify-center rounded-lg brand-gradient text-brand-foreground text-xl font-bold">
-        E
+        S
       </span>
       <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
         SPRITHI

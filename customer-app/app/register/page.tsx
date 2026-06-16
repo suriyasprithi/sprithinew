@@ -69,6 +69,8 @@ function RegisterInner() {
   const [referrerCode, setReferrerCode] = useState("");
   const [referrerName, setReferrerName] = useState<string | null>(null);
   const [refChecking, setRefChecking] = useState(false);
+  const [mobileTaken, setMobileTaken] = useState<boolean | null>(null);
+  const [mobileChecking, setMobileChecking] = useState(false);
   const [busy, setBusy] = useState(false);
 
   const [states, setStates] = useState<GeoState[]>([]);
@@ -101,6 +103,25 @@ function RegisterInner() {
     return () => { cancelled = true; clearTimeout(t); };
   }, [referrerCode]);
 
+  // Flag a mobile that's already a customer, before the form is submitted.
+  // Debounced; resets when the number isn't a full 10 digits. Network errors
+  // are ignored — register() still rejects duplicates with a 409 on submit.
+  useEffect(() => {
+    if (!isMobile(mobile)) { setMobileTaken(null); setMobileChecking(false); return; }
+    let cancelled = false;
+    setMobileChecking(true);
+    const t = setTimeout(() => {
+      void (async () => {
+        try {
+          const r = await api.get("/auth/check-mobile", { params: { mobile } });
+          if (!cancelled) setMobileTaken(!(r.data?.data?.available ?? true));
+        } catch { if (!cancelled) setMobileTaken(null); }
+        finally { if (!cancelled) setMobileChecking(false); }
+      })();
+    }, 400);
+    return () => { cancelled = true; clearTimeout(t); };
+  }, [mobile]);
+
   useEffect(() => {
     let cancelled = false;
     void (async () => {
@@ -130,6 +151,7 @@ function RegisterInner() {
     e.preventDefault();
     if (!name) return toast.error("Name is required");
     if (!isMobile(mobile)) return toast.error("Enter a valid 10-digit mobile number");
+    if (mobileTaken) return toast.error("This mobile is already registered. Please log in.");
     if (!dob) return toast.error("Date of birth is required");
     if (ageFrom(dob) < 18) return toast.error("You must be at least 18 to register");
     if (stateId == null) return toast.error("Select your state");
@@ -204,7 +226,9 @@ function RegisterInner() {
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="mobile">Mobile</Label>
-                <Input id="mobile" type="tel" inputMode="numeric" autoComplete="tel" placeholder="9999999999" value={mobile} onChange={(e) => setMobile(cleanMobile(e.target.value))} disabled={busy || isLoading} className="h-11 rounded-xl bg-surface-2/60" />
+                <Input id="mobile" type="tel" inputMode="numeric" autoComplete="tel" placeholder="9999999999" value={mobile} onChange={(e) => setMobile(cleanMobile(e.target.value))} disabled={busy || isLoading} className={`h-11 rounded-xl bg-surface-2/60 ${mobileTaken ? "border-rose-500" : ""}`} />
+                {mobileChecking && <p className="text-[11px] text-muted-foreground">Checking…</p>}
+                {mobileTaken === true && <p className="text-[11px] text-rose-500">This number is already registered. Please log in.</p>}
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="pincode">Pincode</Label>

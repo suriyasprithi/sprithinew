@@ -84,6 +84,22 @@ class AuthController extends BaseApiController
     }
 
     /**
+     * Public: is this mobile free for a NEW customer signup? Lets the register
+     * form flag a duplicate on the field before submitting (register() still
+     * rejects duplicates with 409 as the backstop). Customer-role scope only —
+     * the same mobile can separately be a vendor/staff login.
+     */
+    public function checkMobile(): ResponseInterface
+    {
+        $mobile = trim((string) $this->request->getGet('mobile'));
+        if (! preg_match('/^[0-9]{10}$/', $mobile)) {
+            return $this->fail('Invalid mobile', 422);
+        }
+        $exists = (new UserModel())->mobileExistsForRole($mobile, 'customer');
+        return $this->ok(['available' => ! $exists]);
+    }
+
+    /**
      * Walk up to 3 levels and: (a) bump level_*_count on each ancestor,
      * (b) insert a referrals row for each ancestor so the activity feed shows
      * the signup. Each row records the per-level welcome-bonus amount that

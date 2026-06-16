@@ -15,6 +15,7 @@ $routes->group('api/v1', ['filter' => 'cors'], static function ($routes) {
     // ===== Auth =====
     $routes->group('auth', static function ($routes) {
         $routes->post('register',    'Api\AuthController::register',   ['filter' => 'rate_limit:auth-register,10,3600']);
+        $routes->get('check-mobile', 'Api\AuthController::checkMobile', ['filter' => 'rate_limit:auth-login,30,300']);
         $routes->post('login',       'Api\AuthController::login',      ['filter' => 'rate_limit:auth-login,10,300']);
         $routes->post('staff-login',     'Api\AuthController::staffLogin', ['filter' => 'rate_limit:auth-login,10,300']);
         $routes->post('forgot-password', 'Api\AuthController::forgotPassword', ['filter' => 'rate_limit:auth-login,5,3600']);
