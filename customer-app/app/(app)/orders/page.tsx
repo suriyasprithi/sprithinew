@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { BadgeCheck, ChevronDown, Loader2, MapPin, ShoppingBag, Store } from "lucide-react";
+import { BadgeCheck, ChevronDown, Loader2, MapPin, RotateCcw, ShoppingBag, Store } from "lucide-react";
 import { toast } from "sonner";
 import { AppHeader } from "@/components/layout/app-header";
 import { LuxuryCard } from "@/components/ui/custom/luxury-card";
@@ -31,6 +31,11 @@ type OrderRow = {
   district_name?: string | null;
   driver_name?: string | null;
   product_names?: string | null;
+  delivered_at?: string | null;
+  return_window_days?: number;
+  return_eligible_until?: string | null;
+  can_return?: boolean;
+  return_requested?: boolean;
 };
 
 type DriverInfo = { id: number; name: string; mobile: string | null; id_card_url: string | null };
@@ -63,6 +68,7 @@ export default function OrdersPage() {
   const [openId, setOpenId] = useState<number | null>(null);
   const [loadingId, setLoadingId] = useState<number | null>(null);
   const [detailById, setDetailById] = useState<Record<number, OrderDetail>>({});
+  const [returningId, setReturningId] = useState<number | null>(null);
 
   async function toggleDetail(id: number) {
     if (openId === id) { setOpenId(null); return; }
@@ -81,19 +87,32 @@ export default function OrdersPage() {
     }
   }
 
-  useEffect(() => {
-    void (async () => {
-      try {
-        const res = await api.get("/orders/mine");
-        setItems((res.data.data?.items ?? []) as OrderRow[]);
-      } catch (e) {
-        toast.error(apiErrorMessage(e));
-        setItems([]);
-      } finally {
-        setLoading(false);
-      }
-    })();
-  }, []);
+  async function load() {
+    try {
+      const res = await api.get("/orders/mine");
+      setItems((res.data.data?.items ?? []) as OrderRow[]);
+    } catch (e) {
+      toast.error(apiErrorMessage(e));
+      setItems([]);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => { void load(); }, []);
+
+  async function requestReturn(id: number) {
+    setReturningId(id);
+    try {
+      await api.post(`/orders/${id}/return`);
+      toast.success("Return requested — our team will reach out.");
+      await load();
+    } catch (e) {
+      toast.error(apiErrorMessage(e));
+    } finally {
+      setReturningId(null);
+    }
+  }
 
   return (
     <>
@@ -141,6 +160,32 @@ export default function OrdersPage() {
                     <p className="text-[11px] text-muted-foreground">{(o.created_at ?? "").replace("T", " ").slice(0, 16)}</p>
                     <p className="text-lg font-bold text-brand">{fmtINR(Number(o.total))}</p>
                   </div>
+
+                  {o.status === "delivered" && (o.return_window_days ?? 0) > 0 && (
+                    <div className="mt-3 border-t border-border/60 pt-3">
+                      {o.return_requested ? (
+                        <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-500/10 px-2.5 py-1 text-xs font-medium text-amber-500">
+                          <RotateCcw className="h-3.5 w-3.5" /> Return requested
+                        </span>
+                      ) : o.can_return ? (
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <p className="text-xs text-muted-foreground">
+                            Returnable until {(o.return_eligible_until ?? "").replace("T", " ").slice(0, 16)}
+                          </p>
+                          <button
+                            type="button"
+                            onClick={() => void requestReturn(o.id)}
+                            disabled={returningId === o.id}
+                            className="inline-flex items-center gap-1.5 rounded-full border border-brand/40 px-3 py-1.5 text-xs font-semibold text-brand hover:bg-brand/10 disabled:opacity-50"
+                          >
+                            {returningId === o.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RotateCcw className="h-3.5 w-3.5" />} Request Return
+                          </button>
+                        </div>
+                      ) : (
+                        <p className="text-xs text-muted-foreground">Return window closed for this order.</p>
+                      )}
+                    </div>
+                  )}
 
                   <div className="mt-3 border-t border-border/60 pt-3">
                     <button

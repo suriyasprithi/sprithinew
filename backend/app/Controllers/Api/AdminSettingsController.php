@@ -37,6 +37,8 @@ class AdminSettingsController extends BaseApiController
         'buyback.slot_2_pct'         => '10',
         'buyback.slot_3_pct'         => '5',
         'buyback.slot_4_pct'         => '2.5',
+        // Days after delivery a customer may request a return. 0 = returns disabled.
+        'returns.window_days'        => '0',
     ];
 
     /**

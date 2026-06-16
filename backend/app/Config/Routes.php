@@ -105,6 +105,7 @@ $routes->group('api/v1', ['filter' => 'cors'], static function ($routes) {
         $routes->get('list',           'Api\OrderController::listForRole');
         $routes->get('(:num)',         'Api\OrderController::show/$1');
         $routes->patch('(:num)/status','Api\OrderController::setStatus/$1');
+        $routes->post('(:num)/return', 'Api\OrderController::requestReturn/$1');
     });
     // Driver-scoped: orders for the current driver's assigned vendor (awaiting delivery).
     $routes->get('driver/orders', 'Api\OrderController::driverOrders', ['filter' => 'auth']);

@@ -7,6 +7,7 @@ use App\Models\CustomerAddressModel;
 use App\Models\DeliveryTimeRateModel;
 use App\Models\OrderItemModel;
 use App\Models\OrderModel;
+use App\Models\OrderReturnModel;
 use App\Models\ProductModel;
 use App\Models\ProductVariantModel;
 use App\Models\UserModel;
@@ -14,6 +15,7 @@ use App\Models\VendorProfileModel;
 use App\Models\WalletTransactionModel;
 use App\Services\CommissionService;
 use App\Services\NotificationService;
+use App\Services\SystemSettingsService;
 use App\Services\TokenService;
 use App\Services\WalletService;
 use CodeIgniter\HTTP\ResponseInterface;
@@ -289,7 +291,46 @@ class OrderController extends BaseApiController
             [(int) $auth->id]
         )->getResultArray();
 
+        // Return eligibility per order (global window setting + any open request).
+        $days     = (int) (new SystemSettingsService())->get('returns.window_days', '0');
+        $orderIds = array_map(static fn ($r) => (int) $r['id'], $rows);
+        $requested = [];
+        if ($orderIds) {
+            $rr = $db->table('order_returns')->select('order_id')
+                ->whereIn('order_id', $orderIds)->where('status !=', 'rejected')
+                ->get()->getResultArray();
+            foreach ($rr as $r) $requested[(int) $r['order_id']] = true;
+        }
+        foreach ($rows as &$row) {
+            $row = array_merge($row, $this->returnInfo($row, $days, isset($requested[(int) $row['id']])));
+        }
+        unset($row);
+
         return $this->ok(['items' => $rows]);
+    }
+
+    /**
+     * Return eligibility for one order given the global window (days).
+     *   return_window_days    — the admin setting (0 = returns disabled)
+     *   return_eligible_until — delivered_at + window ('Y-m-d H:i:s') or null
+     *   can_return            — delivered, window>0, now <= until, no open request
+     *   return_requested      — a non-rejected return already exists
+     */
+    private function returnInfo(array $order, int $windowDays, bool $hasRequest): array
+    {
+        $deliveredAt = $order['delivered_at'] ?? null;
+        $until = null; $canReturn = false;
+        if ($windowDays > 0 && ($order['status'] ?? '') === 'delivered' && ! empty($deliveredAt)) {
+            $ts        = strtotime($deliveredAt . ' +' . $windowDays . ' days');
+            $until     = date('Y-m-d H:i:s', $ts);
+            $canReturn = ! $hasRequest && time() <= $ts;
+        }
+        return [
+            'return_window_days'    => $windowDays,
+            'return_eligible_until' => $until,
+            'can_return'            => $canReturn,
+            'return_requested'      => $hasRequest,
+        ];
     }
 
     public function show(int $id): ResponseInterface
@@ -332,6 +373,11 @@ class OrderController extends BaseApiController
                 ];
             }
         }
+
+        // Return eligibility (same shape as mine()) so the detail view can show it.
+        $days   = (int) (new SystemSettingsService())->get('returns.window_days', '0');
+        $hasReq = (bool) (new OrderReturnModel())->where('order_id', $id)->where('status !=', 'rejected')->countAllResults();
+        $order  = array_merge($order, $this->returnInfo($order, $days, $hasReq));
 
         return $this->ok(['order' => $order, 'items' => $items, 'driver' => $driver]);
     }
@@ -490,6 +536,11 @@ class OrderController extends BaseApiController
         $patch = ['status' => $status];
         // Record which driver handled the order so the customer can see who delivered it.
         if ($auth->role === 'driver') $patch['driver_id'] = (int) $auth->id;
+        // Stamp the delivery time on the first transition to delivered — the return
+        // window (admin setting returns.window_days) is measured from this.
+        if ($status === 'delivered' && ($order['status'] ?? '') !== 'delivered' && empty($order['delivered_at'])) {
+            $patch['delivered_at'] = date('Y-m-d H:i:s');
+        }
         $model->update($id, $patch);
 
         // COD settles on delivery: the cash is now collected, so credit the vendor
@@ -542,5 +593,47 @@ class OrderController extends BaseApiController
             }
         }
         return $this->ok(null, 'Updated');
+    }
+
+    /** Customer: request a return for a delivered order, within the return window. */
+    public function requestReturn(int $id): ResponseInterface
+    {
+        $auth = $this->authUser();
+        if (! $auth) return $this->fail('Unauthorized', 401);
+
+        $order = (new OrderModel())->find($id);
+        if (! $order) return $this->fail('Not found', 404);
+        if ((int) $order['customer_id'] !== (int) $auth->id) return $this->fail('Forbidden', 403);
+        if (($order['status'] ?? '') !== 'delivered' || empty($order['delivered_at'])) {
+            return $this->fail('Only delivered orders can be returned', 422);
+        }
+
+        $days = (int) (new SystemSettingsService())->get('returns.window_days', '0');
+        if ($days <= 0) return $this->fail('Returns are disabled', 422);
+        if (time() > strtotime($order['delivered_at'] . ' +' . $days . ' days')) {
+            return $this->fail('Return window has closed', 422);
+        }
+
+        $rrm = new OrderReturnModel();
+        if ($rrm->where('order_id', $id)->where('status !=', 'rejected')->countAllResults() > 0) {
+            return $this->fail('A return request already exists for this order', 409);
+        }
+
+        $d      = $this->request->getJSON(true) ?? $this->request->getPost() ?? [];
+        $reason = trim((string) ($d['reason'] ?? ''));
+        $rrm->insert([
+            'order_id'    => $id,
+            'customer_id' => (int) $auth->id,
+            'reason'      => $reason !== '' ? mb_substr($reason, 0, 255) : null,
+            'status'      => 'pending',
+        ]);
+
+        try {
+            (new NotificationService())->sendTypedToRole('admin', 'order_update', $id, '/orders', 'Return requested', "Order #{$id} — a customer requested a return");
+        } catch (\Throwable $e) {
+            log_message('error', 'Return request admin notify failed: ' . $e->getMessage());
+        }
+
+        return $this->ok(null, 'Return requested');
     }
 }

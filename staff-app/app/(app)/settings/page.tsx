@@ -23,6 +23,7 @@ const META: Record<string, { title: string; description: string }> = {
   welcome:    { title: "Welcome bonus",  description: "Per-level referral signup bonus (L1 / L2 / L3) credited to each upline's level wallet." },
   mlm:        { title: "MLM commission", description: "Multi-level commission split (L1 / L2 / L3)." },
   buyback:    { title: "Buyback queue",  description: "Buyback FIFO slot allocations." },
+  returns:    { title: "Returns",        description: "How long after delivery customers can request a return." },
 };
 
 // Friendly field labels for the keys that aren't self-explanatory.
@@ -43,6 +44,7 @@ const LABELS: Record<string, string> = {
   "buyback.slot_2_pct":         "Slot 2 (%)",
   "buyback.slot_3_pct":         "Slot 3 (%)",
   "buyback.slot_4_pct":         "Slot 4 (%)",
+  "returns.window_days":        "Return Window (Days)",
 };
 
 // The token bonus keys get their own card; everything else by prefix.
@@ -167,7 +169,27 @@ export default function SettingsPage() {
                     {g.description && <p className="mt-0.5 text-xs text-muted-foreground">{g.description}</p>}
                   </div>
                   <div className="grid gap-3 md:grid-cols-2">
-                    {g.items.map((s) => (
+                    {g.items.map((s) => s.setting_key === "returns.window_days" ? (
+                      <div key={s.setting_key} className="space-y-1.5 md:col-span-2">
+                        <div className="flex items-baseline justify-between gap-2">
+                          <span className="text-xs font-medium">{LABELS[s.setting_key]}</span>
+                          <code className="text-[10px] text-muted-foreground">{s.setting_key}</code>
+                        </div>
+                        <Input
+                          type="number"
+                          min={0}
+                          step={1}
+                          inputMode="numeric"
+                          value={s.value}
+                          onChange={(e) => update(s.setting_key, e.target.value.replace(/[^0-9]/g, ""))}
+                          className="font-mono text-sm"
+                        />
+                        <p className="text-[11px] text-muted-foreground">Set the number of days customers can request a return after delivery. Set 0 to disable returns.</p>
+                        {(s.value === "" || s.value === "0") && (
+                          <span className="inline-flex w-fit items-center rounded-full bg-amber-500/10 px-2 py-0.5 text-[11px] font-medium text-amber-500">Returns Disabled</span>
+                        )}
+                      </div>
+                    ) : (
                       <div key={s.setting_key} className="space-y-1.5">
                         {LABELS[s.setting_key] ? (
                           <div className="flex items-baseline justify-between gap-2">
