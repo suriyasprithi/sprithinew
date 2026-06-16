@@ -37,10 +37,13 @@ class WalletController extends BaseApiController
 
         $wallet = (string) $this->request->getGet('wallet');
 
-        // Virtual "referral" alias = L1 + L2 + L3 commissions combined.
+        // Virtual aliases spanning the L1/L2/L3 wallets:
+        //   referral = purchase commissions (excludes signup bonuses)
+        //   welcome  = per-level referral signup bonuses only
         $isReferral = $wallet === 'referral';
-        $tagWallets = $isReferral ? ['level_1', 'level_2', 'level_3'] : [$wallet];
-        if (! $isReferral && ! in_array($wallet, \App\Services\WalletService::WALLETS, true)) {
+        $isWelcome  = $wallet === 'welcome';
+        $tagWallets = ($isReferral || $isWelcome) ? ['level_1', 'level_2', 'level_3'] : [$wallet];
+        if (! $isReferral && ! $isWelcome && ! in_array($wallet, \App\Services\WalletService::WALLETS, true)) {
             return $this->fail('Invalid wallet', 422);
         }
 
@@ -72,10 +75,13 @@ class WalletController extends BaseApiController
             $params[] = '%[legacy purchase]%';
         }
         $where = 'user_id = ? AND (' . implode(' OR ', $conds) . ')';
-        // The referral/LEVEL view is commission-only: drop the signup referral
-        // bonuses (they live in the same level_N wallets but are shown separately).
+        // The referral view is commission-only: drop the signup referral bonuses
+        // (they live in the same level_N wallets but are shown on their own tab).
+        // The welcome view is the inverse — signup bonuses only.
         if ($isReferral) {
             $where .= " AND type != 'welcome_bonus'";
+        } elseif ($isWelcome) {
+            $where .= " AND type = 'welcome_bonus'";
         }
 
         // Fetch up to 2000 matching rows: totals are summed over all of them,
@@ -142,18 +148,20 @@ class WalletController extends BaseApiController
 
         // Current balance (for the header card).
         $bal = (new \App\Services\WalletService())->balances((int) $auth->id);
-        if ($isReferral) {
-            // Match the dashboard LEVEL card EXACTLY: L1+L2+L3 wallet balance minus
-            // the referral signup bonuses that also sit in those wallets. (The
-            // wallet balance — not the transaction sum — is authoritative; they
-            // differ slightly for legacy-imported users.)
+        if ($isReferral || $isWelcome) {
+            // Signup bonuses sit in the same level_N wallets as commissions, so
+            // split the wallet total: commission = total − bonus, welcome = bonus.
+            // The wallet balance (not the txn sum) is authoritative — they differ
+            // slightly for legacy-imported users.
             $refBonus = (float) ($db->query(
                 "SELECT COALESCE(SUM(amount),0) AS s FROM wallet_transactions
                  WHERE user_id = ? AND type = 'welcome_bonus'
                    AND (notes LIKE '%[+level_1]%' OR notes LIKE '%[+level_2]%' OR notes LIKE '%[+level_3]%')",
                 [(int) $auth->id]
             )->getRow()->s ?? 0);
-            $balance = round(($bal['level_1'] ?? 0) + ($bal['level_2'] ?? 0) + ($bal['level_3'] ?? 0) - $refBonus, 2);
+            $levelTotal = ($bal['level_1'] ?? 0) + ($bal['level_2'] ?? 0) + ($bal['level_3'] ?? 0);
+            // referral = dashboard LEVEL card (commission only); welcome = bonus only.
+            $balance = $isWelcome ? round($refBonus, 2) : round($levelTotal - $refBonus, 2);
         } else {
             $balance = (float) ($bal[$wallet] ?? 0);
         }

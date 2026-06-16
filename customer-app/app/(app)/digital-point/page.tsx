@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
-import { Coins, Loader2, Sparkles, Users, Wallet as WalletIcon, ArrowDownLeft } from "lucide-react";
+import { Coins, Loader2, Sparkles, Users, ArrowDownLeft, Gift } from "lucide-react";
 import { toast } from "sonner";
 import { AppHeader } from "@/components/layout/app-header";
 import { AnimatedCounter } from "@/components/ui/custom/animated-counter";
@@ -28,12 +28,17 @@ type Payload = {
   items: Item[];
 };
 
+// Welcome = per-level signup bonuses (API alias `welcome`); Commission = L1/L2/L3
+// purchase commissions (API alias `referral`). Both span the level_1/2/3 wallets.
 const SECTIONS = [
-  { key: "referral", short: "Referral", title: "Referral Digital Point", icon: Users,         tone: "violet" as const, desc: "L1 + L2 + L3 referral commissions" },
-  { key: "buyback",  short: "Buyback",  title: "Buyback Digital Point",  icon: ArrowDownLeft, tone: "rose"   as const, desc: "Loyalty buyback cycle credits" },
-  { key: "level",    short: "Level",    title: "Level Digital Point",    icon: WalletIcon,    tone: "sky"    as const, desc: "Aggregate level wallet credits" },
-  { key: "global",   short: "Global",   title: "Global Digital Point",   icon: Sparkles,      tone: "amber"  as const, desc: "Monthly global pool credits" },
+  { key: "welcome",  short: "Welcome",    title: "Welcome Bonus Digital Point", icon: Gift,          tone: "sky"    as const, desc: "Per-level referral signup bonus (L1 / L2 / L3)" },
+  { key: "referral", short: "Commission", title: "MLM Commission Digital Point", icon: Users,         tone: "violet" as const, desc: "Multi-level commission split (L1 / L2 / L3)" },
+  { key: "buyback",  short: "Buyback",    title: "Buyback Digital Point",       icon: ArrowDownLeft, tone: "rose"   as const, desc: "Loyalty buyback cycle credits" },
+  { key: "global",   short: "Global",     title: "Global Digital Point",        icon: Sparkles,      tone: "amber"  as const, desc: "Monthly global pool credits" },
 ];
+
+// Streams that break down into L1 / L2 / L3 cards.
+const LEVEL_STREAMS = ["welcome", "referral"];
 
 const TONE: Record<string, { chip: string; bg: string; border: string; tab: string }> = {
   violet: { chip: "bg-[#ede9fe] text-[#6d28d9]", bg: "linear-gradient(135deg,#ffffff 0%,#f5f3ff 100%)", border: "rgba(139,92,246,0.14)", tab: "border-[#8b5cf6] text-[#6d28d9]" },
@@ -48,7 +53,7 @@ const fmtINR = (n: number) =>
 export default function DigitalPointPage() {
   const [data, setData] = useState<Record<string, Payload | null>>({});
   const [loading, setLoading] = useState(true);
-  const [active, setActive] = useState<string>("referral");
+  const [active, setActive] = useState<string>(SECTIONS[0].key);
 
   useEffect(() => {
     void (async () => {
@@ -74,7 +79,7 @@ export default function DigitalPointPage() {
     const t: Record<1 | 2 | 3, { total: number; count: number }> = {
       1: { total: 0, count: 0 }, 2: { total: 0, count: 0 }, 3: { total: 0, count: 0 },
     };
-    if (section.key === "referral" && p) {
+    if (LEVEL_STREAMS.includes(section.key) && p) {
       for (const it of p.items) {
         const lvl = levelOf(it);
         if (lvl && it.direction === "credit") { t[lvl].total += it.amount; t[lvl].count += 1; }
@@ -90,7 +95,7 @@ export default function DigitalPointPage() {
         <div>
           <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#6b7280]">Earnings</p>
           <h2 className="mt-2 text-3xl font-bold tracking-tight text-[#111827] md:text-[34px]">Digital Point</h2>
-          <p className="mt-2 text-base text-[#6b7280]">Track credits across all four reward streams. 1 Digital Point = ₹1.</p>
+          <p className="mt-2 text-base text-[#6b7280]">Track credits across your reward streams. 1 Digital Point = ₹1.</p>
         </div>
 
         {/* Tabs */}
@@ -169,7 +174,7 @@ export default function DigitalPointPage() {
               </div>
             </div>
 
-            {section.key === "referral" && (
+            {LEVEL_STREAMS.includes(section.key) && (
               <div className="mt-4 grid grid-cols-3 gap-2">
                 {([1, 2, 3] as const).map((lvl) => (
                   <div key={lvl} className="rounded-xl border border-black/5 bg-white/70 p-3 text-center">
