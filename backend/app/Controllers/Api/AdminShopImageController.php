@@ -30,12 +30,18 @@ class AdminShopImageController extends BaseApiController
             ->orderBy('updated_at', 'DESC')
             ->findAll(300);
 
+        // Legacy vendors carry an absolute old-site URL (https://sprithi.com/...);
+        // local uploads carry a relative path (uploads/shops/...). Render absolute
+        // URLs as-is; make relative paths root-relative so the <img> resolves
+        // against whatever origin the admin app is served from.
+        $toUrl = static fn (string $v): string => preg_match('#^https?://#i', $v) ? $v : '/' . ltrim($v, '/');
+
         $ids     = array_values(array_unique(array_map(static fn ($r) => (int) $r['user_id'], $rows)));
         $vendors = $ids ? (new UserModel())->whereIn('id', $ids)->findAll() : [];
         $vmap    = [];
         foreach ($vendors as $v) { $vmap[(int) $v['id']] = $v; }
 
-        $items = array_map(static function ($r) use ($vmap) {
+        $items = array_map(static function ($r) use ($vmap, $toUrl) {
             $v          = $vmap[(int) $r['user_id']] ?? [];
             $status     = $r['image_status'] ?? null;
             $hasPending = ! empty($r['image_pending']);
@@ -48,11 +54,8 @@ class AdminShopImageController extends BaseApiController
                 'vendor_name'       => $v['name'] ?? '—',
                 'shop_name'         => $r['shop_name'] ?? null,
                 'state'             => $state,
-                // Root-relative so the <img> resolves against whatever origin the
-                // app is served from (localhost:8000 / prod domain). base_url() is
-                // pinned to app.baseURL (8080 here) and breaks on a different port.
-                'image_url'         => $hasLive ? '/' . ltrim($r['image'], '/') : null,
-                'image_pending_url' => $hasPending ? '/' . ltrim($r['image_pending'], '/') : null,
+                'image_url'         => $hasLive ? $toUrl($r['image']) : null,
+                'image_pending_url' => $hasPending ? $toUrl($r['image_pending']) : null,
                 'updated_at'        => $r['updated_at'] ?? null,
             ];
         }, $rows);
