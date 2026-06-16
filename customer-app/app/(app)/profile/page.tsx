@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
-import { ArrowLeft, ChevronRight, Home, LogOut, Mail, Phone, Shield, ShieldCheck, Wallet, Coins, User as UserIcon, type LucideIcon } from "lucide-react";
+import { ArrowLeft, ChevronRight, Home, LogOut, Mail, Phone, Shield, ShieldCheck, Wallet, User as UserIcon, type LucideIcon } from "lucide-react";
 import { AppHeader } from "@/components/layout/app-header";
 import { LuxuryCard } from "@/components/ui/custom/luxury-card";
 import { GradientButton } from "@/components/ui/custom/gradient-button";
@@ -80,7 +80,7 @@ export default function ProfilePage() {
           </LuxuryCard>
         </motion.div>
 
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 gap-3">
           <LuxuryCard className="p-4">
             <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-brand/10 text-brand">
               <Wallet className="h-4 w-4" />
@@ -88,15 +88,6 @@ export default function ProfilePage() {
             <p className="mt-3 text-[10px] uppercase tracking-wider text-muted-foreground">Wallet</p>
             <p className="mt-0.5 text-xl font-bold tracking-tight">
               <AnimatedCounter value={user?.wallet_balance ?? 0} format={fmtINR} />
-            </p>
-          </LuxuryCard>
-          <LuxuryCard className="p-4">
-            <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-amber-500/10 text-amber-400">
-              <Coins className="h-4 w-4" />
-            </span>
-            <p className="mt-3 text-[10px] uppercase tracking-wider text-muted-foreground">Tokens</p>
-            <p className="mt-0.5 text-xl font-bold tracking-tight">
-              <AnimatedCounter value={user?.token_balance ?? 0} />
             </p>
           </LuxuryCard>
         </div>
