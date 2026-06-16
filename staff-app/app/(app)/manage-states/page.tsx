@@ -41,6 +41,7 @@ export default function ManageStatesPage() {
   const [items, setItems] = useState<StateRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState<"all" | "active" | "inactive">("all");
   const [editing, setEditing] = useState<Editing | null>(null);
   const [deleteId, setDeleteId] = useState<number | null>(null);
   const [resetting, setResetting] = useState<{ id: number; password: string } | null>(null);
@@ -60,8 +61,9 @@ export default function ManageStatesPage() {
   useEffect(() => { void load(); }, []);
 
   const filtered = useMemo(() => items.filter((s) =>
-    !search || s.name.toLowerCase().includes(search.toLowerCase())
-  ), [items, search]);
+    (!search || s.name.toLowerCase().includes(search.toLowerCase())) &&
+    (statusFilter === "all" || s.status === statusFilter)
+  ), [items, search, statusFilter]);
 
   async function save() {
     if (!editing?.name) { toast.error("Name required"); return; }
@@ -144,9 +146,19 @@ export default function ManageStatesPage() {
         </div>
 
         <div className="glass rounded-2xl p-3">
-          <div className="relative">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search state…" className="h-10 rounded-xl bg-surface-2/60 pl-9" />
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+            <div className="relative flex-1">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search state…" className="h-10 rounded-xl bg-surface-2/60 pl-9" />
+            </div>
+            <Select value={statusFilter} onValueChange={(v) => v && setStatusFilter(v as "all" | "active" | "inactive")}>
+              <SelectTrigger className="h-10 w-full rounded-xl bg-surface-2/60 sm:w-44"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All status</SelectItem>
+                <SelectItem value="active">Active</SelectItem>
+                <SelectItem value="inactive">Inactive</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
         </div>
 
