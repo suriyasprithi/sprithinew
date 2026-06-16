@@ -130,12 +130,12 @@ class ShopController extends BaseApiController
      */
     public function shopBanners(): ResponseInterface
     {
-        // Locally-uploaded images only (image is set on approval; deactivated ones
-        // excluded). Legacy rows hold dead external URLs from the old site — skip
-        // them so the carousel never shows a broken slide.
+        // Vendors with a cover image that isn't admin-deactivated. Legacy rows
+        // carry an absolute old-site URL (https://sprithi.com/...); local uploads
+        // carry a relative path (uploads/shops/...). Both are shown — the admin
+        // can hide any broken/unwanted one via Shop Image Approval → Deactivate.
         $profiles = (new VendorProfileModel())
             ->where("image IS NOT NULL AND image <> ''")
-            ->where("image NOT LIKE 'http%'")
             ->where("(image_status IS NULL OR image_status <> 'inactive')")
             ->orderBy('updated_at', 'DESC')
             ->findAll(30);
@@ -149,10 +149,13 @@ class ShopController extends BaseApiController
         foreach ($profiles as $p) {
             $vid = (int) $p['user_id'];
             if (! isset($vmap[$vid])) continue; // skip inactive / non-vendor accounts
+            // Absolute URLs as-is; local paths root-relative so the <img> (resolved
+            // by fileUrl on the client) loads against the serving origin.
+            $img = preg_match('#^https?://#i', $p['image']) ? $p['image'] : '/' . ltrim($p['image'], '/');
             $items[] = [
                 'id'    => $vid,
                 'name'  => $p['shop_name'] ?? $vmap[$vid]['name'] ?? '',
-                'image' => '/' . ltrim($p['image'], '/'),
+                'image' => $img,
             ];
         }
 
