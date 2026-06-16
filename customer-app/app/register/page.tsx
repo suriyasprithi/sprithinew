@@ -67,6 +67,8 @@ function RegisterInner() {
   const [pincode, setPincode] = useState("");
   const [dob, setDob] = useState("");
   const [referrerCode, setReferrerCode] = useState("");
+  const [referrerName, setReferrerName] = useState<string | null>(null);
+  const [refChecking, setRefChecking] = useState(false);
   const [busy, setBusy] = useState(false);
 
   const [states, setStates] = useState<GeoState[]>([]);
@@ -80,6 +82,24 @@ function RegisterInner() {
     const ref = sp?.get("ref");
     if (ref) setReferrerCode(cleanMobile(ref));
   }, [sp]);
+
+  // Resolve the referral code (= referrer's mobile) to a name, so the customer
+  // sees who invited them. Debounced; clears when the code isn't 10 digits.
+  useEffect(() => {
+    if (!isMobile(referrerCode)) { setReferrerName(null); setRefChecking(false); return; }
+    let cancelled = false;
+    setRefChecking(true);
+    const t = setTimeout(() => {
+      void (async () => {
+        try {
+          const r = await api.get(`/public/referrer/${referrerCode}`);
+          if (!cancelled) setReferrerName((r.data.data?.name ?? null) as string | null);
+        } catch { if (!cancelled) setReferrerName(null); }
+        finally { if (!cancelled) setRefChecking(false); }
+      })();
+    }, 350);
+    return () => { cancelled = true; clearTimeout(t); };
+  }, [referrerCode]);
 
   useEffect(() => {
     let cancelled = false;
@@ -251,6 +271,13 @@ function RegisterInner() {
               <div className="space-y-1.5 sm:col-span-2">
                 <Label htmlFor="ref">Referral code <span className="text-muted-foreground">(optional)</span></Label>
                 <Input id="ref" inputMode="numeric" placeholder="Referrer's mobile" value={referrerCode} onChange={(e) => setReferrerCode(cleanMobile(e.target.value))} disabled={busy || isLoading} className="h-11 rounded-xl bg-surface-2/60" />
+                {isMobile(referrerCode) && (
+                  refChecking
+                    ? <p className="text-xs text-muted-foreground">Checking…</p>
+                    : referrerName
+                      ? <p className="text-xs font-medium text-emerald-600">✓ Referred by {referrerName}</p>
+                      : <p className="text-xs text-muted-foreground">No account found for this code</p>
+                )}
               </div>
               <GradientButton type="submit" size="lg" className="w-full sm:col-span-2" disabled={busy || isLoading}>
                 {busy || isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <><Sparkles className="h-4 w-4" /> Create account</>}

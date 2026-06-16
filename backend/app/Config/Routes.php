@@ -52,6 +52,7 @@ $routes->group('api/v1', ['filter' => 'cors'], static function ($routes) {
     $routes->get('public/products',            'Api\PublicController::products');
     $routes->get('public/products/(:num)',     'Api\PublicController::product/$1');
     $routes->get('public/vendors',             'Api\PublicController::vendors');
+    $routes->get('public/referrer/(:num)',     'Api\PublicController::referrer/$1');
     $routes->get('public/pincodes',            'Api\PincodeController::index');
     $routes->get('public/pincodes/(:segment)', 'Api\PincodeController::lookup/$1');
     $routes->get('public/products/(:num)/options','Api\ProductVariantController::listForProduct/$1');

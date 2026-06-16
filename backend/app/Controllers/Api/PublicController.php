@@ -235,6 +235,23 @@ class PublicController extends BaseApiController
     }
 
     /**
+     * Resolve a referral code (= referrer's mobile number) to the referrer's
+     * name, for the registration page to show "Referred by ...". Public: the
+     * register page runs before login. Returns name=null when no active
+     * customer matches that mobile.
+     */
+    public function referrer(string $code): ResponseInterface
+    {
+        $ref = (new UserModel())
+            ->where('mobile_number', preg_replace('/\D/', '', $code))
+            ->where('role', 'customer')
+            ->where('status', 'active')
+            ->first();
+
+        return $this->ok(['name' => $ref['name'] ?? null]);
+    }
+
+    /**
      * Add vendor_name + category_name + has_variants to product rows for
      * shop list pages that need to render them in one trip.
      */
