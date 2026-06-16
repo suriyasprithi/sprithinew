@@ -51,6 +51,8 @@ class OrderController extends BaseApiController
                 if (! $v || $v['status'] !== 'active') return $this->fail('Some variants are unavailable', 409);
                 if ((int) $v['stock'] < (int) $r['qty']) return $this->fail('Insufficient stock', 409);
                 $price = (float) $v['price'];
+            } else {
+                if ((int) ($p['stock'] ?? 0) < (int) $r['qty']) return $this->fail('Insufficient stock', 409);
             }
             $total += $price * (int) $r['qty'];
             $vendorIds[] = (int) $p['vendor_id'];
@@ -151,6 +153,8 @@ class OrderController extends BaseApiController
             ]);
             if ($variant) {
                 (new ProductVariantModel())->update($variant['id'], ['stock' => max(0, (int) $variant['stock'] - (int) $r['qty'])]);
+            } else {
+                (new ProductModel())->update((int) $p['id'], ['stock' => max(0, (int) $p['stock'] - (int) $r['qty'])]);
             }
         }
 
