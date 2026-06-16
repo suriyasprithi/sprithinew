@@ -71,17 +71,12 @@ export function FeaturedCategories() {
 
   // Don't render the section while loading or when empty
   if (loading || cats.length === 0) {
-    return (
-      <section className="mx-auto max-w-7xl px-4 py-6">
-        <PromoBanners />
-      </section>
-    );
+    return null;
   }
 
   return (
     <section className="mx-auto max-w-7xl px-4 py-6">
       <CategoryCarousel cats={cats} />
-      <PromoBanners />
     </section>
   );
 }
@@ -196,67 +191,6 @@ function CategoryCarousel({ cats }: { cats: VendorCategory[] }) {
             );
           })}
         </div>
-      </div>
-    </div>
-  );
-}
-
-function PromoBanners() {
-  return (
-    <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2">
-      <PromoBanner
-        tag="Fresh Vegetables"
-        title="Home Delivery of Fresh Fruits & Vegetables."
-        theme="green"
-        img="https://picsum.photos/seed/epey-vegetables/600/400"
-      />
-      <PromoBanner
-        tag="Premium Cuts"
-        title="Delicious Steaks From Our Top Chef."
-        theme="purple"
-        img="https://picsum.photos/seed/epey-steak/600/400"
-      />
-    </div>
-  );
-}
-
-function PromoBanner({
-  tag, title, theme, img,
-}: {
-  tag: string;
-  title: string;
-  theme: "green" | "purple";
-  img: string;
-}) {
-  const themeMap = {
-    green:  { card: "bg-[#1F7A4D] text-white", tag: "bg-white/15 text-white", btn: "bg-white text-[#1F7A4D]" },
-    purple: { card: "bg-[#5C2B6F] text-white", tag: "bg-white/15 text-white", btn: "bg-white text-[#5C2B6F]" },
-  }[theme];
-
-  return (
-    <div className={`relative flex min-h-[180px] overflow-hidden rounded-2xl ${themeMap.card}`}>
-      <div className="relative z-10 flex-1 p-5 sm:p-6">
-        <span className={`inline-block rounded-full px-3 py-1 text-[10px] font-semibold uppercase tracking-wider ${themeMap.tag}`}>
-          {tag}
-        </span>
-        <h3 className="mt-3 max-w-[18ch] text-xl font-bold leading-tight sm:text-2xl">{title}</h3>
-        <Link
-          href="/shop-public"
-          className={`mt-4 inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-semibold ${themeMap.btn}`}
-        >
-          Shop Now <ArrowRight className="h-3.5 w-3.5" />
-        </Link>
-      </div>
-      <div className="relative w-2/5 shrink-0 overflow-hidden">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src={img}
-          alt=""
-          className="absolute inset-0 h-full w-full object-cover opacity-90"
-          loading="lazy"
-          referrerPolicy="no-referrer"
-        />
-        <div className={`absolute inset-y-0 left-0 w-12 bg-gradient-to-r ${theme === "green" ? "from-[#1F7A4D]" : "from-[#5C2B6F]"} to-transparent`} />
       </div>
     </div>
   );

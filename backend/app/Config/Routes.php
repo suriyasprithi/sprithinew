@@ -64,6 +64,7 @@ $routes->group('api/v1', ['filter' => 'cors'], static function ($routes) {
         $routes->get('products/(:num)',          'Api\ProductController::show/$1');
         $routes->get('products/(:num)/options',  'Api\ProductVariantController::listForProduct/$1');
         $routes->get('shops',                    'Api\ShopController::customerIndex');
+        $routes->get('shop-banners',             'Api\ShopController::shopBanners');
         $routes->get('shops/(:num)',             'Api\ShopController::customerShow/$1');
         $routes->get('variant-type-groups',      'Api\VariantTypeGroupController::index');
     });
@@ -165,6 +166,10 @@ $routes->group('api/v1', ['filter' => 'cors'], static function ($routes) {
     // Public list of home banners (grouped by slot) — used by customer-app home page.
     $routes->get('public/banners', 'Api\BannerController::publicIndex');
 
+    // Home video carousels (customer-app home): admin-managed + approved vendor videos.
+    $routes->get('public/customer-videos', 'Api\CustomerVideoController::publicIndex');
+    $routes->get('public/vendor-videos',   'Api\AdRequestController::publicVideos');
+
     // Logged-in user's own activity (wallet + referrals + notifications)
     $routes->get('activity/mine', 'Api\ActivityController::mine', ['filter' => 'auth']);
 
@@ -245,6 +250,14 @@ $routes->group('api/v1', ['filter' => 'cors'], static function ($routes) {
         $routes->post('ad-requests/(:num)/approve',  'Api\AdRequestController::approve/$1');
         $routes->post('ad-requests/(:num)/reject',   'Api\AdRequestController::reject/$1');
         $routes->post('ad-requests/(:num)/use-as-banner', 'Api\AdRequestController::useAsBanner/$1');
+        $routes->post('ad-requests/(:num)/deactivate', 'Api\AdRequestController::deactivate/$1');
+        $routes->post('ad-requests/(:num)/reactivate', 'Api\AdRequestController::reactivate/$1');
+        // customer videos (admin-managed home carousel)
+        $routes->get('customer-videos',           'Api\CustomerVideoController::adminIndex');
+        $routes->post('customer-videos/upload',   'Api\CustomerVideoController::upload');
+        $routes->post('customer-videos',          'Api\CustomerVideoController::create');
+        $routes->patch('customer-videos/(:num)',  'Api\CustomerVideoController::update/$1');
+        $routes->delete('customer-videos/(:num)', 'Api\CustomerVideoController::delete/$1');
         // shop image approval (vendor uploads → admin approves/rejects)
         $routes->get('shop-images',                  'Api\AdminShopImageController::index');
         $routes->post('shop-images/(:num)/approve',  'Api\AdminShopImageController::approve/$1');

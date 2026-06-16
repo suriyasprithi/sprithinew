@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Video, Check, X, ExternalLink, Loader2, Image as ImageIcon } from "lucide-react";
+import { Video, Check, X, ExternalLink, Loader2, Image as ImageIcon, Eye, EyeOff } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/data-table/status-badge";
@@ -15,7 +15,7 @@ type Row = {
   type: "banner" | "video";
   attachment: string | null;
   notes: string | null;
-  status: "pending" | "approved" | "rejected";
+  status: "pending" | "approved" | "rejected" | "inactive";
   created_at: string;
   vendor_name: string;
 };
@@ -43,6 +43,19 @@ export default function AdRequestsPage() {
     try {
       await api.post(`/admin/ad-requests/${id}/${action}`);
       toast.success(`Request ${action === "approve" ? "approved" : "rejected"}`);
+      void refresh();
+    } catch (e) {
+      toast.error(apiErrorMessage(e));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function toggleVideo(id: number, action: "deactivate" | "reactivate") {
+    setBusy(id);
+    try {
+      await api.post(`/admin/ad-requests/${id}/${action}`);
+      toast.success(action === "deactivate" ? "Hidden from home" : "Showing on home");
       void refresh();
     } catch (e) {
       toast.error(apiErrorMessage(e));
@@ -116,6 +129,16 @@ export default function AdRequestsPage() {
                     {r.status === "approved" && r.type === "banner" && (
                       <Button size="sm" variant="ghost" className="h-7 gap-1 text-xs text-brand" disabled={busy === r.id} onClick={() => void useAsBanner(r.id)}>
                         {busy === r.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ImageIcon className="h-3.5 w-3.5" />} Use as banner
+                      </Button>
+                    )}
+                    {r.type === "video" && r.status === "approved" && (
+                      <Button size="sm" variant="ghost" className="h-7 gap-1 text-xs text-amber-500" disabled={busy === r.id} onClick={() => void toggleVideo(r.id, "deactivate")}>
+                        {busy === r.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <EyeOff className="h-3.5 w-3.5" />} Deactivate
+                      </Button>
+                    )}
+                    {r.type === "video" && r.status === "inactive" && (
+                      <Button size="sm" variant="ghost" className="h-7 gap-1 text-xs text-emerald-500" disabled={busy === r.id} onClick={() => void toggleVideo(r.id, "reactivate")}>
+                        {busy === r.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Eye className="h-3.5 w-3.5" />} Reactivate
                       </Button>
                     )}
                   </div>

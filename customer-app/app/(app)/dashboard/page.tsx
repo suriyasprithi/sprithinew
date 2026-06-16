@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
 import { ArrowDownLeft, ArrowLeftRight, Bell, Gift, ShoppingBag, Send, Sparkles, Store, Users, Wallet as WalletIcon } from "lucide-react";
@@ -7,8 +8,9 @@ import type { LucideIcon } from "lucide-react";
 import { AppHeader } from "@/components/layout/app-header";
 import { LuxuryCard } from "@/components/ui/custom/luxury-card";
 import { AnimatedCounter } from "@/components/ui/custom/animated-counter";
+import { ShopCarousel, type ShopBanner } from "@/components/marketplace/shop-carousel";
 import { useAuth } from "@/stores/auth";
-import type { WalletKey } from "@/lib/api";
+import { api, type WalletKey } from "@/lib/api";
 
 const QUICK = [
   { href: "/wallet/send",     label: "Send",     icon: Send,          tone: "brand" },
@@ -45,6 +47,17 @@ type Tile = { key: WalletKey; label: string; value: number; tone: keyof typeof W
 export default function DashboardPage() {
   const { user } = useAuth();
   const balance = user?.wallet_balance ?? 0;
+
+  // Shop cover images (admin-approved) for the carousel below the balance card.
+  const [shops, setShops] = useState<ShopBanner[]>([]);
+  useEffect(() => {
+    void (async () => {
+      try {
+        const res = await api.get("/catalog/shop-banners");
+        setShops((res.data.data?.items ?? []) as ShopBanner[]);
+      } catch { /* dashboard still works without the carousel */ }
+    })();
+  }, []);
 
   const wallets: Tile[] = [
     { key: "wallet",  label: "Main",    value: user?.wallet_balance ?? 0, tone: "brand",  transferable: false },
@@ -97,6 +110,8 @@ export default function DashboardPage() {
             </div>
           </LuxuryCard>
         </motion.div>
+
+        <ShopCarousel shops={shops} />
 
         <div>
           <h3 className="mb-4 text-[13px] font-semibold uppercase tracking-[0.16em] text-[#6b7280]">My wallets</h3>

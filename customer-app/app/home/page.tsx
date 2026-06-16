@@ -7,7 +7,7 @@ import { CategoryNavBar } from "@/components/marketplace/category-nav-bar";
 import { CouponBanner } from "@/components/marketplace/coupon-banner";
 import { HeroCarousel } from "@/components/marketplace/hero-carousel";
 import { FeaturedCategories } from "@/components/marketplace/featured-categories";
-import { MegaOffersBanner } from "@/components/marketplace/mega-offers-banner";
+import { VideoCarousel, type HomeVideo } from "@/components/marketplace/video-carousel";
 import { ProductCard, ProductCardSkeleton, type MarketplaceProduct } from "@/components/marketplace/product-card";
 import { FlashSale } from "@/components/marketplace/flash-sale";
 import { VendorsRow, type MarketplaceVendor } from "@/components/marketplace/vendors-row";
@@ -39,6 +39,8 @@ export default function PublicHomePage() {
   const [products, setProducts] = useState<MarketplaceProduct[]>([]);
   const [vendors,  setVendors]  = useState<MarketplaceVendor[]>([]);
   const [banners,  setBanners]  = useState<BannersBySlot>(EMPTY_BANNERS);
+  const [customerVideos, setCustomerVideos] = useState<HomeVideo[]>([]);
+  const [vendorVideos,   setVendorVideos]   = useState<HomeVideo[]>([]);
   const [loading,  setLoading]  = useState(true);
 
   useEffect(() => {
@@ -51,14 +53,18 @@ export default function PublicHomePage() {
         else if (loc?.district_id) params.district_id = String(loc.district_id);
         else if (loc?.state_id)    params.state_id    = String(loc.state_id);
 
-        const [hr, vr, br] = await Promise.all([
+        const [hr, vr, br, cvr, vvr] = await Promise.all([
           api.get("/public/home",    { params }).catch(() => null),
           api.get("/public/vendors", { params }).catch(() => null),
           api.get("/public/banners").catch(() => null),
+          api.get("/public/customer-videos").catch(() => null),
+          api.get("/public/vendor-videos").catch(() => null),
         ]);
         if (br?.data.data?.by_slot) {
           setBanners({ ...EMPTY_BANNERS, ...br.data.data.by_slot });
         }
+        setCustomerVideos((cvr?.data.data?.items ?? []) as HomeVideo[]);
+        setVendorVideos((vvr?.data.data?.items ?? []) as HomeVideo[]);
         const featured = ((hr?.data.data?.featured ?? []) as ApiProduct[]).map((p): MarketplaceProduct => ({
           id: Number(p.id),
           name: p.name,
@@ -108,10 +114,14 @@ export default function PublicHomePage() {
         rightBottom={banners.hero_right_bottom[0] ?? null}
       />
       <FeaturedCategories />
-      <MegaOffersBanner
-        left={banners.mega_left[0] ?? null}
-        right={banners.mega_right[0] ?? null}
-      />
+      {(customerVideos.length > 0 || vendorVideos.length > 0) && (
+        <section className="mx-auto max-w-7xl px-4 py-6">
+          <div className={`grid gap-4 ${customerVideos.length > 0 && vendorVideos.length > 0 ? "md:grid-cols-2" : "grid-cols-1"}`}>
+            <VideoCarousel title="Featured videos" videos={customerVideos} />
+            <VideoCarousel title="From our vendors" videos={vendorVideos} />
+          </div>
+        </section>
+      )}
 
       {/* Top selling products */}
       <section className="mx-auto max-w-7xl px-4 py-6">

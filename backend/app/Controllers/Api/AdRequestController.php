@@ -111,6 +111,57 @@ class AdRequestController extends BaseApiController
     public function reject(int $id): ResponseInterface  { return $this->decide($id, 'rejected'); }
 
     /**
+     * Public: approved vendor videos for the customer home carousel. Attachment
+     * is returned root-relative so the <video> resolves against the serving
+     * origin (base_url is pinned to app.baseURL and breaks on a different port).
+     */
+    public function publicVideos(): ResponseInterface
+    {
+        $rows = (new AdRequestModel())
+            ->where('type', 'video')
+            ->where('status', 'approved')
+            ->where("attachment IS NOT NULL AND attachment <> ''")
+            ->orderBy('updated_at', 'DESC')
+            ->findAll(30);
+
+        $vids    = array_values(array_unique(array_map(static fn ($r) => (int) $r['vendor_id'], $rows)));
+        $vendors = $vids ? (new UserModel())->whereIn('id', $vids)->findAll() : [];
+        $vname   = []; foreach ($vendors as $v) $vname[(int) $v['id']] = $v['name'];
+
+        $items = array_map(static fn ($r) => [
+            'id'          => (int) $r['id'],
+            'video_url'   => '/' . ltrim((string) $r['attachment'], '/'),
+            'vendor_name' => $vname[(int) $r['vendor_id']] ?? null,
+            'title'       => $r['notes'] ?: ($vname[(int) $r['vendor_id']] ?? null),
+        ], $rows);
+
+        return $this->ok(['items' => $items]);
+    }
+
+    /** Admin: hide an approved video from the home carousel (keeps the file). */
+    public function deactivate(int $id): ResponseInterface { return $this->toggleVideo($id, 'inactive'); }
+
+    /** Admin: re-show a deactivated video on the home carousel. */
+    public function reactivate(int $id): ResponseInterface { return $this->toggleVideo($id, 'approved'); }
+
+    private function toggleVideo(int $id, string $to): ResponseInterface
+    {
+        $auth = $this->authUser();
+        if (! $auth) return $this->fail('Unauthorized', 401);
+        if ($auth->role !== 'admin') return $this->fail('Forbidden', 403);
+
+        $m   = new AdRequestModel();
+        $row = $m->find($id);
+        if (! $row) return $this->fail('Not found', 404);
+        if ($row['type'] !== 'video') return $this->fail('Only video requests can be toggled', 422);
+        $from = $to === 'inactive' ? 'approved' : 'inactive';
+        if ($row['status'] !== $from) return $this->fail('Request is ' . $row['status'], 409);
+
+        $m->update($id, ['status' => $to]);
+        return $this->ok(null, $to === 'inactive' ? 'Hidden from home' : 'Showing on home');
+    }
+
+    /**
      * Create a DRAFT (inactive) home banner from an approved banner request's
      * image. Admin then sets the slot/title and publishes on the Banners page.
      * The image is inlined as a base64 data URI to match how banners are stored.

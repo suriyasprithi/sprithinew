@@ -122,6 +122,43 @@ class ShopController extends BaseApiController
         ]);
     }
 
+    /**
+     * Shops with a live cover image, for the customer dashboard carousel.
+     * Only active vendors whose image is set and not admin-deactivated. Image is
+     * root-relative so the <img> resolves against the serving origin (base_url is
+     * pinned to app.baseURL and breaks on a different port).
+     */
+    public function shopBanners(): ResponseInterface
+    {
+        // Locally-uploaded images only (image is set on approval; deactivated ones
+        // excluded). Legacy rows hold dead external URLs from the old site — skip
+        // them so the carousel never shows a broken slide.
+        $profiles = (new VendorProfileModel())
+            ->where("image IS NOT NULL AND image <> ''")
+            ->where("image NOT LIKE 'http%'")
+            ->where("(image_status IS NULL OR image_status <> 'inactive')")
+            ->orderBy('updated_at', 'DESC')
+            ->findAll(30);
+        if (! $profiles) return $this->ok(['items' => []]);
+
+        $ids     = array_map(static fn ($p) => (int) $p['user_id'], $profiles);
+        $vendors = (new UserModel())->whereIn('id', $ids)->where('role', 'vendor')->where('status', 'active')->findAll();
+        $vmap    = []; foreach ($vendors as $v) $vmap[(int) $v['id']] = $v;
+
+        $items = [];
+        foreach ($profiles as $p) {
+            $vid = (int) $p['user_id'];
+            if (! isset($vmap[$vid])) continue; // skip inactive / non-vendor accounts
+            $items[] = [
+                'id'    => $vid,
+                'name'  => $p['shop_name'] ?? $vmap[$vid]['name'] ?? '',
+                'image' => '/' . ltrim($p['image'], '/'),
+            ];
+        }
+
+        return $this->ok(['items' => $items]);
+    }
+
     /** Staff/admin shop list with district/taluk/state filters. */
     public function adminIndex(): ResponseInterface
     {
