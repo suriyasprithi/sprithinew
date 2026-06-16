@@ -24,6 +24,7 @@ const META: Record<string, { title: string; description: string }> = {
   mlm:        { title: "MLM commission", description: "Multi-level commission split (L1 / L2 / L3)." },
   buyback:    { title: "Buyback queue",  description: "Buyback FIFO slot allocations." },
   returns:    { title: "Returns",        description: "How long after delivery customers can request a return." },
+  cancel:     { title: "Cancellation",   description: "When a COD order can be cancelled, and the penalty for a cancellation without a valid reason." },
 };
 
 // Friendly field labels for the keys that aren't self-explanatory.
@@ -45,6 +46,9 @@ const LABELS: Record<string, string> = {
   "buyback.slot_3_pct":         "Slot 3 (%)",
   "buyback.slot_4_pct":         "Slot 4 (%)",
   "returns.window_days":        "Return Window (Days)",
+  "cancel.window_hours":        "Cancel window (hours, 0 = off)",
+  "cancel.penalty":             "Cancel penalty (₹)",
+  "cancel.valid_reasons":       "Valid reasons (comma-separated)",
 };
 
 // The token bonus keys get their own card; everything else by prefix.

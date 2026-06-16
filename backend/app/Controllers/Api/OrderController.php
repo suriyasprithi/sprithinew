@@ -291,18 +291,31 @@ class OrderController extends BaseApiController
             [(int) $auth->id]
         )->getResultArray();
 
-        // Return eligibility per order (global window setting + any open request).
-        $days     = (int) (new SystemSettingsService())->get('returns.window_days', '0');
+        // Return + cancel eligibility per order (global window settings + any open request).
+        $svc         = new SystemSettingsService();
+        $days        = (int) $svc->get('returns.window_days', '0');
+        $cancelHours = (int) $svc->get('cancel.window_hours', '24');
         $orderIds = array_map(static fn ($r) => (int) $r['id'], $rows);
         $requested = [];
+        $retStatus = [];
         if ($orderIds) {
-            $rr = $db->table('order_returns')->select('order_id')
-                ->whereIn('order_id', $orderIds)->where('status !=', 'rejected')
+            $rr = $db->table('order_returns')->select('order_id, status')
+                ->whereIn('order_id', $orderIds)->orderBy('id', 'ASC')
                 ->get()->getResultArray();
-            foreach ($rr as $r) $requested[(int) $r['order_id']] = true;
+            foreach ($rr as $r) {
+                $oid = (int) $r['order_id'];
+                $retStatus[$oid] = $r['status'];                   // latest row wins (id ASC)
+                if ($r['status'] !== 'rejected') $requested[$oid] = true;
+            }
         }
         foreach ($rows as &$row) {
-            $row = array_merge($row, $this->returnInfo($row, $days, isset($requested[(int) $row['id']])));
+            $oid = (int) $row['id'];
+            $row = array_merge(
+                $row,
+                $this->returnInfo($row, $days, isset($requested[$oid])),
+                $this->cancelInfo($row, $cancelHours),
+                ['return_status' => $retStatus[$oid] ?? null]
+            );
         }
         unset($row);
 
@@ -330,6 +343,29 @@ class OrderController extends BaseApiController
             'return_eligible_until' => $until,
             'can_return'            => $canReturn,
             'return_requested'      => $hasRequest,
+        ];
+    }
+
+    /**
+     * Cancellation eligibility for one order given the window (hours). Only
+     * un-settled COD orders (status 'pending') qualify — wallet orders settle at
+     * placement and go through Return instead.
+     *   cancel_window_hours   — the admin setting (0 = cancellation disabled)
+     *   cancel_eligible_until — created_at + window ('Y-m-d H:i:s') or null
+     *   can_cancel            — pending, window>0, now <= until
+     */
+    private function cancelInfo(array $order, int $windowHours): array
+    {
+        $until = null; $canCancel = false;
+        if ($windowHours > 0 && ($order['status'] ?? '') === 'pending' && ! empty($order['created_at'])) {
+            $ts        = strtotime($order['created_at'] . ' +' . $windowHours . ' hours');
+            $until     = date('Y-m-d H:i:s', $ts);
+            $canCancel = time() <= $ts;
+        }
+        return [
+            'cancel_window_hours'   => $windowHours,
+            'cancel_eligible_until' => $until,
+            'can_cancel'            => $canCancel,
         ];
     }
 
@@ -374,10 +410,18 @@ class OrderController extends BaseApiController
             }
         }
 
-        // Return eligibility (same shape as mine()) so the detail view can show it.
-        $days   = (int) (new SystemSettingsService())->get('returns.window_days', '0');
-        $hasReq = (bool) (new OrderReturnModel())->where('order_id', $id)->where('status !=', 'rejected')->countAllResults();
-        $order  = array_merge($order, $this->returnInfo($order, $days, $hasReq));
+        // Return + cancel eligibility (same shape as mine()) so the detail view can show it.
+        $svc    = new SystemSettingsService();
+        $days      = (int) $svc->get('returns.window_days', '0');
+        $latestRet = (new OrderReturnModel())->where('order_id', $id)->orderBy('id', 'DESC')->first();
+        $retStatus = $latestRet['status'] ?? null;
+        $hasReq    = $retStatus !== null && $retStatus !== 'rejected';
+        $order  = array_merge(
+            $order,
+            $this->returnInfo($order, $days, $hasReq),
+            $this->cancelInfo($order, (int) $svc->get('cancel.window_hours', '24')),
+            ['return_status' => $retStatus]
+        );
 
         return $this->ok(['order' => $order, 'items' => $items, 'driver' => $driver]);
     }
@@ -635,5 +679,96 @@ class OrderController extends BaseApiController
         }
 
         return $this->ok(null, 'Return requested');
+    }
+
+    /**
+     * Customer: cancel an un-settled order (COD awaiting delivery, status
+     * 'pending'). Restores inventory, charges a wallet penalty when the reason
+     * isn't one of the admin's valid reasons, and notifies vendor + admin.
+     * Wallet orders settle at placement → they must use Return instead.
+     */
+    public function cancel(int $id): ResponseInterface
+    {
+        $auth = $this->authUser();
+        if (! $auth) return $this->fail('Unauthorized', 401);
+
+        $om    = new OrderModel();
+        $order = $om->find($id);
+        if (! $order) return $this->fail('Not found', 404);
+        if ((int) $order['customer_id'] !== (int) $auth->id) return $this->fail('Forbidden', 403);
+
+        // Only un-settled orders qualify. COD orders are 'pending' until delivered;
+        // wallet orders settle (vendor + commission paid) at placement → 'paid'.
+        if (($order['status'] ?? '') !== 'pending') {
+            return $this->fail(($order['status'] ?? '') === 'delivered'
+                ? 'Delivered orders can only be returned, not cancelled'
+                : 'This order can no longer be cancelled', 422);
+        }
+
+        $svc   = new SystemSettingsService();
+        $hours = (int) $svc->get('cancel.window_hours', '24');
+        if ($hours <= 0) return $this->fail('Cancellation is disabled', 422);
+        if (! empty($order['created_at']) && time() > strtotime($order['created_at'] . ' +' . $hours . ' hours')) {
+            return $this->fail('Cancellation window has closed', 422);
+        }
+
+        $d      = $this->request->getJSON(true) ?? $this->request->getPost() ?? [];
+        $reason = trim((string) ($d['reason'] ?? ''));
+
+        // Penalty applies when the reason doesn't match any admin-configured valid
+        // reason (comma-separated). An empty list = cancellations never penalised.
+        $valids  = array_values(array_filter(array_map('trim', explode(',', (string) $svc->get('cancel.valid_reasons', '')))));
+        $isValid = empty($valids);
+        foreach ($valids as $vr) {
+            if ($vr !== '' && $reason !== '' && mb_stripos($reason, $vr) !== false) { $isValid = true; break; }
+        }
+        $penalty = $isValid ? 0.0 : (float) $svc->get('cancel.penalty', '0');
+
+        // Restore inventory for every line (mirror of the decrement in place()).
+        $items = (new OrderItemModel())->where('order_id', $id)->findAll();
+        foreach ($items as $it) {
+            $qty = (int) $it['qty'];
+            if ($qty <= 0) continue;
+            if (! empty($it['variation_id'])) {
+                $v = (new ProductVariantModel())->find((int) $it['variation_id']);
+                if ($v) (new ProductVariantModel())->update((int) $v['id'], ['stock' => (int) $v['stock'] + $qty]);
+            } elseif (! empty($it['product_id'])) {
+                $p = (new ProductModel())->find((int) $it['product_id']);
+                if ($p) (new ProductModel())->update((int) $p['id'], ['stock' => (int) $p['stock'] + $qty]);
+            }
+        }
+
+        // Charge the penalty from the wallet, clamped to the available balance
+        // (never blocks the cancellation, never goes negative).
+        $charged = 0.0;
+        if ($penalty > 0) {
+            $u   = (new UserModel())->find((int) $auth->id);
+            $bal = (float) ($u['wallet_balance'] ?? 0);
+            $charged = round(min($penalty, $bal), 2);
+            if ($charged > 0) {
+                (new WalletService())->debit((int) $auth->id, 'wallet', $charged, 'penalty', 'order#' . $id, 'Cancellation penalty');
+            }
+        }
+
+        $om->update($id, [
+            'status'        => 'cancelled',
+            'cancel_reason' => $reason !== '' ? mb_substr($reason, 0, 255) : null,
+            'cancelled_at'  => date('Y-m-d H:i:s'),
+            'penalty'       => $charged,
+        ]);
+
+        try {
+            $n    = new NotificationService();
+            $body = $charged > 0 ? "Order #{$id} cancelled. ₹{$charged} penalty applied." : "Order #{$id} cancelled.";
+            $n->sendTyped((int) $auth->id, 'order_update', $id, '/orders', 'Order cancelled', $body);
+            if (! empty($order['vendor_id'])) {
+                $n->sendTyped((int) $order['vendor_id'], 'order_update', $id, '/orders', 'Order cancelled', "Order #{$id} was cancelled by the customer");
+            }
+            $n->sendTypedToRole('admin', 'order_update', $id, '/orders', 'Order cancelled', "Order #{$id} cancelled by customer");
+        } catch (\Throwable $e) {
+            log_message('error', 'cancel notify failed: ' . $e->getMessage());
+        }
+
+        return $this->ok(['penalty' => $charged], 'Order cancelled');
     }
 }

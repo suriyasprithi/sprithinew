@@ -26,6 +26,7 @@ import {
   Gift,
   QrCode,
   ShieldCheck,
+  RotateCcw,
   type LucideIcon,
 } from "lucide-react";
 import { StaffRole } from "@/lib/api";
@@ -100,6 +101,7 @@ export const ROLE_MENU: Record<StaffRole, MenuItem[]> = {
     { href: "/ad-requests",       label: "Ad requests",        icon: Video },
     { href: "/customer-videos",   label: "Customer Videos",    icon: Film },
     { href: "/shop-images",       label: "Shop image approval",icon: ImageIcon },
+    { href: "/returns",           label: "Returns",            icon: RotateCcw },
     { href: "/manage-states",     label: "States",             icon: Building2 },
     { href: "/manage-districts",  label: "Districts",          icon: Building2 },
     { href: "/manage-taluks",     label: "Taluks",             icon: Building2 },

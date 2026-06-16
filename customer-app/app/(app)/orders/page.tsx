@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { BadgeCheck, ChevronDown, Loader2, MapPin, RotateCcw, ShoppingBag, Store } from "lucide-react";
+import { BadgeCheck, ChevronDown, Loader2, MapPin, RotateCcw, ShoppingBag, Store, XCircle } from "lucide-react";
 import { toast } from "sonner";
 import { AppHeader } from "@/components/layout/app-header";
 import { LuxuryCard } from "@/components/ui/custom/luxury-card";
@@ -36,6 +36,10 @@ type OrderRow = {
   return_eligible_until?: string | null;
   can_return?: boolean;
   return_requested?: boolean;
+  return_status?: string | null;
+  cancel_window_hours?: number;
+  cancel_eligible_until?: string | null;
+  can_cancel?: boolean;
 };
 
 type DriverInfo = { id: number; name: string; mobile: string | null; id_card_url: string | null };
@@ -69,6 +73,9 @@ export default function OrdersPage() {
   const [loadingId, setLoadingId] = useState<number | null>(null);
   const [detailById, setDetailById] = useState<Record<number, OrderDetail>>({});
   const [returningId, setReturningId] = useState<number | null>(null);
+  const [cancelOpenId, setCancelOpenId] = useState<number | null>(null);
+  const [cancelReason, setCancelReason] = useState("");
+  const [cancellingId, setCancellingId] = useState<number | null>(null);
 
   async function toggleDetail(id: number) {
     if (openId === id) { setOpenId(null); return; }
@@ -111,6 +118,22 @@ export default function OrdersPage() {
       toast.error(apiErrorMessage(e));
     } finally {
       setReturningId(null);
+    }
+  }
+
+  async function cancelOrder(id: number) {
+    setCancellingId(id);
+    try {
+      const res = await api.post(`/orders/${id}/cancel`, { reason: cancelReason.trim() || undefined });
+      const pen = Number(res.data.data?.penalty ?? 0);
+      toast.success(pen > 0 ? `Order cancelled — ₹${pen} penalty applied` : "Order cancelled");
+      setCancelOpenId(null);
+      setCancelReason("");
+      await load();
+    } catch (e) {
+      toast.error(apiErrorMessage(e));
+    } finally {
+      setCancellingId(null);
     }
   }
 
@@ -161,9 +184,51 @@ export default function OrdersPage() {
                     <p className="text-lg font-bold text-brand">{fmtINR(Number(o.total))}</p>
                   </div>
 
+                  {o.status === "pending" && o.can_cancel && (
+                    <div className="mt-3 border-t border-border/60 pt-3">
+                      {cancelOpenId === o.id ? (
+                        <div className="space-y-2">
+                          <textarea
+                            value={cancelReason}
+                            onChange={(e) => setCancelReason(e.target.value)}
+                            rows={2}
+                            placeholder="Reason for cancellation"
+                            className="w-full rounded-xl border border-border bg-surface-2/60 p-2.5 text-sm outline-none focus:border-brand/50"
+                          />
+                          <div className="flex items-center justify-end gap-2">
+                            <button type="button" onClick={() => { setCancelOpenId(null); setCancelReason(""); }} className="rounded-full px-3 py-1.5 text-xs font-medium text-muted-foreground hover:bg-surface-2">Keep order</button>
+                            <button
+                              type="button"
+                              disabled={cancellingId === o.id}
+                              onClick={() => void cancelOrder(o.id)}
+                              className="inline-flex items-center gap-1.5 rounded-full border border-rose-500/40 px-3 py-1.5 text-xs font-semibold text-rose-500 hover:bg-rose-500/10 disabled:opacity-50"
+                            >
+                              {cancellingId === o.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <XCircle className="h-3.5 w-3.5" />} Confirm cancel
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <p className="text-xs text-muted-foreground">Cancellable until {(o.cancel_eligible_until ?? "").replace("T", " ").slice(0, 16)}</p>
+                          <button
+                            type="button"
+                            onClick={() => { setCancelOpenId(o.id); setCancelReason(""); }}
+                            className="inline-flex items-center gap-1.5 rounded-full border border-rose-500/40 px-3 py-1.5 text-xs font-semibold text-rose-500 hover:bg-rose-500/10"
+                          >
+                            <XCircle className="h-3.5 w-3.5" /> Cancel order
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                   {o.status === "delivered" && (o.return_window_days ?? 0) > 0 && (
                     <div className="mt-3 border-t border-border/60 pt-3">
-                      {o.return_requested ? (
+                      {o.return_status === "approved" ? (
+                        <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-2.5 py-1 text-xs font-medium text-emerald-500">
+                          <RotateCcw className="h-3.5 w-3.5" /> Return approved
+                        </span>
+                      ) : o.return_status === "pending" ? (
                         <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-500/10 px-2.5 py-1 text-xs font-medium text-amber-500">
                           <RotateCcw className="h-3.5 w-3.5" /> Return requested
                         </span>
@@ -181,6 +246,10 @@ export default function OrdersPage() {
                             {returningId === o.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RotateCcw className="h-3.5 w-3.5" />} Request Return
                           </button>
                         </div>
+                      ) : o.return_status === "rejected" ? (
+                        <span className="inline-flex items-center gap-1.5 rounded-full bg-rose-500/10 px-2.5 py-1 text-xs font-medium text-rose-500">
+                          <RotateCcw className="h-3.5 w-3.5" /> Return declined
+                        </span>
                       ) : (
                         <p className="text-xs text-muted-foreground">Return window closed for this order.</p>
                       )}

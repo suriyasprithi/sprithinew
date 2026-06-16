@@ -39,6 +39,13 @@ class AdminSettingsController extends BaseApiController
         'buyback.slot_4_pct'         => '2.5',
         // Days after delivery a customer may request a return. 0 = returns disabled.
         'returns.window_days'        => '0',
+        // Order cancellation (Phase 1). Hours after placing a COD order it can be
+        // cancelled (0 = cancellation disabled). Penalty (₹) is charged from the
+        // wallet when the reason isn't one of the comma-separated valid reasons
+        // (empty list = never penalise).
+        'cancel.window_hours'        => '24',
+        'cancel.penalty'             => '0',
+        'cancel.valid_reasons'       => '',
     ];
 
     /**

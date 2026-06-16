@@ -106,6 +106,7 @@ $routes->group('api/v1', ['filter' => 'cors'], static function ($routes) {
         $routes->get('(:num)',         'Api\OrderController::show/$1');
         $routes->patch('(:num)/status','Api\OrderController::setStatus/$1');
         $routes->post('(:num)/return', 'Api\OrderController::requestReturn/$1');
+        $routes->post('(:num)/cancel', 'Api\OrderController::cancel/$1');
     });
     // Driver-scoped: orders for the current driver's assigned vendor (awaiting delivery).
     $routes->get('driver/orders', 'Api\OrderController::driverOrders', ['filter' => 'auth']);
@@ -266,6 +267,10 @@ $routes->group('api/v1', ['filter' => 'cors'], static function ($routes) {
         $routes->post('shop-images/(:num)/reject',   'Api\AdminShopImageController::reject/$1');
         $routes->post('shop-images/(:num)/deactivate','Api\AdminShopImageController::deactivate/$1');
         $routes->post('shop-images/(:num)/reactivate','Api\AdminShopImageController::reactivate/$1');
+        // return requests (customer requests → admin approves/rejects)
+        $routes->get('returns',                      'Api\AdminReturnController::index');
+        $routes->post('returns/(:num)/approve',      'Api\AdminReturnController::approve/$1');
+        $routes->post('returns/(:num)/reject',       'Api\AdminReturnController::reject/$1');
         // customers
         $routes->get('customers',                    'Api\AdminUsersController::customers');
         $routes->patch('customers/(:num)',           'Api\AdminUsersController::update/$1');
