@@ -17,9 +17,15 @@ Fill the Play Console → **App content** tasks using the answers below. Items m
 
 ## 2. App access (sign-in details)
 - The app is **login-gated** → choose **"All or some functionality is restricted"**.
-- Provide a **demo customer login** for the reviewer:
-  - Mobile: `<demo 10-digit mobile>` · Password: `<demo password>`
-  - No OTP / special steps required. (Create a throwaway customer account for this.)
+- Provide this **demo customer login** for the reviewer:
+  - **Mobile: `9000000007`** · **Password: `Sprithi@123`**
+  - No OTP / special steps required. (Throwaway customer "Play Reviewer", ₹1000 demo wallet.)
+  - ⚠️ This account is created in the **local** DB. Run the SQL below on the
+    **production** DB (`u290807677_sprithi_new`) so the reviewer can actually log in:
+    ```sql
+    INSERT INTO users (name, mobile_number, email, password_hash, role, status, wallet_balance, dob, created_at, updated_at)
+    VALUES ('Play Reviewer', '9000000007', 'reviewer@sprithi.com', '$2y$10$fVDWwVFcsQXj.FdcP/E5MexQ8kVT/OlFqdlsh7O7jr6JBMhkm.yE6', 'customer', 'active', 1000.00, '2000-01-01', NOW(), NOW());
+    ```
 
 ## 3. Ads
 - The app shows **in-app promotional banners and vendor videos** (no third-party ad
