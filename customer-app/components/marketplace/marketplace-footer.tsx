@@ -74,8 +74,8 @@ export function MarketplaceFooter() {
           <div>
             <p className="text-sm font-bold text-white">Contact</p>
             <ul className="mt-3 space-y-2 text-sm text-white/70">
-              <li className="flex items-start gap-2"><Phone className="mt-0.5 h-3.5 w-3.5 text-[var(--mk-brand)]" /> <a href="tel:+919999999999" className="hover:text-white">+91 99999 99999</a></li>
-              <li className="flex items-start gap-2"><Mail className="mt-0.5 h-3.5 w-3.5 text-[var(--mk-brand)]" /> <a href="mailto:help@epey.com" className="hover:text-white">help@epey.com</a></li>
+              <li className="flex items-start gap-2"><Phone className="mt-0.5 h-3.5 w-3.5 text-[var(--mk-brand)]" /> <a href="tel:+919345133867" className="hover:text-white">+91 93451 33867</a></li>
+              <li className="flex items-start gap-2"><Mail className="mt-0.5 h-3.5 w-3.5 text-[var(--mk-brand)]" /> <a href="mailto:info@sprithi.com" className="hover:text-white">info@sprithi.com</a></li>
               <li className="flex items-start gap-2"><MapPin className="mt-0.5 h-3.5 w-3.5 text-[var(--mk-brand)]" /> Coimbatore, TN, India</li>
             </ul>
 

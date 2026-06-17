@@ -11,8 +11,8 @@ export const metadata = {
 // static export with no auth. Update the contact block + last-updated date for
 // your entity before publishing.
 const UPDATED = "17 June 2026";
-const SUPPORT_EMAIL = "support@sprithi.com";
-const SUPPORT_PHONE = "+91 99999 99999";
+const SUPPORT_EMAIL = "info@sprithi.com";
+const SUPPORT_PHONE = "+91 93451 33867";
 
 export default function PrivacyPolicyPage() {
   return (
