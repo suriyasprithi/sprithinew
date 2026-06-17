@@ -425,13 +425,10 @@ export default function DeliveryRatesPage() {
           </div>
         ) : (
           <div className="luxe-card overflow-hidden">
-            <div className="hidden grid-cols-[120px_1fr_1fr_1fr_140px_56px] gap-3 border-b border-border bg-surface-2/40 px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground md:grid">
+            <div className="hidden grid-cols-[120px_1fr_72px] gap-3 border-b border-border bg-surface-2/40 px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground md:grid">
               <span>Time</span>
-              <span>State</span>
-              <span>District</span>
-              <span>Taluk</span>
               <span>Price</span>
-              <span className="text-right">Actions</span>
+              <span className="whitespace-nowrap text-center">Actions</span>
             </div>
             {loading ? (
               <div className="p-3"><TableSkeleton rows={4} cols={6} /></div>
@@ -450,21 +447,16 @@ export default function DeliveryRatesPage() {
                     initial={{ opacity: 0, y: 4 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: i * 0.02 }}
-                    className="grid grid-cols-[1fr_auto] items-center gap-3 px-4 py-3 transition-colors hover:bg-surface-2/40 md:grid-cols-[120px_1fr_1fr_1fr_140px_56px]"
+                    className="grid grid-cols-[1fr_auto] items-center gap-3 px-4 py-3 transition-colors hover:bg-surface-2/40 md:grid-cols-[120px_1fr_72px]"
                   >
                     <div className="flex items-center gap-3 md:contents">
                       <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-violet-500/10 text-violet-400 md:hidden">
                         <Clock className="h-4 w-4" />
                       </span>
-                      <p className="hidden text-sm font-medium md:block">{r.time_min} min</p>
-                      <p className="text-sm font-semibold md:text-sm md:font-medium">
-                        <span className="md:hidden">{r.time_min} min · </span>{r.state_name ?? "—"}
-                      </p>
-                      <p className="hidden text-sm text-muted-foreground md:block">{r.district_name ?? "—"}</p>
-                      <p className="hidden text-sm text-muted-foreground md:block">{r.taluk_name ?? "—"}</p>
+                      <p className="text-sm font-semibold md:font-medium">{r.time_min} min</p>
                       <p className="hidden text-sm font-semibold text-brand md:block">{fmtINR(r.price)}</p>
                     </div>
-                    <div className="flex items-center gap-2 justify-self-end">
+                    <div className="flex items-center gap-2 justify-self-end md:justify-self-center">
                       <p className="text-sm font-semibold text-brand md:hidden">{fmtINR(r.price)}</p>
                       <DropdownMenu>
                         <DropdownMenuTrigger

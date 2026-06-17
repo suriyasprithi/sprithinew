@@ -41,6 +41,7 @@ class UserModel extends Model
         'monthly_salary',
         'km_rate',
         'hour_rate',
+        'shift',
         'taluk_id',
         'assigned_vendor_id',
         'address_line',

@@ -60,6 +60,7 @@ class DriverManagementController extends BaseApiController
             'monthly_salary' => 'permit_empty|numeric',
             'km_rate'        => 'permit_empty|numeric',
             'hour_rate'      => 'permit_empty|numeric',
+            'shift'          => 'permit_empty|string|max_length[50]',
             'taluk_id'       => 'permit_empty|is_natural_no_zero',
             'id_card_url'    => 'permit_empty|string',
         ])) return $this->fail('Validation failed', 422, $this->validator->getErrors());
@@ -81,6 +82,7 @@ class DriverManagementController extends BaseApiController
             'monthly_salary' => isset($d['monthly_salary']) ? (float) $d['monthly_salary'] : 0,
             'km_rate'        => isset($d['km_rate']) ? (float) $d['km_rate'] : 0,
             'hour_rate'      => isset($d['hour_rate']) ? (float) $d['hour_rate'] : 0,
+            'shift'          => ! empty($d['shift']) ? $d['shift'] : null,
             'taluk_id'       => isset($d['taluk_id']) ? (int) $d['taluk_id'] : null,
             'id_card_url'    => $d['id_card_url'] ?? null,
         ], true);
@@ -98,9 +100,12 @@ class DriverManagementController extends BaseApiController
         $d = $this->request->getJSON(true) ?? $this->request->getPost();
         $payload = array_intersect_key($d, array_flip([
             'name', 'vehicle_number', 'license_number', 'id_card_url',
-            'monthly_salary', 'km_rate', 'hour_rate',
+            'monthly_salary', 'km_rate', 'hour_rate', 'shift',
             'taluk_id', 'status',
         ]));
+        if (array_key_exists('shift', $payload)) {
+            $payload['shift'] = ! empty($payload['shift']) ? $payload['shift'] : null;
+        }
         foreach (['monthly_salary', 'km_rate', 'hour_rate'] as $k) {
             if (isset($payload[$k])) $payload[$k] = (float) $payload[$k];
         }
@@ -260,6 +265,7 @@ class DriverManagementController extends BaseApiController
                 'monthly_salary'     => (float) ($u['monthly_salary'] ?? 0),
                 'km_rate'            => (float) ($u['km_rate'] ?? 0),
                 'hour_rate'          => (float) ($u['hour_rate'] ?? 0),
+                'shift'              => $u['shift'] ?? null,
                 'taluk_id'           => $u['taluk_id'] ? (int) $u['taluk_id'] : null,
                 'taluk_name'         => $u['taluk_id'] ? ($talukNameById[(int) $u['taluk_id']] ?? null) : null,
                 'assigned_vendor_id' => $u['assigned_vendor_id'] ? (int) $u['assigned_vendor_id'] : null,

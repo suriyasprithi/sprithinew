@@ -40,6 +40,7 @@ type Driver = {
   salary: number;
   km_rate: number;
   hour_rate: number;
+  shift: string;
   taluk_id: number | null;
   taluk_name: string | null;
   assigned_vendor_name: string | null;
@@ -47,11 +48,12 @@ type Driver = {
   status: DriverStatus;
 };
 type TalukOption = { id: number; name: string };
+type ShiftOption = { id: number; name: string; is_active: number };
 type KmSlabOption = { id: number; taluk_id: number; taluk_name: string | null; from_km: number; to_km: number; price_per_km: number };
 type TimeRateOption = { id: number; taluk_id: number; taluk_name: string | null; time_min: number; price: number };
 
-type NewDriver = { name: string; mobile: string; password: string; vehicle: string; license: string; salary: string; km_rate: string; hour_rate: string; taluk_id: string; id_card: string | null };
-type EditDriver = { id: number; name: string; vehicle: string; license: string; salary: string; km_rate: string; hour_rate: string; taluk_id: string; status: DriverStatus; id_card: string | null };
+type NewDriver = { name: string; mobile: string; password: string; vehicle: string; license: string; salary: string; km_rate: string; hour_rate: string; shift: string; taluk_id: string; id_card: string | null };
+type EditDriver = { id: number; name: string; vehicle: string; license: string; salary: string; km_rate: string; hour_rate: string; shift: string; taluk_id: string; status: DriverStatus; id_card: string | null };
 type ResetPw = { id: number; name: string; password: string };
 
 function normalize(raw: unknown): Driver {
@@ -66,6 +68,7 @@ function normalize(raw: unknown): Driver {
     salary: Number(r.monthly_salary ?? 0) || 0,
     km_rate: Number(r.km_rate ?? 0) || 0,
     hour_rate: Number(r.hour_rate ?? 0) || 0,
+    shift: (r.shift as string | null | undefined) || "",
     taluk_id: r.taluk_id ? Number(r.taluk_id) : null,
     taluk_name: (r.taluk_name as string | null | undefined) ?? null,
     assigned_vendor_name: (r.assigned_vendor_name as string | null | undefined) ?? null,
@@ -87,6 +90,7 @@ export default function AdminDriversPage() {
   const [taluks, setTaluks] = useState<TalukOption[]>([]);
   const [kmSlabs, setKmSlabs] = useState<KmSlabOption[]>([]);
   const [timeRates, setTimeRates] = useState<TimeRateOption[]>([]);
+  const [shifts, setShifts] = useState<ShiftOption[]>([]);
 
   const load = async () => {
     setLoading(true);
@@ -105,10 +109,11 @@ export default function AdminDriversPage() {
     void load();
     void (async () => {
       try {
-        const [tRes, kRes, hrRes] = await Promise.all([
+        const [tRes, kRes, hrRes, sRes] = await Promise.all([
           api.get("/geo/taluks"),
           api.get("/admin/delivery-rates/km"),
           api.get("/admin/delivery-rates/time"),
+          api.get("/admin/driver-shifts"),
         ]);
         const itemsOf = (r: { data?: { data?: { items?: unknown } } }): unknown[] =>
           Array.isArray(r.data?.data?.items) ? (r.data!.data!.items as unknown[]) : [];
@@ -133,6 +138,10 @@ export default function AdminDriversPage() {
             time_min: Number(r.time_min ?? 0),
             price: Number(r.price ?? 0),
           };
+        }));
+        setShifts(itemsOf(sRes).map((s) => {
+          const r = s as Record<string, unknown>;
+          return { id: Number(r.id ?? 0), name: String(r.name ?? ""), is_active: Number(r.is_active ?? 0) };
         }));
       } catch {
         // optional — non-blocking
@@ -180,6 +189,7 @@ export default function AdminDriversPage() {
         monthly_salary: Number(adding.salary || 0),
         km_rate: Number(adding.km_rate || 0),
         hour_rate: Number(adding.hour_rate || 0),
+        shift: adding.shift || null,
         taluk_id: adding.taluk_id ? Number(adding.taluk_id) : null,
         id_card_url: adding.id_card,
       });
@@ -205,6 +215,7 @@ export default function AdminDriversPage() {
         monthly_salary: Number(editing.salary || 0),
         km_rate: Number(editing.km_rate || 0),
         hour_rate: Number(editing.hour_rate || 0),
+        shift: editing.shift || null,
         taluk_id: editing.taluk_id ? Number(editing.taluk_id) : null,
         status: editing.status,
         id_card_url: editing.id_card,
@@ -253,6 +264,7 @@ export default function AdminDriversPage() {
       salary: String(d.salary),
       km_rate: String(d.km_rate),
       hour_rate: String(d.hour_rate),
+      shift: d.shift,
       taluk_id: d.taluk_id ? String(d.taluk_id) : "",
       status: d.status,
       id_card: d.id_card,
@@ -269,7 +281,7 @@ export default function AdminDriversPage() {
           title="Drivers"
           description="Manage delivery drivers, vehicles and monthly payroll."
           action={
-            <GradientButton onClick={() => setAdding({ name: "", mobile: "", password: "", vehicle: "", license: "", salary: "", km_rate: "", hour_rate: "", taluk_id: "", id_card: null })}>
+            <GradientButton onClick={() => setAdding({ name: "", mobile: "", password: "", vehicle: "", license: "", salary: "", km_rate: "", hour_rate: "", shift: "", taluk_id: "", id_card: null })}>
               <Plus className="h-4 w-4" /> New driver
             </GradientButton>
           }
@@ -405,6 +417,21 @@ export default function AdminDriversPage() {
             </div>
             <div className="space-y-1.5"><Label>Monthly salary (₹)</Label><Input type="number" value={adding?.salary ?? ""} onChange={(e) => setAdding((p) => p && ({ ...p, salary: e.target.value }))} /></div>
             <div className="space-y-1.5">
+              <Label>Shift</Label>
+              <Select value={adding?.shift || ""} onValueChange={(v) => v && setAdding((p) => p && ({ ...p, shift: v }))}>
+                <SelectTrigger>
+                  <SelectValue placeholder={shifts.some((s) => s.is_active) ? "Select shift (optional)" : "No shifts — add on Driver Shift page"}>
+                    {(v: string) => v || null}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  {shifts.filter((s) => s.is_active).map((s) => (
+                    <SelectItem key={s.id} value={s.name}>{s.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
               <Label>Delivery Time rate</Label>
               <Select value={adding?.hour_rate || ""} onValueChange={(v) => setAdding((p) => p && ({ ...p, hour_rate: v }))} disabled={!adding?.taluk_id}>
                 <SelectTrigger>
@@ -462,6 +489,21 @@ export default function AdminDriversPage() {
               />
             </div>
             <div className="space-y-1.5"><Label>Monthly salary (₹)</Label><Input type="number" value={editing?.salary ?? ""} onChange={(e) => setEditing((p) => p && ({ ...p, salary: e.target.value }))} /></div>
+            <div className="space-y-1.5">
+              <Label>Shift</Label>
+              <Select value={editing?.shift || ""} onValueChange={(v) => v && setEditing((p) => p && ({ ...p, shift: v }))}>
+                <SelectTrigger>
+                  <SelectValue placeholder={shifts.some((s) => s.is_active) ? "Select shift (optional)" : "No shifts — add on Driver Shift page"}>
+                    {(v: string) => v || null}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  {shifts.filter((s) => s.is_active).map((s) => (
+                    <SelectItem key={s.id} value={s.name}>{s.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
             <div className="space-y-1.5">
               <Label>Delivery Time rate</Label>
               <Select value={editing?.hour_rate || ""} onValueChange={(v) => setEditing((p) => p && ({ ...p, hour_rate: v }))} disabled={!editing?.taluk_id}>

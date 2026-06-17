@@ -151,7 +151,7 @@ function RegisterInner() {
     e.preventDefault();
     if (!name) return toast.error("Name is required");
     if (!isMobile(mobile)) return toast.error("Enter a valid 10-digit mobile number");
-    if (mobileTaken) return toast.error("This mobile is already registered. Please log in.");
+    if (mobileTaken) return toast.error("This number already exists. Please log in instead.");
     if (!dob) return toast.error("Date of birth is required");
     if (ageFrom(dob) < 18) return toast.error("You must be at least 18 to register");
     if (stateId == null) return toast.error("Select your state");
@@ -228,7 +228,7 @@ function RegisterInner() {
                 <Label htmlFor="mobile">Mobile</Label>
                 <Input id="mobile" type="tel" inputMode="numeric" autoComplete="tel" placeholder="9999999999" value={mobile} onChange={(e) => setMobile(cleanMobile(e.target.value))} disabled={busy || isLoading} className={`h-11 rounded-xl bg-surface-2/60 ${mobileTaken ? "border-rose-500" : ""}`} />
                 {mobileChecking && <p className="text-[11px] text-muted-foreground">Checking…</p>}
-                {mobileTaken === true && <p className="text-[11px] text-rose-500">This number is already registered. Please log in.</p>}
+                {mobileTaken === true && <p className="text-[11px] font-medium text-rose-500">⚠ This number already exists — please log in instead.</p>}
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="pincode">Pincode</Label>

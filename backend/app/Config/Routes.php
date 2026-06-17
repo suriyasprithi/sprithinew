@@ -347,6 +347,12 @@ $routes->group('api/v1', ['filter' => 'cors'], static function ($routes) {
         $routes->patch('delivery-rates/time/(:num)',    'Api\DeliveryRateController::updateTime/$1');
         $routes->delete('delivery-rates/time/(:num)',   'Api\DeliveryRateController::deleteTime/$1');
 
+        // driver shifts (admin-defined shift names + timing ranges)
+        $routes->get('driver-shifts',           'Api\DriverShiftController::index');
+        $routes->post('driver-shifts',          'Api\DriverShiftController::create');
+        $routes->patch('driver-shifts/(:num)',  'Api\DriverShiftController::update/$1');
+        $routes->delete('driver-shifts/(:num)', 'Api\DriverShiftController::delete/$1');
+
         // current global pool balance + last 12 months of monthly_global_pools rows
         $routes->get('wallet/global-pool', 'Api\WalletController::adminGlobalPool');
 
