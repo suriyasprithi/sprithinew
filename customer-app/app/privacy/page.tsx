@@ -11,8 +11,9 @@ export const metadata = {
 // static export with no auth. Update the contact block + last-updated date for
 // your entity before publishing.
 const UPDATED = "17 June 2026";
-const SUPPORT_EMAIL = "info@sprithi.com";
-const SUPPORT_PHONE = "+91 93451 33867";
+const SUPPORT_EMAIL = "sprithi@gmail.com";
+const SUPPORT_PHONE = "+91 94420 25515";
+const SUPPORT_ADDRESS = "SPRITHI DIGITAL MART PRIVATE LIMITED, Kottaimetu, Villianur, Pondicherry 605110";
 
 export default function PrivacyPolicyPage() {
   return (
@@ -106,7 +107,7 @@ export default function PrivacyPolicyPage() {
         <ul className="mt-2 space-y-1">
           <li>Email: <a href={`mailto:${SUPPORT_EMAIL}`} className="font-medium text-rose-600 hover:underline">{SUPPORT_EMAIL}</a></li>
           <li>Phone: {SUPPORT_PHONE}</li>
-          <li>Address: Coimbatore, Tamil Nadu, India</li>
+          <li>Address: {SUPPORT_ADDRESS}</li>
         </ul>
       </Section>
 

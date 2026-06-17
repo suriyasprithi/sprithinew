@@ -74,9 +74,9 @@ export function MarketplaceFooter() {
           <div>
             <p className="text-sm font-bold text-white">Contact</p>
             <ul className="mt-3 space-y-2 text-sm text-white/70">
-              <li className="flex items-start gap-2"><Phone className="mt-0.5 h-3.5 w-3.5 text-[var(--mk-brand)]" /> <a href="tel:+919345133867" className="hover:text-white">+91 93451 33867</a></li>
-              <li className="flex items-start gap-2"><Mail className="mt-0.5 h-3.5 w-3.5 text-[var(--mk-brand)]" /> <a href="mailto:info@sprithi.com" className="hover:text-white">info@sprithi.com</a></li>
-              <li className="flex items-start gap-2"><MapPin className="mt-0.5 h-3.5 w-3.5 text-[var(--mk-brand)]" /> Coimbatore, TN, India</li>
+              <li className="flex items-start gap-2"><Phone className="mt-0.5 h-3.5 w-3.5 text-[var(--mk-brand)]" /> <a href="tel:+919442025515" className="hover:text-white">+91 94420 25515</a></li>
+              <li className="flex items-start gap-2"><Mail className="mt-0.5 h-3.5 w-3.5 text-[var(--mk-brand)]" /> <a href="mailto:sprithi@gmail.com" className="hover:text-white">sprithi@gmail.com</a></li>
+              <li className="flex items-start gap-2"><MapPin className="mt-0.5 h-3.5 w-3.5 text-[var(--mk-brand)]" /> SPRITHI DIGITAL MART PRIVATE LIMITED, Kottaimetu, Villianur, Pondicherry 605110</li>
             </ul>
 
             <p className="mt-5 text-sm font-bold text-white">Download the app</p>

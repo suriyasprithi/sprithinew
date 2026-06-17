@@ -27,8 +27,8 @@ export function FloatingActions() {
               </button>
             </div>
             <div className="space-y-1 p-3 text-sm">
-              <a href="tel:+919345133867" className="block rounded-md px-2 py-1.5 text-[var(--mk-text)] hover:bg-[var(--mk-brand-soft)]">📞 Call us</a>
-              <a href="mailto:info@sprithi.com" className="block rounded-md px-2 py-1.5 text-[var(--mk-text)] hover:bg-[var(--mk-brand-soft)]">✉️ Email</a>
+              <a href="tel:+919442025515" className="block rounded-md px-2 py-1.5 text-[var(--mk-text)] hover:bg-[var(--mk-brand-soft)]">📞 Call us</a>
+              <a href="mailto:sprithi@gmail.com" className="block rounded-md px-2 py-1.5 text-[var(--mk-text)] hover:bg-[var(--mk-brand-soft)]">✉️ Email</a>
               <a href="/help" className="block rounded-md px-2 py-1.5 text-[var(--mk-text)] hover:bg-[var(--mk-brand-soft)]">❓ Help center</a>
               <a href="/orders" className="block rounded-md px-2 py-1.5 text-[var(--mk-text)] hover:bg-[var(--mk-brand-soft)]">📦 Track order</a>
             </div>
@@ -44,7 +44,7 @@ export function FloatingActions() {
         </button>
 
         <a
-          href="https://wa.me/919345133867"
+          href="https://wa.me/919442025515"
           target="_blank"
           rel="noreferrer"
           aria-label="Chat on WhatsApp"

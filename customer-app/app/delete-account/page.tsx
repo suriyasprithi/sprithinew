@@ -10,8 +10,8 @@ export const metadata = {
 // "Delete account URL". Plain (server) component so it renders in the static
 // export with no auth. Keep the contact block in sync with the privacy page.
 const UPDATED = "17 June 2026";
-const SUPPORT_EMAIL = "info@sprithi.com";
-const SUPPORT_PHONE = "+91 93451 33867";
+const SUPPORT_EMAIL = "sprithi@gmail.com";
+const SUPPORT_PHONE = "+91 94420 25515";
 const MAILTO = `mailto:${SUPPORT_EMAIL}?subject=Account%20and%20data%20deletion%20request`;
 
 export default function DeleteAccountPage() {
@@ -25,8 +25,7 @@ export default function DeleteAccountPage() {
       <p className="mt-1 text-sm text-neutral-500">Last updated: {UPDATED}</p>
 
       <p className="mt-6">
-        This page explains how to request deletion of your <strong>SPRITHI</strong> account
-        (app <code className="rounded bg-neutral-100 px-1.5 py-0.5 text-[13px]">com.epey.customer</code>) and the
+        This page explains how to request deletion of your <strong>SPRITHI</strong> account and the
         personal data associated with it. SPRITHI is a wallet-powered, multi-vendor marketplace for ordering
         products from local shops.
       </p>
@@ -81,7 +80,7 @@ export default function DeleteAccountPage() {
         <ul className="mt-2 space-y-1">
           <li>Email: <a href={`mailto:${SUPPORT_EMAIL}`} className="font-medium text-rose-600 hover:underline">{SUPPORT_EMAIL}</a></li>
           <li>Phone: {SUPPORT_PHONE}</li>
-          <li>Address: Coimbatore, Tamil Nadu, India</li>
+          <li>Address: SPRITHI DIGITAL MART PRIVATE LIMITED, Kottaimetu, Villianur, Pondicherry 605110</li>
         </ul>
         <p className="mt-3 text-sm text-neutral-500">
           See also our{" "}
