@@ -48,7 +48,19 @@ type Driver = {
   status: DriverStatus;
 };
 type TalukOption = { id: number; name: string };
-type ShiftOption = { id: number; name: string; is_active: number };
+type ShiftOption = { id: number; name: string; is_active: number; start_time?: string | null; end_time?: string | null };
+
+// "06:00" -> "6:00 AM"; build "6:00 AM – 2:00 PM" for a shift's time range.
+function fmt12(t?: string | null): string {
+  if (!t) return "";
+  const [h, m = "00"] = t.split(":");
+  const hr = Number(h);
+  return `${hr % 12 || 12}:${m} ${hr >= 12 ? "PM" : "AM"}`;
+}
+function shiftTime(s: ShiftOption): string {
+  if (s.start_time && s.end_time) return `${fmt12(s.start_time)} – ${fmt12(s.end_time)}`;
+  return fmt12(s.start_time);
+}
 type KmSlabOption = { id: number; taluk_id: number; taluk_name: string | null; from_km: number; to_km: number; price_per_km: number };
 type TimeRateOption = { id: number; taluk_id: number; taluk_name: string | null; time_min: number; price: number };
 
@@ -141,7 +153,13 @@ export default function AdminDriversPage() {
         }));
         setShifts(itemsOf(sRes).map((s) => {
           const r = s as Record<string, unknown>;
-          return { id: Number(r.id ?? 0), name: String(r.name ?? ""), is_active: Number(r.is_active ?? 0) };
+          return {
+            id: Number(r.id ?? 0),
+            name: String(r.name ?? ""),
+            is_active: Number(r.is_active ?? 0),
+            start_time: (r.start_time as string | null) ?? null,
+            end_time: (r.end_time as string | null) ?? null,
+          };
         }));
       } catch {
         // optional — non-blocking
@@ -421,12 +439,17 @@ export default function AdminDriversPage() {
               <Select value={adding?.shift || ""} onValueChange={(v) => v && setAdding((p) => p && ({ ...p, shift: v }))}>
                 <SelectTrigger>
                   <SelectValue placeholder={shifts.some((s) => s.is_active) ? "Select shift (optional)" : "No shifts — add on Driver Shift page"}>
-                    {(v: string) => v || null}
+                    {(v: string) => { const s = shifts.find((x) => x.name === v); return v ? (s && shiftTime(s) ? `${v} · ${shiftTime(s)}` : v) : null; }}
                   </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   {shifts.filter((s) => s.is_active).map((s) => (
-                    <SelectItem key={s.id} value={s.name}>{s.name}</SelectItem>
+                    <SelectItem key={s.id} value={s.name}>
+                      <span className="flex w-full items-center justify-between gap-4">
+                        <span>{s.name}</span>
+                        {shiftTime(s) && <span className="text-xs text-muted-foreground">{shiftTime(s)}</span>}
+                      </span>
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -494,12 +517,17 @@ export default function AdminDriversPage() {
               <Select value={editing?.shift || ""} onValueChange={(v) => v && setEditing((p) => p && ({ ...p, shift: v }))}>
                 <SelectTrigger>
                   <SelectValue placeholder={shifts.some((s) => s.is_active) ? "Select shift (optional)" : "No shifts — add on Driver Shift page"}>
-                    {(v: string) => v || null}
+                    {(v: string) => { const s = shifts.find((x) => x.name === v); return v ? (s && shiftTime(s) ? `${v} · ${shiftTime(s)}` : v) : null; }}
                   </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   {shifts.filter((s) => s.is_active).map((s) => (
-                    <SelectItem key={s.id} value={s.name}>{s.name}</SelectItem>
+                    <SelectItem key={s.id} value={s.name}>
+                      <span className="flex w-full items-center justify-between gap-4">
+                        <span>{s.name}</span>
+                        {shiftTime(s) && <span className="text-xs text-muted-foreground">{shiftTime(s)}</span>}
+                      </span>
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
