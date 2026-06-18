@@ -41,6 +41,11 @@ type ApiVendor = {
   id: number; name: string; shop_name?: string | null; area?: string | null; pincode?: string | null;
 };
 
+// Same URL axios builds for /public/banners. An inline <script> (below) kicks
+// this fetch off during HTML parse — before the JS bundle finishes downloading —
+// so the hero banner (mobile LCP element) is ready sooner.
+const BANNERS_URL = `${process.env.NEXT_PUBLIC_API_URL ?? ""}/api/v1/public/banners`;
+
 export default function PublicHomePage() {
   const [products, setProducts] = useState<MarketplaceProduct[]>([]);
   const [vendors,  setVendors]  = useState<MarketplaceVendor[]>([]);
@@ -56,8 +61,17 @@ export default function PublicHomePage() {
     // product/vendor/video calls to all resolve.
     const fetchBanners = () => {
       setBannersLoading(true);
-      api.get("/public/banners")
-        .then((br) => { if (br?.data.data?.by_slot) setBanners({ ...EMPTY_BANNERS, ...br.data.data.by_slot }); })
+      // Reuse the fetch started in the inline <head>-script (HTML-parse time) if
+      // present; otherwise fetch normally. Either way it resolves to the API
+      // envelope { data: { by_slot } }.
+      const early = typeof window !== "undefined"
+        ? (window as unknown as { __epeyBanners?: Promise<{ data?: { by_slot?: Partial<BannersBySlot> } } | null> }).__epeyBanners
+        : null;
+      const p = early ? Promise.resolve(early) : api.get("/public/banners").then((r) => r.data);
+      if (typeof window !== "undefined") {
+        (window as unknown as { __epeyBanners?: unknown }).__epeyBanners = undefined; // one-shot
+      }
+      p.then((env) => { if (env?.data?.by_slot) setBanners({ ...EMPTY_BANNERS, ...env.data.by_slot }); })
         .catch(() => { /* keep empty banners */ })
         .finally(() => setBannersLoading(false));
     };
@@ -115,6 +129,14 @@ export default function PublicHomePage() {
 
   return (
     <div className="marketplace-theme min-h-screen pb-24 md:pb-0">
+      {/* Start the hero-banners fetch during HTML parse (before the JS bundle
+          finishes) so the LCP banner is ready sooner on mobile. fetchBanners()
+          reuses window.__epeyBanners. */}
+      <script
+        dangerouslySetInnerHTML={{
+          __html: `try{window.__epeyBanners=fetch(${JSON.stringify(BANNERS_URL)},{headers:{Accept:"application/json"}}).then(function(r){return r.json()}).catch(function(){return null})}catch(e){}`,
+        }}
+      />
       <TopInfoBar />
       <MarketplaceHeader cartCount={0} wishlistCount={0} unreadCount={0} />
       <CategoryNavBar />
