@@ -52,20 +52,31 @@ class OptimizeImages extends BaseCommand
         foreach (self::TARGETS as [$table, $col, $type]) {
             if (! $db->tableExists($table)) { CLI::write("skip {$table} (no such table)", 'yellow'); continue; }
 
-            $b = $db->table($table)->select("id, {$col}")->like($col, 'data:', 'after');
+            // Two bloat shapes: inline base64 (data:%) and legacy full-res files
+            // hosted on the old server (…epey_admin/uploads/…).
+            $b = $db->table($table)->select("id, {$col}")
+                ->groupStart()
+                    ->like($col, 'data:', 'after')
+                    ->orLike($col, 'epey_admin/uploads', 'both')
+                ->groupEnd();
             if ($limit > 0) $b->limit($limit);
             $rows = $b->get()->getResultArray();
-            CLI::write(sprintf('%s.%s — %d base64 row(s)', $table, $col, count($rows)), 'cyan');
+            CLI::write(sprintf('%s.%s — %d row(s) to optimize', $table, $col, count($rows)), 'cyan');
 
             foreach ($rows as $r) {
-                $old = (string) ($r[$col] ?? '');
-                $new = ImageOptimizer::fromDataUri($old, $type);
+                $old   = (string) ($r[$col] ?? '');
+                $isB64 = strncmp($old, 'data:', 5) === 0;
+                $new   = $isB64
+                    ? ImageOptimizer::fromDataUri($old, $type)
+                    : ImageOptimizer::fromRemoteUrl($old, $type);
+
                 if (! is_string($new) || $new === $old || strncmp($new, 'data:', 5) === 0) {
                     CLI::write("  id={$r['id']} — could not convert (skipped)", 'yellow');
                     continue;
                 }
                 $count++; $beforeBytes += strlen($old);
-                CLI::write(sprintf('  id=%-6s %dKB base64 → %s', $r['id'], intdiv(strlen($old), 1024), $new));
+                CLI::write(sprintf('  id=%-6s %s → %s',
+                    $r['id'], $isB64 ? intdiv(strlen($old), 1024) . 'KB base64' : 'legacy URL', $new));
                 if (! $dry) {
                     $db->table($table)->where('id', $r['id'])->update([$col => $new]);
                 }
