@@ -264,23 +264,6 @@ function RegisterInner() {
                 <Input id="pincode" inputMode="numeric" placeholder="600001" value={pincode} onChange={(e) => setPincode(e.target.value)} disabled={busy || isLoading} className="h-11 rounded-xl bg-surface-2/60" />
               </div>
               <div className="space-y-1.5 sm:col-span-2">
-                <div className="flex items-end gap-2">
-                  <div className="flex-1 space-y-1.5">
-                    <Label htmlFor="otp">OTP verification{otpSent && <span className="ml-1 text-emerald-600">— sent ✓</span>}</Label>
-                    <Input id="otp" inputMode="numeric" autoComplete="one-time-code" placeholder={otpSent ? "Enter 6-digit OTP" : "Tap Send OTP →"} value={otp} onChange={(e) => setOtp(e.target.value.replace(/\D/g, "").slice(0, 6))} disabled={busy || isLoading || !otpSent} className="h-11 rounded-xl bg-surface-2/60" />
-                  </div>
-                  <button
-                    type="button"
-                    onClick={sendOtp}
-                    disabled={busy || isLoading || otpSending || !isMobile(mobile) || mobileTaken === true || otpCooldown > 0}
-                    className="h-11 shrink-0 rounded-xl border border-brand/40 bg-brand/5 px-4 text-sm font-medium text-brand transition hover:bg-brand/10 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    {otpSending ? "Sending…" : otpCooldown > 0 ? `Resend ${otpCooldown}s` : otpSent ? "Resend OTP" : "Send OTP"}
-                  </button>
-                </div>
-                {otpSent && <p className="text-[11px] text-muted-foreground">Enter the code we texted to {mobile}.</p>}
-              </div>
-              <div className="space-y-1.5 sm:col-span-2">
                 <Label htmlFor="dob">Date of birth</Label>
                 <Input id="dob" type="date" max={maxDobForAdult()} value={dob} onChange={(e) => setDob(e.target.value)} disabled={busy || isLoading} className="h-11 rounded-xl bg-surface-2/60" />
               </div>
@@ -348,6 +331,23 @@ function RegisterInner() {
                       ? <p className="text-xs font-medium text-emerald-600">✓ Referred by {referrerName}</p>
                       : <p className="text-xs text-muted-foreground">No account found for this code</p>
                 )}
+              </div>
+              <div className="space-y-1.5 sm:col-span-2">
+                <div className="flex items-end gap-2">
+                  <div className="flex-1 space-y-1.5">
+                    <Label htmlFor="otp">Mobile OTP verification{otpSent && <span className="ml-1 text-emerald-600">— sent ✓</span>}</Label>
+                    <Input id="otp" inputMode="numeric" autoComplete="one-time-code" placeholder={otpSent ? "Enter 6-digit OTP" : "Tap Send OTP →"} value={otp} onChange={(e) => setOtp(e.target.value.replace(/\D/g, "").slice(0, 6))} disabled={busy || isLoading || !otpSent} className="h-11 rounded-xl bg-surface-2/60" />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={sendOtp}
+                    disabled={busy || isLoading || otpSending || !isMobile(mobile) || mobileTaken === true || otpCooldown > 0}
+                    className="h-11 shrink-0 rounded-xl border border-brand/40 bg-brand/5 px-4 text-sm font-medium text-brand transition hover:bg-brand/10 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {otpSending ? "Sending…" : otpCooldown > 0 ? `Resend ${otpCooldown}s` : otpSent ? "Resend OTP" : "Send OTP"}
+                  </button>
+                </div>
+                {otpSent && <p className="text-[11px] text-muted-foreground">Enter the code we texted to {mobile}.</p>}
               </div>
               <GradientButton type="submit" size="lg" className="w-full sm:col-span-2" disabled={busy || isLoading}>
                 {busy || isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <><Sparkles className="h-4 w-4" /> Create account</>}
