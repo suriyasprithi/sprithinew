@@ -6,7 +6,7 @@ import { TopInfoBar } from "@/components/marketplace/top-info-bar";
 import { MarketplaceHeader } from "@/components/marketplace/marketplace-header";
 import { CategoryNavBar } from "@/components/marketplace/category-nav-bar";
 import { CouponBanner } from "@/components/marketplace/coupon-banner";
-import { HeroCarousel } from "@/components/marketplace/hero-carousel";
+import { HeroCarousel, HeroCarouselSkeleton } from "@/components/marketplace/hero-carousel";
 import { FeaturedCategories } from "@/components/marketplace/featured-categories";
 import { ProductCard, ProductCardSkeleton, type MarketplaceProduct } from "@/components/marketplace/product-card";
 import { MarketplaceBottomNav } from "@/components/marketplace/mobile-bottom-nav";
@@ -113,12 +113,16 @@ export default function PublicHomePage() {
 
       <CouponBanner banner={banners.coupon[0] ?? null} />
 
-      <HeroCarousel
-        centerSlides={banners.hero_center}
-        leftBanner={banners.hero_left[0] ?? null}
-        rightTop={banners.hero_right_top[0] ?? null}
-        rightBottom={banners.hero_right_bottom[0] ?? null}
-      />
+      {loading ? (
+        <HeroCarouselSkeleton />
+      ) : (
+        <HeroCarousel
+          centerSlides={banners.hero_center}
+          leftBanner={banners.hero_left[0] ?? null}
+          rightTop={banners.hero_right_top[0] ?? null}
+          rightBottom={banners.hero_right_bottom[0] ?? null}
+        />
+      )}
       <FeaturedCategories />
       {(customerVideos.length > 0 || vendorVideos.length > 0) && (
         <section className="mx-auto max-w-7xl px-4 py-6">

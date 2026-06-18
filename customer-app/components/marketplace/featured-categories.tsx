@@ -69,8 +69,30 @@ export function FeaturedCategories() {
     }
   }, []);
 
-  // Don't render the section while loading or when empty
-  if (loading || cats.length === 0) {
+  // While loading, reserve the section's height with a skeleton so the page
+  // doesn't shift (CLS) when categories arrive. Only collapse to null once the
+  // fetch has finished and there genuinely are no categories.
+  if (loading) {
+    return (
+      <section className="mx-auto max-w-7xl px-4 py-6">
+        <div className="mb-4 space-y-2">
+          <div className="h-3 w-24 animate-pulse rounded bg-[var(--mk-surface-3)]" />
+          <div className="h-6 w-48 animate-pulse rounded bg-[var(--mk-surface-3)]" />
+        </div>
+        <div className="overflow-hidden">
+          <div className="flex gap-3 md:gap-4">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <div
+                key={i}
+                className="aspect-[3/4] min-w-0 shrink-0 grow-0 basis-1/2 animate-pulse rounded-2xl bg-[var(--mk-surface-3)] sm:basis-1/3 md:basis-1/4 lg:basis-1/6"
+              />
+            ))}
+          </div>
+        </div>
+      </section>
+    );
+  }
+  if (cats.length === 0) {
     return null;
   }
 
