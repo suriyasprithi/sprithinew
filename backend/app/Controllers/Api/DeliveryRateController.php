@@ -10,6 +10,7 @@ use App\Models\ProductModel;
 use App\Models\StateModel;
 use App\Models\TalukModel;
 use App\Models\VendorProfileModel;
+use App\Services\DeliveryChargeService;
 use CodeIgniter\HTTP\ResponseInterface;
 
 class DeliveryRateController extends BaseApiController
@@ -97,6 +98,26 @@ class DeliveryRateController extends BaseApiController
         ]);
     }
 
+    /**
+     * Live delivery-charge quote for the current cart + chosen time-rate.
+     * Drives the checkout "Free Delivery / ₹X" line. The amount is recomputed
+     * authoritatively on order placement, so this is display-only.
+     * Query: ?rate_id=N (the selected delivery time-rate, gives estimated minutes).
+     */
+    public function customerDeliveryQuote(): ResponseInterface
+    {
+        $auth = $this->authUser();
+        if (! $auth) return $this->fail('Unauthorized', 401);
+
+        $rateId  = (int) $this->request->getGet('rate_id');
+        $minutes = 0;
+        if ($rateId) {
+            $rate = (new DeliveryTimeRateModel())->find($rateId);
+            if ($rate) $minutes = (int) $rate['time_min'];
+        }
+        return $this->ok((new DeliveryChargeService())->quote((int) $auth->id, $minutes));
+    }
+
     /** Resolve the taluk of the (first) vendor in the customer's cart, or 0. */
     private function cartTalukId(int $userId): int
     {
@@ -157,13 +178,13 @@ class DeliveryRateController extends BaseApiController
     {
         if ($r = $this->requireRole(['admin'])) return $r;
         if (! $this->validate([
-            'taluk_id' => 'required|is_natural_no_zero',
+            'taluk_id' => 'permit_empty|is_natural',
             'time_min' => 'required|is_natural_no_zero',
             'price'    => 'required|numeric',
         ])) return $this->fail('Validation failed', 422, $this->validator->getErrors());
 
         $d       = $this->request->getJSON(true) ?? $this->request->getPost();
-        $talukId = (int) $d['taluk_id'];
+        $talukId = isset($d['taluk_id']) ? (int) $d['taluk_id'] : 0;
         $timeMin = (int) $d['time_min'];
         $price   = (float) $d['price'];
 

@@ -47,6 +47,9 @@ class CategoryController extends BaseApiController
                 ? (int) $data['vendor_category_id']
                 : null,
             'status'             => $data['status'] ?? 'active',
+            'free_delivery_min'  => isset($data['free_delivery_min']) && $data['free_delivery_min'] !== ''
+                ? (float) $data['free_delivery_min']
+                : 0,
         ], true);
         return $this->ok(['id' => (int) $id], 'Created');
     }
@@ -56,6 +59,11 @@ class CategoryController extends BaseApiController
         if ($r = $this->requireAdmin()) return $r;
         $data = $this->request->getJSON(true) ?? $this->request->getPost();
         $payload = array_intersect_key($data, array_flip(['name', 'status']));
+        if (array_key_exists('free_delivery_min', $data)) {
+            $payload['free_delivery_min'] = $data['free_delivery_min'] === '' || $data['free_delivery_min'] === null
+                ? 0
+                : (float) $data['free_delivery_min'];
+        }
         if (array_key_exists('vendor_category_id', $data)) {
             $payload['vendor_category_id'] = $data['vendor_category_id'] === null || $data['vendor_category_id'] === ''
                 ? null
@@ -140,10 +148,11 @@ class CategoryController extends BaseApiController
         return null;
     }
 
-    /** Cast vendor_category_id for the frontend. */
+    /** Cast vendor_category_id + free_delivery_min for the frontend. */
     private function decode(array $row): array
     {
         $row['vendor_category_id'] = isset($row['vendor_category_id']) ? (int) $row['vendor_category_id'] : null;
+        $row['free_delivery_min']  = (float) ($row['free_delivery_min'] ?? 0);
         return $row;
     }
 }

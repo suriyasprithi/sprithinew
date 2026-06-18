@@ -46,6 +46,12 @@ class AdminSettingsController extends BaseApiController
         'cancel.window_hours'        => '24',
         'cancel.penalty'             => '0',
         'cancel.valid_reasons'       => '',
+        // Rule-based delivery charge (DeliveryChargeService). Paid window wraps
+        // midnight: 18:00 → 09:00 means free 09:00–17:59, paid 18:00–08:59.
+        'delivery.paid_start'        => '18:00',
+        'delivery.paid_end'          => '09:00',
+        'delivery.charge'            => '40',
+        'delivery.free_above_hours'  => '4',
     ];
 
     /**

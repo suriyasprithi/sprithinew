@@ -30,6 +30,12 @@ import { api, apiErrorMessage } from "@/lib/api";
 const fmtINR = (n: number) =>
   new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 2 }).format(n);
 
+/** Render total minutes as "1h 33m" / "45m" / "2h". */
+const fmtHM = (m: number) => {
+  const h = Math.floor(m / 60), mm = m % 60;
+  return h ? (mm ? `${h}h ${mm}m` : `${h}h`) : `${mm}m`;
+};
+
 type GeoState    = { id: number; name: string };
 type GeoDistrict = { id: number; name: string; state_id: number };
 type GeoTaluk    = { id: number; name: string; district_id: number };
@@ -65,10 +71,8 @@ type KmDraft = {
 };
 type TimeDraft = {
   id?: number;
-  state_id?: number;
-  district_id?: number;
-  taluk_id?: number;
-  time_min?: number;
+  hours?: number;
+  minutes?: number;
   price?: number;
 };
 
@@ -270,14 +274,14 @@ export default function DeliveryRatesPage() {
 
   async function saveTime() {
     if (!timeEditing) return;
-    const { time_min, taluk_id, price } = timeEditing;
-    if (time_min == null || Number(time_min) <= 0) { toast.error("Time (minutes) required"); return; }
-    if (!taluk_id) { toast.error("Select state, district & taluk"); return; }
+    const { hours, minutes, price } = timeEditing;
+    const totalMin = (Number(hours) || 0) * 60 + (Number(minutes) || 0);
+    if (totalMin <= 0) { toast.error("Enter hours or minutes"); return; }
     if (price == null || Number(price) < 0) { toast.error("Invalid price"); return; }
 
     setSaving(true);
     try {
-      const payload = { taluk_id, time_min: Number(time_min), price: Number(price) };
+      const payload = { time_min: totalMin, price: Number(price) };
       if (timeEditing.id) {
         await api.patch(`/admin/delivery-rates/time/${timeEditing.id}`, payload);
         toast.success("Time rate updated");
@@ -453,7 +457,7 @@ export default function DeliveryRatesPage() {
                       <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-violet-500/10 text-violet-400 md:hidden">
                         <Clock className="h-4 w-4" />
                       </span>
-                      <p className="text-sm font-semibold md:font-medium">{r.time_min} min</p>
+                      <p className="text-sm font-semibold md:font-medium">{fmtHM(r.time_min)}</p>
                       <p className="hidden text-sm font-semibold text-brand md:block">{fmtINR(r.price)}</p>
                     </div>
                     <div className="flex items-center gap-2 justify-self-end md:justify-self-center">
@@ -469,9 +473,9 @@ export default function DeliveryRatesPage() {
                         <DropdownMenuContent align="end" className="w-40">
                           <DropdownMenuItem onClick={() => setTimeEditing({
                             id: r.id,
-                            time_min: r.time_min,
+                            hours: Math.floor(r.time_min / 60),
+                            minutes: r.time_min % 60,
                             price: r.price,
-                            ...chainFor(r.taluk_id),
                           })}>
                             <Pencil className="h-4 w-4" /> Edit
                           </DropdownMenuItem>
@@ -538,20 +542,17 @@ export default function DeliveryRatesPage() {
           </DialogHeader>
           <div className="grid gap-3 md:grid-cols-2">
             <div className="space-y-1.5">
-              <Label>Time (minutes)</Label>
-              <Input type="number" step="1" value={timeEditing?.time_min ?? ""} onChange={(e) => setTimeEditing((p) => ({ ...(p ?? {}), time_min: e.target.value === "" ? undefined : Number(e.target.value) }))} placeholder="Enter Time" />
+              <Label>Hours</Label>
+              <Input type="number" min="0" step="1" value={timeEditing?.hours ?? ""} onChange={(e) => setTimeEditing((p) => ({ ...(p ?? {}), hours: e.target.value === "" ? undefined : Number(e.target.value) }))} placeholder="Enter Hours" />
             </div>
             <div className="space-y-1.5">
+              <Label>Minutes</Label>
+              <Input type="number" min="0" max="59" step="1" value={timeEditing?.minutes ?? ""} onChange={(e) => setTimeEditing((p) => ({ ...(p ?? {}), minutes: e.target.value === "" ? undefined : Number(e.target.value) }))} placeholder="Enter Minutes" />
+            </div>
+            <div className="space-y-1.5 md:col-span-2">
               <Label>Price</Label>
               <Input type="number" step="0.01" value={timeEditing?.price ?? ""} onChange={(e) => setTimeEditing((p) => ({ ...(p ?? {}), price: e.target.value === "" ? undefined : Number(e.target.value) }))} placeholder="Enter Price" />
             </div>
-            <GeoSelects
-              value={timeEditing ?? {}}
-              onChange={(next) => setTimeEditing((p) => ({ ...(p ?? {}), ...next }))}
-              states={states}
-              districts={districts}
-              taluks={taluks}
-            />
           </div>
           <DialogFooter>
             <Button variant="ghost" onClick={() => setTimeEditing(null)} disabled={saving}>Cancel</Button>

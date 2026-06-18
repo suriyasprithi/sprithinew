@@ -31,6 +31,20 @@ type CartRow = {
 const fmtINR = (n: number) =>
   new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(n);
 
+/** Render total minutes as "1h 33m" / "45m" / "2h". */
+const fmtHM = (m: number) => {
+  const h = Math.floor(m / 60), mm = m % 60;
+  return h ? (mm ? `${h}h ${mm}m` : `${h}h`) : `${mm}m`;
+};
+
+type DeliveryQuote = { free: boolean; amount: number; reason: string };
+const quoteHint = (q: DeliveryQuote | null): string => {
+  if (!q || q.free) return "";
+  if (q.reason === "night") return "Night-time delivery charge applies";
+  if (q.reason === "threshold") return "Order doesn't meet the free-delivery amount";
+  return "";
+};
+
 function normalize(items: unknown[]): CustomerAddress[] {
   return (items as CustomerAddress[]).map((a) => ({
     ...a,
@@ -60,6 +74,7 @@ export default function CheckoutPage() {
   type TimeRate = { id: number; time_min: number; price: number };
   const [rates, setRates] = useState<TimeRate[]>([]);
   const [rateId, setRateId] = useState<number | null>(null);
+  const [quote, setQuote] = useState<DeliveryQuote | null>(null);
 
   useEffect(() => {
     void (async () => {
@@ -115,6 +130,22 @@ export default function CheckoutPage() {
     })();
   }, [router]);
 
+  // Live, server-computed delivery charge (rule-based). Recomputed when the
+  // estimated-time selection changes or once the cart has loaded. The order
+  // endpoint recomputes the same amount authoritatively on placement.
+  useEffect(() => {
+    if (loading) return;
+    void (async () => {
+      try {
+        const res = await api.get(`/customer/delivery-quote${rateId ? `?rate_id=${rateId}` : ""}`);
+        const d = (res.data.data ?? {}) as Record<string, unknown>;
+        setQuote({ free: Boolean(d.free), amount: Number(d.amount ?? 0), reason: String(d.reason ?? "") });
+      } catch {
+        setQuote(null);
+      }
+    })();
+  }, [rateId, loading]);
+
   async function addNewAddress() {
     if (!addrForm.address_line.trim()) { toast.error("Full address is required"); return; }
     setSavingAddr(true);
@@ -138,8 +169,7 @@ export default function CheckoutPage() {
   }
 
   const subtotal = items.reduce((s, i) => s + Number(i.price) * i.qty, 0);
-  const selectedRate = rates.find((r) => r.id === rateId) ?? null;
-  const deliveryFee = selectedRate ? selectedRate.price : 0;
+  const deliveryFee = quote ? quote.amount : 0;
   const total = subtotal + deliveryFee;
   const balance = user?.wallet_balance ?? 0;
   const selected = addresses.find((a) => a.id === selectedId) ?? null;
@@ -187,25 +217,30 @@ export default function CheckoutPage() {
 
         <LuxuryCard hoverLift={false} className="space-y-2 p-4 text-sm">
           <div className="flex justify-between"><span className="text-muted-foreground">Subtotal</span><span>{fmtINR(subtotal)}</span></div>
-          <div className="flex items-center justify-between gap-2">
-            <span className="text-muted-foreground">Delivery fee</span>
-            {rates.length > 0 ? (
+          {rates.length > 0 && (
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-muted-foreground">Estimated time</span>
               <select
                 value={rateId ?? ""}
                 onChange={(e) => setRateId(Number(e.target.value))}
-                aria-label="Delivery option"
+                aria-label="Estimated delivery time"
                 className="rounded-lg border border-border bg-surface-2/60 px-2 py-1 text-sm font-medium outline-none focus:border-brand/50"
               >
                 {rates.map((r) => (
-                  <option key={r.id} value={r.id}>
-                    {r.time_min} min — {fmtINR(r.price)}
-                  </option>
+                  <option key={r.id} value={r.id}>{fmtHM(r.time_min)}</option>
                 ))}
               </select>
-            ) : (
-              <span>{fmtINR(deliveryFee)}</span>
-            )}
+            </div>
+          )}
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-muted-foreground">Delivery fee</span>
+            {quote?.free
+              ? <span className="font-semibold text-emerald-500">Free Delivery</span>
+              : <span className="font-medium">{fmtINR(deliveryFee)}</span>}
           </div>
+          {quoteHint(quote) && (
+            <p className="text-[11px] text-muted-foreground">{quoteHint(quote)}</p>
+          )}
           <div className="mt-2 flex justify-between border-t border-border pt-2 text-base font-bold"><span>Total</span><span className="text-brand">{fmtINR(total)}</span></div>
         </LuxuryCard>
 

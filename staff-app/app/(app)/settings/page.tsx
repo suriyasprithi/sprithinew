@@ -25,6 +25,7 @@ const META: Record<string, { title: string; description: string }> = {
   buyback:    { title: "Buyback queue",  description: "Buyback FIFO slot allocations." },
   returns:    { title: "Returns",        description: "How long after delivery customers can request a return." },
   cancel:     { title: "Cancellation",   description: "When a COD order can be cancelled, and the penalty for a cancellation without a valid reason." },
+  delivery:   { title: "Delivery charge", description: "Rule-based delivery fee. Paid window (overnight) is charged the flat amount; orders with an estimated time above the free-hours limit are free; otherwise each product category must meet its Free-delivery threshold (set per category on the Categories page)." },
 };
 
 // Friendly field labels for the keys that aren't self-explanatory.
@@ -49,6 +50,10 @@ const LABELS: Record<string, string> = {
   "cancel.window_hours":        "Cancel window (hours, 0 = off)",
   "cancel.penalty":             "Cancel penalty (₹)",
   "cancel.valid_reasons":       "Valid reasons (comma-separated)",
+  "delivery.paid_start":        "Paid window start (HH:MM, e.g. 18:00)",
+  "delivery.paid_end":          "Paid window end (HH:MM, e.g. 09:00)",
+  "delivery.charge":            "Paid delivery charge (₹)",
+  "delivery.free_above_hours":  "Free delivery above delivery time (hours)",
 };
 
 // The token bonus keys get their own card; everything else by prefix.
