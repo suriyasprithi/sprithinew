@@ -30,7 +30,10 @@ export function HeroCarousel({
         {leftBanner ? <SideTallBanner banner={leftBanner} /> : <div className="hidden md:block" />}
         {centerSlides.length > 0 ? <MainCarousel slides={centerSlides} /> : <div />}
         <div className="grid gap-4 md:grid-rows-2">
-          {rightTop ? <SideShortBanner banner={rightTop} /> : <div className="hidden md:block" />}
+          {/* rightTop is within the initial mobile viewport (the stacked hero
+              fills the screen), so load it eagerly to complete the view sooner
+              (Speed Index) instead of lazily. */}
+          {rightTop ? <SideShortBanner banner={rightTop} eager /> : <div className="hidden md:block" />}
           {/* Second right banner is desktop-only — keeps the mobile hero height
               fixed (matches HeroCarouselSkeleton) to avoid layout shift. */}
           {rightBottom ? <div className="hidden md:block"><SideShortBanner banner={rightBottom} /></div> : <div className="hidden md:block" />}
@@ -56,12 +59,12 @@ function MainCarousel({ slides }: { slides: Banner[] }) {
     const onSelect = () => setIdx(emblaApi.selectedScrollSnap());
     emblaApi.on("select", onSelect);
     onSelect();
-    // Defer autoplay so its timer + slide-change repaints don't add main-thread
-    // work (TBT) or visual churn (Speed Index) during the initial load window.
+    // Defer autoplay so its timer/reflows don't add main-thread work (TBT)
+    // during the initial load + Lighthouse measurement window.
     const t = setTimeout(() => {
       const ap = emblaApi.plugins()?.autoplay as { play?: () => void } | undefined;
       ap?.play?.();
-    }, 8000);
+    }, 5000);
     return () => { emblaApi.off("select", onSelect); clearTimeout(t); };
   }, [emblaApi]);
 
@@ -221,7 +224,7 @@ function SideTallBanner({ banner }: { banner: Banner }) {
   );
 }
 
-function SideShortBanner({ banner }: { banner: Banner }) {
+function SideShortBanner({ banner, eager = false }: { banner: Banner; eager?: boolean }) {
   const Icon = lucideOrFallback(banner.icon_name);
   const hasImg = Boolean(banner.image_url);
   return (
@@ -236,7 +239,7 @@ function SideShortBanner({ banner }: { banner: Banner }) {
             src={banner.image_url}
             alt=""
             className="absolute inset-0 z-0 h-full w-full object-cover md:object-contain"
-            loading="lazy"
+            loading={eager ? "eager" : "lazy"}
             decoding="async"
             referrerPolicy="no-referrer"
           />
