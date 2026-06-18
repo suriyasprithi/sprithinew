@@ -27,13 +27,9 @@ export function HeroCarousel({
       <div
         className="grid gap-4 animate-in fade-in slide-in-from-bottom-4 duration-700 md:grid-cols-[1.05fr_2.6fr_1.1fr] md:[grid-template-rows:1fr]"
       >
-        {/* Side banners are desktop-only. On mobile the stacked hero used to put
-            3 banner images in the viewport, all competing for the throttled-4G
-            bandwidth and dragging LCP + Speed Index. Mobile now shows only the
-            centre carousel (one image) so it loads fast and fills the view. */}
-        {leftBanner ? <div className="hidden md:block"><SideTallBanner banner={leftBanner} /></div> : <div className="hidden md:block" />}
+        {leftBanner ? <SideTallBanner banner={leftBanner} /> : <div className="hidden md:block" />}
         {centerSlides.length > 0 ? <MainCarousel slides={centerSlides} /> : <div />}
-        <div className="hidden gap-4 md:grid md:grid-rows-2">
+        <div className="grid gap-4 md:grid-rows-2">
           {rightTop ? <SideShortBanner banner={rightTop} /> : <div className="hidden md:block" />}
           {rightBottom ? <SideShortBanner banner={rightBottom} /> : <div className="hidden md:block" />}
         </div>
@@ -196,7 +192,8 @@ function SideTallBanner({ banner }: { banner: Banner }) {
             src={banner.image_url}
             alt=""
             className="absolute inset-0 z-0 h-full w-full object-cover md:object-contain"
-            loading="lazy"
+            loading="eager"
+            fetchPriority="high"
             decoding="async"
             referrerPolicy="no-referrer"
           />
@@ -270,9 +267,9 @@ export function HeroCarouselSkeleton() {
   return (
     <section className="w-full px-4 py-5">
       <div className="grid gap-4 md:grid-cols-[1.05fr_2.6fr_1.1fr]">
-        <div className="hidden h-[200px] animate-pulse rounded-3xl bg-[var(--mk-surface-3)] md:block md:h-[480px] lg:h-[520px]" />
+        <div className="h-[200px] animate-pulse rounded-3xl bg-[var(--mk-surface-3)] md:h-[480px] lg:h-[520px]" />
         <div className="h-[300px] animate-pulse rounded-3xl bg-[var(--mk-surface-3)] md:h-[480px] lg:h-[520px]" />
-        <div className="hidden gap-4 md:grid md:grid-rows-2">
+        <div className="grid gap-4 md:grid-rows-2">
           <div className="h-[200px] animate-pulse rounded-3xl bg-[var(--mk-surface-3)]" />
           <div className="h-[200px] animate-pulse rounded-3xl bg-[var(--mk-surface-3)]" />
         </div>
