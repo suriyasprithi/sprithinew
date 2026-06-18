@@ -56,12 +56,12 @@ function MainCarousel({ slides }: { slides: Banner[] }) {
     const onSelect = () => setIdx(emblaApi.selectedScrollSnap());
     emblaApi.on("select", onSelect);
     onSelect();
-    // Defer autoplay so its timer/reflows don't add main-thread work (TBT)
-    // during the initial load + Lighthouse measurement window.
+    // Defer autoplay so its timer + slide-change repaints don't add main-thread
+    // work (TBT) or visual churn (Speed Index) during the initial load window.
     const t = setTimeout(() => {
       const ap = emblaApi.plugins()?.autoplay as { play?: () => void } | undefined;
       ap?.play?.();
-    }, 5000);
+    }, 8000);
     return () => { emblaApi.off("select", onSelect); clearTimeout(t); };
   }, [emblaApi]);
 
