@@ -30,10 +30,7 @@ export function HeroCarousel({
         {leftBanner ? <SideTallBanner banner={leftBanner} /> : <div className="hidden md:block" />}
         {centerSlides.length > 0 ? <MainCarousel slides={centerSlides} /> : <div />}
         <div className="grid gap-4 md:grid-rows-2">
-          {/* rightTop is within the initial mobile viewport (the stacked hero
-              fills the screen), so load it eagerly to complete the view sooner
-              (Speed Index) instead of lazily. */}
-          {rightTop ? <SideShortBanner banner={rightTop} eager /> : <div className="hidden md:block" />}
+          {rightTop ? <SideShortBanner banner={rightTop} /> : <div className="hidden md:block" />}
           {/* Second right banner is desktop-only — keeps the mobile hero height
               fixed (matches HeroCarouselSkeleton) to avoid layout shift. */}
           {rightBottom ? <div className="hidden md:block"><SideShortBanner banner={rightBottom} /></div> : <div className="hidden md:block" />}

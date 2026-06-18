@@ -134,7 +134,7 @@ export default function PublicHomePage() {
           reuses window.__epeyBanners. */}
       <script
         dangerouslySetInnerHTML={{
-          __html: `try{window.__epeyBanners=fetch(${JSON.stringify(BANNERS_URL)},{headers:{Accept:"application/json"}}).then(function(r){return r.json()}).then(function(j){try{var s=j&&j.data&&j.data.by_slot;var h=s&&((s.hero_left&&s.hero_left[0])||(s.hero_center&&s.hero_center[0]));var u=h&&h.image_url;if(u){var l=document.createElement("link");l.rel="preload";l.as="image";l.href=u;l.setAttribute("fetchpriority","high");document.head.appendChild(l);}}catch(e){}return j;}).catch(function(){return null;});}catch(e){}`,
+          __html: `try{window.__epeyBanners=fetch(${JSON.stringify(BANNERS_URL)},{headers:{Accept:"application/json"}}).then(function(r){return r.json()}).catch(function(){return null})}catch(e){}`,
         }}
       />
       <TopInfoBar />
