@@ -4,12 +4,83 @@ namespace App\Controllers\Api;
 
 use App\Models\UserModel;
 use App\Services\JwtService;
+use App\Services\SmsAlertService;
 use App\Services\WelcomeBonusService;
 use CodeIgniter\HTTP\ResponseInterface;
 
 class AuthController extends BaseApiController
 {
     private const ALLOWED_ROLES = ['customer', 'vendor', 'taluk', 'district', 'state', 'driver', 'admin'];
+
+    // Registration OTP: 6 digits, valid 10 min, 60s resend cooldown, 5 tries.
+    private const OTP_TTL      = 600;
+    private const OTP_COOLDOWN = 60;
+    private const OTP_TRIES    = 5;
+
+    /**
+     * Send a one-time password by SMS to verify a mobile before signup.
+     * Customer-scope: rejects a number that's already a customer. The OTP is
+     * generated and held server-side in cache (keyed by mobile); register()
+     * checks it. No-op-safe if SMS Alert isn't configured (returns 502).
+     */
+    public function sendOtp(): ResponseInterface
+    {
+        $body   = $this->request->getJSON(true) ?? $this->request->getPost();
+        $mobile = trim((string) ($body['mobile_number'] ?? ''));
+        if (! preg_match('/^[0-9]{10}$/', $mobile)) {
+            return $this->fail('Enter a valid 10-digit mobile number', 422);
+        }
+        if ((new UserModel())->mobileExistsForRole($mobile, 'customer')) {
+            return $this->fail('Mobile number already registered', 409);
+        }
+
+        $cache = service('cache');
+        // Cache keys can't contain reserved chars (:{}()/\@) — use underscores.
+        if ($cache->get("otp_cd_{$mobile}")) {
+            return $this->fail('Please wait a moment before requesting another OTP', 429);
+        }
+
+        $otp  = (string) random_int(100000, 999999);
+        // NOTE: the fixed part must match the DLT template EXACTLY or SMS Alert
+        // rejects with "Invalid Template Match". The approved template is
+        // "Your login OTP for Loyal Wings ERP is {#var#}". We fold the brand into
+        // the trailing {#var#} value (OTP + brand) so no new DLT template is
+        // needed — variable is last, so it captures the whole tail.
+        $text = "Your login OTP for Loyal Wings ERP is {$otp} - Sprithi Digital Mart";
+        if (! (new SmsAlertService())->send($mobile, $text)) {
+            return $this->fail('Could not send OTP. Please try again.', 502);
+        }
+
+        $cache->save("otp_{$mobile}", ['otp' => $otp, 'tries' => 0], self::OTP_TTL);
+        $cache->save("otp_cd_{$mobile}", 1, self::OTP_COOLDOWN);
+        return $this->ok(['sent' => true], 'OTP sent');
+    }
+
+    /**
+     * Check the user-entered OTP against the cached one. On success the entry is
+     * cleared so it can't be replayed. Wrong tries are counted; after
+     * self::OTP_TRIES the entry is dropped and the customer must resend.
+     */
+    private function consumeOtp(string $mobile, string $otp): bool
+    {
+        $cache = service('cache');
+        $key   = "otp_{$mobile}";
+        $rec   = $cache->get($key);
+        if (! is_array($rec) || empty($rec['otp'])) {
+            return false;
+        }
+        if ((int) ($rec['tries'] ?? 0) >= self::OTP_TRIES) {
+            $cache->delete($key);
+            return false;
+        }
+        if (! hash_equals((string) $rec['otp'], $otp)) {
+            $rec['tries'] = (int) ($rec['tries'] ?? 0) + 1;
+            $cache->save($key, $rec, self::OTP_TTL);
+            return false;
+        }
+        $cache->delete($key);
+        return true;
+    }
 
     public function register(): ResponseInterface
     {
@@ -24,6 +95,7 @@ class AuthController extends BaseApiController
             'state_id'      => 'required|is_natural_no_zero',
             'district_id'   => 'required|is_natural_no_zero',
             'taluk_id'      => 'permit_empty|is_natural_no_zero',
+            'otp'           => 'required|regex_match[/^[0-9]{6}$/]',
         ];
         if (! $this->validate($rules)) {
             return $this->fail('Validation failed', 422, $this->validator->getErrors());
@@ -41,6 +113,11 @@ class AuthController extends BaseApiController
         $users = new UserModel();
         if ($users->mobileExistsForRole($data['mobile_number'], $role)) {
             return $this->fail('Mobile number already registered', 409);
+        }
+
+        // Verify the SMS OTP issued by sendOtp() before creating the account.
+        if (! $this->consumeOtp($data['mobile_number'], (string) $data['otp'])) {
+            return $this->fail('Invalid or expired OTP. Please resend.', 422);
         }
 
         // Resolve referrer (by mobile_number = referral_code)

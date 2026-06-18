@@ -72,6 +72,10 @@ function RegisterInner() {
   const [mobileTaken, setMobileTaken] = useState<boolean | null>(null);
   const [mobileChecking, setMobileChecking] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [otp, setOtp] = useState("");
+  const [otpSent, setOtpSent] = useState(false);
+  const [otpSending, setOtpSending] = useState(false);
+  const [otpCooldown, setOtpCooldown] = useState(0);
 
   const [states, setStates] = useState<GeoState[]>([]);
   const [districts, setDistricts] = useState<GeoDistrict[]>([]);
@@ -147,11 +151,35 @@ function RegisterInner() {
     [taluks, districtId],
   );
 
+  // Resend cooldown countdown (seconds).
+  useEffect(() => {
+    if (otpCooldown <= 0) return;
+    const t = setTimeout(() => setOtpCooldown((c) => c - 1), 1000);
+    return () => clearTimeout(t);
+  }, [otpCooldown]);
+
+  // Send an SMS OTP to the entered mobile so it can be verified before signup.
+  const sendOtp = async () => {
+    if (!isMobile(mobile)) return toast.error("Enter a valid 10-digit mobile number");
+    if (mobileTaken) return toast.error("This number already exists. Please log in instead.");
+    setOtpSending(true);
+    try {
+      await api.post("/auth/otp/send", { mobile_number: mobile.trim() });
+      setOtpSent(true);
+      setOtpCooldown(60);
+      toast.success(`OTP sent to ${mobile}`);
+    } catch (err) {
+      toast.error(apiErrorMessage(err, "Could not send OTP"));
+    } finally { setOtpSending(false); }
+  };
+
   const register = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name) return toast.error("Name is required");
     if (!isMobile(mobile)) return toast.error("Enter a valid 10-digit mobile number");
     if (mobileTaken) return toast.error("This number already exists. Please log in instead.");
+    if (!otpSent) return toast.error("Verify your mobile — tap Send OTP first");
+    if (!/^[0-9]{6}$/.test(otp)) return toast.error("Enter the 6-digit OTP sent to your mobile");
     if (!dob) return toast.error("Date of birth is required");
     if (ageFrom(dob) < 18) return toast.error("You must be at least 18 to register");
     if (stateId == null) return toast.error("Select your state");
@@ -165,6 +193,7 @@ function RegisterInner() {
       const res = await api.post("/auth/register", {
         name: name.trim(),
         mobile_number: mobile.trim(),
+        otp: otp.trim(),
         password,
         email: email.trim() || undefined,
         pincode: pincode.trim() || undefined,
@@ -226,13 +255,30 @@ function RegisterInner() {
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="mobile">Mobile</Label>
-                <Input id="mobile" type="tel" inputMode="numeric" autoComplete="tel" placeholder="9999999999" value={mobile} onChange={(e) => setMobile(cleanMobile(e.target.value))} disabled={busy || isLoading} className={`h-11 rounded-xl bg-surface-2/60 ${mobileTaken ? "border-rose-500" : ""}`} />
+                <Input id="mobile" type="tel" inputMode="numeric" autoComplete="tel" placeholder="9999999999" value={mobile} onChange={(e) => { setMobile(cleanMobile(e.target.value)); setOtpSent(false); setOtp(""); }} disabled={busy || isLoading} className={`h-11 rounded-xl bg-surface-2/60 ${mobileTaken ? "border-rose-500" : ""}`} />
                 {mobileChecking && <p className="text-[11px] text-muted-foreground">Checking…</p>}
                 {mobileTaken === true && <p className="text-[11px] font-medium text-rose-500">⚠ This number already exists — please log in instead.</p>}
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="pincode">Pincode</Label>
                 <Input id="pincode" inputMode="numeric" placeholder="600001" value={pincode} onChange={(e) => setPincode(e.target.value)} disabled={busy || isLoading} className="h-11 rounded-xl bg-surface-2/60" />
+              </div>
+              <div className="space-y-1.5 sm:col-span-2">
+                <div className="flex items-end gap-2">
+                  <div className="flex-1 space-y-1.5">
+                    <Label htmlFor="otp">OTP verification{otpSent && <span className="ml-1 text-emerald-600">— sent ✓</span>}</Label>
+                    <Input id="otp" inputMode="numeric" autoComplete="one-time-code" placeholder={otpSent ? "Enter 6-digit OTP" : "Tap Send OTP →"} value={otp} onChange={(e) => setOtp(e.target.value.replace(/\D/g, "").slice(0, 6))} disabled={busy || isLoading || !otpSent} className="h-11 rounded-xl bg-surface-2/60" />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={sendOtp}
+                    disabled={busy || isLoading || otpSending || !isMobile(mobile) || mobileTaken === true || otpCooldown > 0}
+                    className="h-11 shrink-0 rounded-xl border border-brand/40 bg-brand/5 px-4 text-sm font-medium text-brand transition hover:bg-brand/10 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {otpSending ? "Sending…" : otpCooldown > 0 ? `Resend ${otpCooldown}s` : otpSent ? "Resend OTP" : "Send OTP"}
+                  </button>
+                </div>
+                {otpSent && <p className="text-[11px] text-muted-foreground">Enter the code we texted to {mobile}.</p>}
               </div>
               <div className="space-y-1.5 sm:col-span-2">
                 <Label htmlFor="dob">Date of birth</Label>
