@@ -16,9 +16,12 @@ type Props = {
   src: string | null | undefined;
   alt: string;
   className?: string;
+  /** Above-the-fold images (e.g. product-detail hero) should load eagerly;
+   *  grid/list tiles stay lazy (the default) to keep initial payload small. */
+  eager?: boolean;
 };
 
-export function ProductImage({ src, alt, className }: Props) {
+export function ProductImage({ src, alt, className, eager = false }: Props) {
   const [failed, setFailed] = useState(false);
   const url = resolveImg(src);
 
@@ -28,6 +31,9 @@ export function ProductImage({ src, alt, className }: Props) {
         src={url}
         alt={alt}
         onError={() => setFailed(true)}
+        loading={eager ? "eager" : "lazy"}
+        decoding="async"
+        fetchPriority={eager ? "high" : "auto"}
         className={cn("h-full w-full object-cover", className)}
       />
     );

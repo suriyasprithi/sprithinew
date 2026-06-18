@@ -4,7 +4,6 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import useEmblaCarousel from "embla-carousel-react";
 import Autoplay from "embla-carousel-autoplay";
-import { motion } from "framer-motion";
 import { ChevronLeft, ChevronRight, Sparkles } from "lucide-react";
 import type { Banner } from "@/lib/banners";
 import { bannerGradient } from "@/lib/banners";
@@ -25,11 +24,8 @@ export function HeroCarousel({
 
   return (
     <section className="w-full px-4 py-5">
-      <motion.div
-        initial={{ opacity: 0, y: 14 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.55, ease: [0.16, 1, 0.3, 1] }}
-        className="grid gap-4 md:grid-cols-[1.05fr_2.6fr_1.1fr] md:[grid-template-rows:1fr]"
+      <div
+        className="grid gap-4 animate-in fade-in slide-in-from-bottom-4 duration-700 md:grid-cols-[1.05fr_2.6fr_1.1fr] md:[grid-template-rows:1fr]"
       >
         {leftBanner ? <SideTallBanner banner={leftBanner} /> : <div className="hidden md:block" />}
         {centerSlides.length > 0 ? <MainCarousel slides={centerSlides} /> : <div />}
@@ -37,7 +33,7 @@ export function HeroCarousel({
           {rightTop ? <SideShortBanner banner={rightTop} /> : <div className="hidden md:block" />}
           {rightBottom ? <SideShortBanner banner={rightBottom} /> : <div className="hidden md:block" />}
         </div>
-      </motion.div>
+      </div>
     </section>
   );
 }
@@ -74,7 +70,7 @@ function MainCarousel({ slides }: { slides: Banner[] }) {
       <div ref={emblaRef} className="overflow-hidden md:h-full">
         <div className="flex md:h-full">
           {slides.map((s, i) => (
-            <SlideContent key={s.id} slide={s} active={i === idx} />
+            <SlideContent key={s.id} slide={s} active={i === idx} eager={i === 0} />
           ))}
         </div>
       </div>
@@ -108,7 +104,7 @@ function MainCarousel({ slides }: { slides: Banner[] }) {
   );
 }
 
-function SlideContent({ slide, active }: { slide: Banner; active: boolean }) {
+function SlideContent({ slide, active, eager = false }: { slide: Banner; active: boolean; eager?: boolean }) {
   const Icon = lucideOrFallback(slide.icon_name);
   const hasImg = Boolean(slide.image_url);
   return (
@@ -124,7 +120,9 @@ function SlideContent({ slide, active }: { slide: Banner; active: boolean }) {
             src={slide.image_url}
             alt=""
             className="z-0 block h-auto w-full md:absolute md:inset-0 md:h-full md:w-full md:object-contain"
-            loading="lazy"
+            loading={eager ? "eager" : "lazy"}
+            fetchPriority={eager ? "high" : "auto"}
+            decoding="async"
             referrerPolicy="no-referrer"
           />
           {(slide.eyebrow || slide.title || slide.highlight || slide.subtitle || slide.cta_label) && (
@@ -138,12 +136,8 @@ function SlideContent({ slide, active }: { slide: Banner; active: boolean }) {
       <span className="pointer-events-none absolute right-32 bottom-12 h-12 w-12 rounded-2xl bg-white/15 ring-1 ring-white/30" aria-hidden />
       <Icon className="pointer-events-none absolute -right-6 top-6 h-56 w-56 text-white/15 md:-right-2 md:top-4 md:h-80 md:w-80" strokeWidth={1.2} />
 
-      <motion.div
-        key={active ? "on" : "off"}
-        initial={{ opacity: 0, y: 18 }}
-        animate={active ? { opacity: 1, y: 0 } : { opacity: 0.4, y: 8 }}
-        transition={{ duration: 0.55, ease: [0.16, 1, 0.3, 1] }}
-        className="relative max-w-xl"
+      <div
+        className={`relative max-w-xl transition-all duration-500 ease-out ${active ? "opacity-100 translate-y-0" : "opacity-40 translate-y-2"}`}
       >
         {slide.eyebrow && (
           <span className="inline-flex items-center gap-1.5 rounded-full bg-white/15 px-3.5 py-1 text-[11px] font-semibold uppercase tracking-wider backdrop-blur-md ring-1 ring-white/20">
@@ -170,7 +164,7 @@ function SlideContent({ slide, active }: { slide: Banner; active: boolean }) {
             {slide.cta_label} <ChevronRight className="h-4 w-4" />
           </Link>
         )}
-      </motion.div>
+      </div>
     </div>
   );
 }
@@ -194,7 +188,8 @@ function SideTallBanner({ banner }: { banner: Banner }) {
             src={banner.image_url}
             alt=""
             className="z-0 block h-auto w-full md:absolute md:inset-0 md:h-full md:w-full md:object-contain"
-            loading="lazy"
+            loading="eager"
+            decoding="async"
             referrerPolicy="no-referrer"
           />
           {(banner.eyebrow || banner.title || banner.subtitle || banner.cta_label) && (

@@ -1,25 +1,31 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import dynamic from "next/dynamic";
 import { TopInfoBar } from "@/components/marketplace/top-info-bar";
 import { MarketplaceHeader } from "@/components/marketplace/marketplace-header";
 import { CategoryNavBar } from "@/components/marketplace/category-nav-bar";
 import { CouponBanner } from "@/components/marketplace/coupon-banner";
 import { HeroCarousel } from "@/components/marketplace/hero-carousel";
 import { FeaturedCategories } from "@/components/marketplace/featured-categories";
-import { VideoCarousel, type HomeVideo } from "@/components/marketplace/video-carousel";
 import { ProductCard, ProductCardSkeleton, type MarketplaceProduct } from "@/components/marketplace/product-card";
-import { FlashSale } from "@/components/marketplace/flash-sale";
-import { VendorsRow, type MarketplaceVendor } from "@/components/marketplace/vendors-row";
-import { ServicesSection } from "@/components/marketplace/services-section";
-import { FloatingActions } from "@/components/marketplace/floating-actions";
 import { MarketplaceBottomNav } from "@/components/marketplace/mobile-bottom-nav";
-import { MarketplaceFooter } from "@/components/marketplace/marketplace-footer";
+import type { HomeVideo } from "@/components/marketplace/video-carousel";
+import type { MarketplaceVendor } from "@/components/marketplace/vendors-row";
 import { api } from "@/lib/api";
 import { EMPTY_BANNERS, type BannersBySlot } from "@/lib/banners";
 import { readSavedLocation } from "@/components/marketplace/location-picker";
 import Link from "next/link";
 import { Sparkles } from "lucide-react";
+
+// Below-the-fold sections — code-split out of the initial bundle (client-only)
+// so the first paint and hydration stay light. They mount after the page loads.
+const VideoCarousel    = dynamic(() => import("@/components/marketplace/video-carousel").then((m) => m.VideoCarousel), { ssr: false });
+const FlashSale        = dynamic(() => import("@/components/marketplace/flash-sale").then((m) => m.FlashSale), { ssr: false });
+const VendorsRow       = dynamic(() => import("@/components/marketplace/vendors-row").then((m) => m.VendorsRow), { ssr: false });
+const ServicesSection  = dynamic(() => import("@/components/marketplace/services-section").then((m) => m.ServicesSection), { ssr: false });
+const FloatingActions  = dynamic(() => import("@/components/marketplace/floating-actions").then((m) => m.FloatingActions), { ssr: false });
+const MarketplaceFooter = dynamic(() => import("@/components/marketplace/marketplace-footer").then((m) => m.MarketplaceFooter), { ssr: false });
 
 type ApiProduct = {
   id: number;

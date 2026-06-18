@@ -59,7 +59,7 @@ export function MarketplaceHeader({ cartCount = 0, wishlistCount = 0, unreadCoun
       <div className="flex w-full items-center gap-3 px-4 py-3 md:gap-5">
         {/* Logo */}
         <Link href="/home" className="flex shrink-0 items-center gap-2">
-          <img src={`${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/logo.png`} alt="SPRITHI Digital Mart" className="h-10 w-10 shrink-0 object-contain" />
+          <img src={`${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/logo.png`} alt="SPRITHI Digital Mart" width={40} height={40} fetchPriority="high" className="h-10 w-10 shrink-0 object-contain" />
           <span className="hidden text-lg font-bold tracking-tight md:inline">SPRITHI</span>
         </Link>
 
