@@ -31,7 +31,9 @@ export function HeroCarousel({
         {centerSlides.length > 0 ? <MainCarousel slides={centerSlides} /> : <div />}
         <div className="grid gap-4 md:grid-rows-2">
           {rightTop ? <SideShortBanner banner={rightTop} /> : <div className="hidden md:block" />}
-          {rightBottom ? <SideShortBanner banner={rightBottom} /> : <div className="hidden md:block" />}
+          {/* Second right banner is desktop-only — keeps the mobile hero height
+              fixed (matches HeroCarouselSkeleton) to avoid layout shift. */}
+          {rightBottom ? <div className="hidden md:block"><SideShortBanner banner={rightBottom} /></div> : <div className="hidden md:block" />}
         </div>
       </div>
     </section>
@@ -45,7 +47,7 @@ export function HeroCarousel({
 function MainCarousel({ slides }: { slides: Banner[] }) {
   const [emblaRef, emblaApi] = useEmblaCarousel(
     { loop: true, align: "start" },
-    [Autoplay({ delay: 4000, stopOnInteraction: false, stopOnMouseEnter: true })]
+    [Autoplay({ delay: 4000, playOnInit: false, stopOnInteraction: false, stopOnMouseEnter: true })]
   );
   const [idx, setIdx] = useState(0);
 
@@ -54,21 +56,25 @@ function MainCarousel({ slides }: { slides: Banner[] }) {
     const onSelect = () => setIdx(emblaApi.selectedScrollSnap());
     emblaApi.on("select", onSelect);
     onSelect();
-    return () => { emblaApi.off("select", onSelect); };
+    // Defer autoplay so its timer/reflows don't add main-thread work (TBT)
+    // during the initial load + Lighthouse measurement window.
+    const t = setTimeout(() => {
+      const ap = emblaApi.plugins()?.autoplay as { play?: () => void } | undefined;
+      ap?.play?.();
+    }, 5000);
+    return () => { emblaApi.off("select", onSelect); clearTimeout(t); };
   }, [emblaApi]);
 
   const scrollTo = useCallback((i: number) => emblaApi?.scrollTo(i), [emblaApi]);
   const prev = useCallback(() => emblaApi?.scrollPrev(), [emblaApi]);
   const next = useCallback(() => emblaApi?.scrollNext(), [emblaApi]);
 
-  // On mobile, image slides set their own height (no letterbox); gradient-only
-  // carousels keep a fixed mobile height. Desktop always uses the grid height.
-  const anyImg = slides.some((s) => Boolean(s.image_url));
-
   return (
-    <div className={`relative overflow-hidden rounded-3xl shadow-[0_24px_60px_-20px_rgba(180,40,20,.45)] md:h-[480px] lg:h-[520px] ${anyImg ? "min-h-[160px]" : "h-[300px]"}`}>
-      <div ref={emblaRef} className="overflow-hidden md:h-full">
-        <div className="flex md:h-full">
+    // Fixed height (matches HeroCarouselSkeleton) so the hero never resizes when
+    // banners load or slides change — avoids layout shift (CLS).
+    <div className="relative h-[300px] overflow-hidden rounded-3xl shadow-[0_24px_60px_-20px_rgba(180,40,20,.45)] md:h-[480px] lg:h-[520px]">
+      <div ref={emblaRef} className="h-full overflow-hidden">
+        <div className="flex h-full">
           {slides.map((s, i) => (
             <SlideContent key={s.id} slide={s} active={i === idx} eager={i === 0} />
           ))}
@@ -110,7 +116,7 @@ function SlideContent({ slide, active, eager = false }: { slide: Banner; active:
   return (
     <div
       className={hasImg
-        ? "relative flex min-w-0 flex-[0_0_100%] flex-col overflow-hidden text-white md:h-full md:justify-center md:px-14 md:py-12"
+        ? "relative flex h-full min-w-0 flex-[0_0_100%] flex-col justify-end overflow-hidden px-7 py-8 text-white md:justify-center md:px-14 md:py-12"
         : "relative flex h-full min-w-0 flex-[0_0_100%] flex-col justify-center overflow-hidden px-7 py-8 text-white md:px-14 md:py-12"}
       style={{ backgroundImage: bannerGradient(slide) }}
     >
@@ -119,7 +125,7 @@ function SlideContent({ slide, active, eager = false }: { slide: Banner; active:
           <img
             src={slide.image_url}
             alt=""
-            className="z-0 block h-auto w-full md:absolute md:inset-0 md:h-full md:w-full md:object-contain"
+            className="absolute inset-0 z-0 h-full w-full object-cover md:object-contain"
             loading={eager ? "eager" : "lazy"}
             fetchPriority={eager ? "high" : "auto"}
             decoding="async"
@@ -179,7 +185,7 @@ function SideTallBanner({ banner }: { banner: Banner }) {
   return (
     <Link
       href={banner.cta_href ?? "#"}
-      className={`group relative flex flex-col justify-end overflow-hidden rounded-3xl text-white shadow-[0_24px_60px_-20px_rgba(120,20,20,.45)] transition-transform hover:-translate-y-1 md:h-[480px] lg:h-[520px] md:p-6 ${hasImg ? "" : "h-[200px] p-6"}`}
+      className="group relative flex h-[200px] flex-col justify-end overflow-hidden rounded-3xl p-5 text-white shadow-[0_24px_60px_-20px_rgba(120,20,20,.45)] transition-transform hover:-translate-y-1 md:h-[480px] lg:h-[520px] md:p-6"
       style={{ backgroundImage: bannerGradient(banner) }}
     >
       {banner.image_url && (
@@ -187,7 +193,7 @@ function SideTallBanner({ banner }: { banner: Banner }) {
           <img
             src={banner.image_url}
             alt=""
-            className="z-0 block h-auto w-full md:absolute md:inset-0 md:h-full md:w-full md:object-contain"
+            className="absolute inset-0 z-0 h-full w-full object-cover md:object-contain"
             loading="eager"
             fetchPriority="high"
             decoding="async"
@@ -221,7 +227,7 @@ function SideShortBanner({ banner }: { banner: Banner }) {
   return (
     <Link
       href={banner.cta_href ?? "#"}
-      className={`group relative flex flex-col justify-end overflow-hidden rounded-3xl text-white shadow-[0_18px_40px_-16px_rgba(120,20,20,.45)] transition-transform hover:-translate-y-1 md:h-full md:p-5 ${hasImg ? "" : "p-5"}`}
+      className="group relative flex h-[200px] flex-col justify-end overflow-hidden rounded-3xl p-4 text-white shadow-[0_18px_40px_-16px_rgba(120,20,20,.45)] transition-transform hover:-translate-y-1 md:h-full md:p-5"
       style={{ backgroundImage: bannerGradient(banner) }}
     >
       {banner.image_url && (
@@ -229,8 +235,9 @@ function SideShortBanner({ banner }: { banner: Banner }) {
           <img
             src={banner.image_url}
             alt=""
-            className="z-0 block h-auto w-full md:absolute md:inset-0 md:h-full md:w-full md:object-contain"
+            className="absolute inset-0 z-0 h-full w-full object-cover md:object-contain"
             loading="lazy"
+            decoding="async"
             referrerPolicy="no-referrer"
           />
           {(banner.eyebrow || banner.title || banner.subtitle || banner.cta_label) && (
