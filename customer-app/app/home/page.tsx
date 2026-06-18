@@ -48,27 +48,34 @@ export default function PublicHomePage() {
   const [customerVideos, setCustomerVideos] = useState<HomeVideo[]>([]);
   const [vendorVideos,   setVendorVideos]   = useState<HomeVideo[]>([]);
   const [loading,  setLoading]  = useState(true);
+  const [bannersLoading, setBannersLoading] = useState(true);
 
   useEffect(() => {
-    const fetchAll = async () => {
-      setLoading(true);
-      try {
-        const loc = readSavedLocation();
-        const params: Record<string, string> = {};
-        if (loc?.taluk_id)         params.taluk_id    = String(loc.taluk_id);
-        else if (loc?.district_id) params.district_id = String(loc.district_id);
-        else if (loc?.state_id)    params.state_id    = String(loc.state_id);
+    // Hero banners gate the mobile LCP — fetch them on their own so the hero
+    // paints as soon as banners arrive, rather than waiting for the slower
+    // product/vendor/video calls to all resolve.
+    const fetchBanners = () => {
+      setBannersLoading(true);
+      api.get("/public/banners")
+        .then((br) => { if (br?.data.data?.by_slot) setBanners({ ...EMPTY_BANNERS, ...br.data.data.by_slot }); })
+        .catch(() => { /* keep empty banners */ })
+        .finally(() => setBannersLoading(false));
+    };
 
-        const [hr, vr, br, cvr, vvr] = await Promise.all([
+    const fetchRest = async () => {
+      setLoading(true);
+      const loc = readSavedLocation();
+      const params: Record<string, string> = {};
+      if (loc?.taluk_id)         params.taluk_id    = String(loc.taluk_id);
+      else if (loc?.district_id) params.district_id = String(loc.district_id);
+      else if (loc?.state_id)    params.state_id    = String(loc.state_id);
+      try {
+        const [hr, vr, cvr, vvr] = await Promise.all([
           api.get("/public/home",    { params }).catch(() => null),
           api.get("/public/vendors", { params }).catch(() => null),
-          api.get("/public/banners").catch(() => null),
           api.get("/public/customer-videos").catch(() => null),
           api.get("/public/vendor-videos").catch(() => null),
         ]);
-        if (br?.data.data?.by_slot) {
-          setBanners({ ...EMPTY_BANNERS, ...br.data.data.by_slot });
-        }
         setCustomerVideos((cvr?.data.data?.items ?? []) as HomeVideo[]);
         setVendorVideos((vvr?.data.data?.items ?? []) as HomeVideo[]);
         const featured = ((hr?.data.data?.featured ?? []) as ApiProduct[]).map((p): MarketplaceProduct => ({
@@ -97,9 +104,10 @@ export default function PublicHomePage() {
       finally { setLoading(false); }
     };
 
-    void fetchAll();
+    const run = () => { fetchBanners(); void fetchRest(); };
+    run();
     if (typeof window !== "undefined") {
-      const onChange = () => { void fetchAll(); };
+      const onChange = () => { run(); };
       window.addEventListener("epey-location-changed", onChange);
       return () => window.removeEventListener("epey-location-changed", onChange);
     }
@@ -113,7 +121,7 @@ export default function PublicHomePage() {
 
       <CouponBanner banner={banners.coupon[0] ?? null} />
 
-      {loading ? (
+      {bannersLoading ? (
         <HeroCarouselSkeleton />
       ) : (
         <HeroCarousel

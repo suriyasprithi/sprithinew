@@ -189,6 +189,7 @@ function SideTallBanner({ banner }: { banner: Banner }) {
             alt=""
             className="z-0 block h-auto w-full md:absolute md:inset-0 md:h-full md:w-full md:object-contain"
             loading="eager"
+            fetchPriority="high"
             decoding="async"
             referrerPolicy="no-referrer"
           />
