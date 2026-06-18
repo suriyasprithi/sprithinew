@@ -122,7 +122,7 @@ class VendorCategoryController extends BaseApiController
         $d = $this->request->getJSON(true) ?? $this->request->getPost();
         $id = (new VendorCategoryModel())->insert([
             'name'   => trim((string) $d['name']),
-            'image'  => $d['image']  ?? null,
+            'image'  => \App\Libraries\ImageOptimizer::fromDataUri($d['image'] ?? null, 'categories'),
             'status' => in_array($d['status'] ?? 'active', ['active', 'inactive'], true) ? $d['status'] : 'active',
         ], true);
         return $this->ok(['id' => (int) $id], 'Created');
@@ -140,7 +140,7 @@ class VendorCategoryController extends BaseApiController
         $d = $this->request->getJSON(true) ?? $this->request->getPost();
         $payload = [];
         if (isset($d['name']))   $payload['name']  = trim((string) $d['name']);
-        if (array_key_exists('image', $d)) $payload['image'] = $d['image'];
+        if (array_key_exists('image', $d)) $payload['image'] = \App\Libraries\ImageOptimizer::fromDataUri($d['image'], 'categories');
         if (isset($d['status']) && in_array($d['status'], ['active', 'inactive'], true)) {
             $payload['status'] = $d['status'];
         }

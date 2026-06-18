@@ -96,6 +96,10 @@ class BannerController extends BaseApiController
                 $payload[$k] = $val;
             }
         }
+        // Oversized / base64 hero images → small on-disk file so /home stays light.
+        if (isset($payload['image_url']) && $payload['image_url'] !== null) {
+            $payload['image_url'] = \App\Libraries\ImageOptimizer::fromDataUri($payload['image_url'], 'banners');
+        }
         if (array_key_exists('sort_order', $d)) $payload['sort_order'] = (int) $d['sort_order'];
         if (array_key_exists('status', $d) && in_array($d['status'], ['active','inactive'], true)) {
             $payload['status'] = $d['status'];
