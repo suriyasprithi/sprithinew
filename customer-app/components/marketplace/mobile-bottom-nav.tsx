@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Home, Search, ShoppingCart, Heart, User } from "lucide-react";
 import { cartBadge } from "@/lib/cart";
+import { useAuth } from "@/stores/auth";
 
 const ITEMS = [
   { href: "/home",       label: "Home",    icon: Home },
@@ -16,6 +17,10 @@ const ITEMS = [
 
 export function MarketplaceBottomNav({ cartCount = 0 }: { cartCount?: number }) {
   const pathname = usePathname() || "";
+  // Account tab: signed-out → sign-in page, signed-in → their account/profile
+  // (so it never bounces off /login's guest guard).
+  const { user } = useAuth();
+  const accountHref = user ? "/profile" : "/login";
   // Live cart count from the shared client store (the header reconciles it with
   // the server; here we just reflect it so the badge stays in sync).
   const [liveCart, setLiveCart] = useState(cartCount);
@@ -30,11 +35,12 @@ export function MarketplaceBottomNav({ cartCount = 0 }: { cartCount?: number }) 
       <ul className="mx-auto flex max-w-md items-center justify-around px-2 py-1.5 pb-[max(env(safe-area-inset-bottom),0.5rem)]">
         {ITEMS.map((item) => {
           const Icon = item.icon;
-          const active = pathname === item.href;
+          const href = item.label === "Account" ? accountHref : item.href;
+          const active = pathname === href;
           return (
-            <li key={item.href} className="flex-1">
+            <li key={item.label} className="flex-1">
               <Link
-                href={item.href}
+                href={href}
                 className={`relative flex flex-col items-center gap-0.5 py-1 ${active ? "text-[var(--mk-brand)]" : "text-[var(--mk-text-muted)]"}`}
               >
                 <Icon className="h-5 w-5" />
