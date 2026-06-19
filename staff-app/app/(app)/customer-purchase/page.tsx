@@ -115,7 +115,7 @@ export default function CustomerPurchasePage() {
             eyebrow="Payments"
             icon={CreditCard}
             title="Customer purchase"
-            description="Charge a customer's wallet for an in-store bill. Your sale lands in your QR wallet."
+            description="Charge a customer's wallet for an in-store bill. Your sale lands in your main wallet."
           />
           <GradientButton className="shrink-0" onClick={() => setOpen(true)}>
             <Plus className="h-4 w-4" /> Add
@@ -174,7 +174,7 @@ export default function CustomerPurchasePage() {
           <DialogHeader>
             <DialogTitle>Customer purchase</DialogTitle>
             <DialogDescription>
-              Enter the customer&apos;s mobile and the bill amount. Their wallet is charged and your sale lands in your QR wallet.
+              Enter the customer&apos;s mobile and the bill amount. Their wallet is charged and your sale lands in your main wallet.
             </DialogDescription>
           </DialogHeader>
 

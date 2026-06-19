@@ -38,7 +38,10 @@ export default function QrScannerPage() {
     void (async () => {
       try {
         const res = await api.get("/purchase/mine");
-        setPurchases((res.data.data?.items ?? []) as QrPurchase[]);
+        const all = (res.data.data?.items ?? []) as QrPurchase[];
+        // Only customer-scanned QR sales belong here; vendor-entered purchases
+        // are shown on the Customer purchase page.
+        setPurchases(all.filter((p) => p.source === "qr"));
       } catch {
         setPurchases([]);
       } finally {
@@ -132,7 +135,7 @@ export default function QrScannerPage() {
               <Loader2 className="h-3.5 w-3.5 animate-spin" /> Loading…
             </div>
           ) : purchases.length === 0 ? (
-            <p className="py-2 text-xs text-muted-foreground">No purchases yet. They'll appear here when a customer pays via your QR.</p>
+            <p className="py-2 text-xs text-muted-foreground">No purchases yet. They&apos;ll appear here when a customer pays via your QR.</p>
           ) : (
             <ul className="divide-y divide-border">
               {purchases.map((p) => (
