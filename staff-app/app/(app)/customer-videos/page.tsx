@@ -1,28 +1,37 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Film, Upload, Loader2, Eye, EyeOff, Trash2, Play } from "lucide-react";
+import { Film, Upload, Loader2, Eye, EyeOff, Trash2, Play, Check, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { LuxuryCard } from "@/components/ui/custom/luxury-card";
 import { GradientButton } from "@/components/ui/custom/gradient-button";
-import { StatusBadge } from "@/components/data-table/status-badge";
 import { EmptyState } from "@/components/data-table/empty-state";
 import { MobileHeader } from "@/components/layout/mobile-nav";
 import { PageHeader } from "@/components/layout/page-header";
 import { api, apiErrorMessage, fileUrl } from "@/lib/api";
 
+type VideoStatus = "active" | "inactive" | "pending" | "rejected";
 type Row = {
   id: number;
   title: string | null;
   video_url: string;
   sort_order: number;
-  status: "active" | "inactive";
+  status: VideoStatus;
+  submitted_by: number | null;
+  submitter_name: string | null;
   created_at: string;
 };
 
 const MAX_MB = 25;
+
+const STATUS_PILL: Record<VideoStatus, { label: string; cls: string }> = {
+  active:   { label: "Active",   cls: "bg-emerald-500/15 text-emerald-500" },
+  inactive: { label: "Inactive", cls: "bg-muted text-muted-foreground" },
+  pending:  { label: "Pending",  cls: "bg-amber-500/15 text-amber-500" },
+  rejected: { label: "Rejected", cls: "bg-rose-500/15 text-rose-500" },
+};
 
 export default function CustomerVideosPage() {
   const inputRef = useRef<HTMLInputElement>(null);
@@ -75,10 +84,10 @@ export default function CustomerVideosPage() {
     }
   }
 
-  async function toggle(r: Row) {
+  async function setStatus(r: Row, status: VideoStatus) {
     setActBusy(r.id);
     try {
-      await api.patch(`/admin/customer-videos/${r.id}`, { status: r.status === "active" ? "inactive" : "active" });
+      await api.patch(`/admin/customer-videos/${r.id}`, { status });
       void refresh();
     } catch (e) {
       toast.error(apiErrorMessage(e));
@@ -148,15 +157,28 @@ export default function CustomerVideosPage() {
                     </button>
                     <div className="min-w-0">
                       <p className="truncate text-sm">{r.title || "Untitled video"}</p>
-                      <p className="text-xs text-muted-foreground">{r.created_at}</p>
+                      <p className="truncate text-xs text-muted-foreground">
+                        {r.submitter_name ? `by ${r.submitter_name} · ` : ""}{r.created_at}
+                      </p>
                     </div>
                   </div>
                   <div className="flex shrink-0 items-center gap-1.5">
-                    <StatusBadge status={r.status} />
-                    <Button size="sm" variant="ghost" className="h-7 gap-1 text-xs" disabled={actBusy === r.id} onClick={() => void toggle(r)}>
-                      {actBusy === r.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : r.status === "active" ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
-                      {r.status === "active" ? "Deactivate" : "Activate"}
-                    </Button>
+                    <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${STATUS_PILL[r.status].cls}`}>{STATUS_PILL[r.status].label}</span>
+                    {r.status === "pending" ? (
+                      <>
+                        <Button size="sm" variant="ghost" className="h-7 gap-1 text-xs text-emerald-500" disabled={actBusy === r.id} onClick={() => void setStatus(r, "active")}>
+                          {actBusy === r.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />} Approve
+                        </Button>
+                        <Button size="sm" variant="ghost" className="h-7 gap-1 text-xs text-rose-500" disabled={actBusy === r.id} onClick={() => void setStatus(r, "rejected")}>
+                          <X className="h-3.5 w-3.5" /> Reject
+                        </Button>
+                      </>
+                    ) : r.status === "rejected" ? null : (
+                      <Button size="sm" variant="ghost" className="h-7 gap-1 text-xs" disabled={actBusy === r.id} onClick={() => void setStatus(r, r.status === "active" ? "inactive" : "active")}>
+                        {actBusy === r.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : r.status === "active" ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                        {r.status === "active" ? "Deactivate" : "Activate"}
+                      </Button>
+                    )}
                     <Button size="sm" variant="ghost" className="h-7 gap-1 text-xs text-rose-500" disabled={actBusy === r.id} onClick={() => void remove(r)}>
                       <Trash2 className="h-3.5 w-3.5" /> Delete
                     </Button>

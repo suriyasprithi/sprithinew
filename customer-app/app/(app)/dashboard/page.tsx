@@ -9,6 +9,7 @@ import { AppHeader } from "@/components/layout/app-header";
 import { LuxuryCard } from "@/components/ui/custom/luxury-card";
 import { AnimatedCounter } from "@/components/ui/custom/animated-counter";
 import { ShopCarousel, type ShopBanner } from "@/components/marketplace/shop-carousel";
+import { VideoSubmitCard } from "@/components/marketplace/video-submit-card";
 import { useAuth } from "@/stores/auth";
 import { api, type WalletKey } from "@/lib/api";
 
@@ -83,6 +84,8 @@ export default function DashboardPage() {
           <h2 className="mt-2 text-3xl font-bold leading-tight tracking-tight text-[#111827] md:text-[34px]">{user?.name}</h2>
           <p className="mt-2 text-base text-[#6b7280]">Here is your wallet snapshot.</p>
         </div>
+
+        <VideoSubmitCard />
 
         <motion.div
           initial={{ opacity: 0, y: 10 }}

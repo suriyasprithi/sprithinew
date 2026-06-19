@@ -122,6 +122,11 @@ $routes->group('api/v1', ['filter' => 'cors'], static function ($routes) {
     // Customer-scoped: live rule-based delivery-charge quote (Free / flat amount).
     $routes->get('customer/delivery-quote', 'Api\DeliveryRateController::customerDeliveryQuote', ['filter' => 'auth']);
 
+    // Customer-scoped: submit a video to admin for approval (shown on home once approved).
+    $routes->post('customer/videos/upload', 'Api\CustomerVideoController::customerUpload', ['filter' => 'auth']);
+    $routes->post('customer/videos',        'Api\CustomerVideoController::customerSubmit', ['filter' => 'auth']);
+    $routes->get('customer/videos/mine',    'Api\CustomerVideoController::mySubmissions', ['filter' => 'auth']);
+
     // Customer-scoped: saved delivery addresses (multiple + one default).
     $routes->group('customer/addresses', ['filter' => 'auth'], static function ($routes) {
         $routes->get('/',               'Api\AddressController::index');
