@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Users, Search, MoreHorizontal, Ban, CheckCircle2, Wallet as WalletIcon, Pencil } from "lucide-react";
+import { Users, Search, MoreHorizontal, Ban, CheckCircle2, Wallet as WalletIcon, Pencil, UserPlus } from "lucide-react";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
@@ -35,6 +35,19 @@ type CustomerStats = { total: number; active: number; inactive: number; wallet_s
 type EditForm = ManagedCustomer & { password: string };
 type WalletForm = { id: number; name: string; balance: number; direction: "credit" | "debit"; amount: string; notes: string };
 
+// Admin "Add customer" — created without OTP (unlike public signup).
+type CreateForm = {
+  name: string; mobile: string; password: string; email: string; pincode: string;
+  dob: string; state_id: string; district_id: string; taluk_id: string; referrer_code: string;
+};
+const BLANK_CREATE: CreateForm = { name: "", mobile: "", password: "", email: "", pincode: "", dob: "", state_id: "", district_id: "", taluk_id: "", referrer_code: "" };
+type GeoData = {
+  states: { id: number; name: string }[];
+  districts: { id: number; state_id: number; name: string }[];
+  taluks: { id: number; district_id: number; name: string }[];
+};
+const selectCls = "h-10 w-full appearance-none rounded-xl border border-input bg-surface-2/60 px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/50 disabled:opacity-50";
+
 // Normalize backend payload to ManagedCustomer — the backend may use mobile_number / wallet
 function normalizeCustomer(raw: unknown): ManagedCustomer {
   const r = raw as Record<string, unknown>;
@@ -66,7 +79,23 @@ export default function AdminCustomersPage() {
 
   const [editing, setEditing] = useState<EditForm | null>(null);
   const [wallet, setWallet] = useState<WalletForm | null>(null);
+  const [creating, setCreating] = useState<CreateForm | null>(null);
+  const [geo, setGeo] = useState<GeoData>({ states: [], districts: [], taluks: [] });
   const [saving, setSaving] = useState(false);
+
+  // Geo options for the Add-customer dropdowns (public endpoint, cascaded client-side).
+  useEffect(() => {
+    void (async () => {
+      try {
+        const r = await api.get("/public/locations");
+        setGeo({
+          states: r.data?.data?.states ?? [],
+          districts: r.data?.data?.districts ?? [],
+          taluks: r.data?.data?.taluks ?? [],
+        });
+      } catch { /* dropdowns stay empty — fields are optional */ }
+    })();
+  }, []);
 
   // Debounce the search box — it drives a server-side query, not local filtering.
   useEffect(() => {
@@ -196,11 +225,53 @@ export default function AdminCustomersPage() {
     }
   }
 
+  async function saveCreate() {
+    if (!creating) return;
+    if (!creating.name.trim()) { toast.error("Name is required"); return; }
+    if (!/^[0-9]{10}$/.test(creating.mobile.trim())) { toast.error("Enter a valid 10-digit mobile"); return; }
+    if (creating.password.length < 6) { toast.error("Password must be at least 6 characters"); return; }
+    setSaving(true);
+    try {
+      const res = await api.post("/admin/customers", {
+        name: creating.name.trim(),
+        mobile_number: creating.mobile.trim(),
+        password: creating.password,
+        email: creating.email.trim() || undefined,
+        pincode: creating.pincode.trim() || undefined,
+        dob: creating.dob || undefined,
+        state_id: creating.state_id || undefined,
+        district_id: creating.district_id || undefined,
+        taluk_id: creating.taluk_id || undefined,
+        referrer_code: creating.referrer_code.trim() || undefined,
+      });
+      const created = normalizeCustomer(res.data.data);
+      setItems((cur) => [created, ...cur]);
+      setTotal((t) => t + 1);
+      setStats((s) => ({ ...s, total: s.total + 1, active: s.active + 1 }));
+      toast.success("Customer created");
+      setCreating(null);
+    } catch (err) {
+      toast.error(apiErrorMessage(err, "Could not create customer"));
+    } finally {
+      setSaving(false);
+    }
+  }
+
   return (
     <>
       <MobileHeader title="Customers" />
       <section className="mx-auto max-w-7xl space-y-6 p-4 md:p-8">
-        <PageHeader eyebrow="Users" icon={Users} title="Customers" description="Manage customer accounts, wallet balances and access." />
+        <PageHeader
+          eyebrow="Users"
+          icon={Users}
+          title="Customers"
+          description="Manage customer accounts, wallet balances and access."
+          action={
+            <GradientButton onClick={() => setCreating({ ...BLANK_CREATE })}>
+              <UserPlus className="h-4 w-4" /> Add customer
+            </GradientButton>
+          }
+        />
 
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <StatCard label="Total customers" value={stats.total}      icon={Users}        tone="brand"   spark={[4, 5, 5, 6, 6, 7, 7, 8]} />
@@ -379,6 +450,50 @@ export default function AdminCustomersPage() {
           <DialogFooter>
             <Button variant="ghost" onClick={() => setWallet(null)} disabled={saving}>Cancel</Button>
             <GradientButton onClick={saveWallet} disabled={saving}>{saving ? "Saving…" : wallet?.direction === "debit" ? "Deduct" : "Add"}</GradientButton>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add customer (no OTP) */}
+      <Dialog open={!!creating} onOpenChange={(o) => !o && setCreating(null)}>
+        <DialogContent className="max-h-[85vh] overflow-y-auto rounded-2xl border-border bg-popover">
+          <DialogHeader>
+            <DialogTitle>Add customer</DialogTitle>
+            <DialogDescription>Creates an active customer directly — no OTP needed.</DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="space-y-1.5 sm:col-span-2"><Label>Full name *</Label><Input value={creating?.name ?? ""} onChange={(e) => setCreating((p) => p && ({ ...p, name: e.target.value }))} placeholder="Ramesh Kumar" /></div>
+            <div className="space-y-1.5"><Label>Mobile *</Label><Input inputMode="numeric" value={creating?.mobile ?? ""} onChange={(e) => setCreating((p) => p && ({ ...p, mobile: e.target.value.replace(/\D/g, "").slice(0, 10) }))} placeholder="10-digit" /></div>
+            <div className="space-y-1.5"><Label>Password *</Label><Input type="password" autoComplete="new-password" value={creating?.password ?? ""} onChange={(e) => setCreating((p) => p && ({ ...p, password: e.target.value }))} placeholder="Min 6 characters" /></div>
+            <div className="space-y-1.5"><Label>Email</Label><Input type="email" value={creating?.email ?? ""} onChange={(e) => setCreating((p) => p && ({ ...p, email: e.target.value }))} placeholder="you@example.com" /></div>
+            <div className="space-y-1.5"><Label>Pincode</Label><Input value={creating?.pincode ?? ""} onChange={(e) => setCreating((p) => p && ({ ...p, pincode: e.target.value }))} /></div>
+            <div className="space-y-1.5"><Label>Date of birth</Label><Input type="date" value={creating?.dob ?? ""} onChange={(e) => setCreating((p) => p && ({ ...p, dob: e.target.value }))} /></div>
+            <div className="space-y-1.5"><Label>Referral code</Label><Input inputMode="numeric" value={creating?.referrer_code ?? ""} onChange={(e) => setCreating((p) => p && ({ ...p, referrer_code: e.target.value.replace(/\D/g, "").slice(0, 10) }))} placeholder="Referrer's mobile" /></div>
+            <div className="space-y-1.5">
+              <Label>State</Label>
+              <select className={selectCls} value={creating?.state_id ?? ""} onChange={(e) => setCreating((p) => p && ({ ...p, state_id: e.target.value, district_id: "", taluk_id: "" }))}>
+                <option value="">Select state</option>
+                {geo.states.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+              </select>
+            </div>
+            <div className="space-y-1.5">
+              <Label>District</Label>
+              <select className={selectCls} disabled={!creating?.state_id} value={creating?.district_id ?? ""} onChange={(e) => setCreating((p) => p && ({ ...p, district_id: e.target.value, taluk_id: "" }))}>
+                <option value="">{creating?.state_id ? "Select district" : "Pick a state first"}</option>
+                {geo.districts.filter((d) => String(d.state_id) === creating?.state_id).map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
+              </select>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Taluk <span className="text-muted-foreground">(optional)</span></Label>
+              <select className={selectCls} disabled={!creating?.district_id} value={creating?.taluk_id ?? ""} onChange={(e) => setCreating((p) => p && ({ ...p, taluk_id: e.target.value }))}>
+                <option value="">{creating?.district_id ? "Any" : "Pick a district first"}</option>
+                {geo.taluks.filter((t) => String(t.district_id) === creating?.district_id).map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+              </select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setCreating(null)} disabled={saving}>Cancel</Button>
+            <GradientButton onClick={saveCreate} disabled={saving}>{saving ? "Creating…" : "Create customer"}</GradientButton>
           </DialogFooter>
         </DialogContent>
       </Dialog>

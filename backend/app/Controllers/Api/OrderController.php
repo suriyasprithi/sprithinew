@@ -205,15 +205,8 @@ class OrderController extends BaseApiController
             $svc->sendTyped((int) $auth->id, 'order_created', (int) $orderId, '/orders', 'Order placed', "Total ₹{$grandTotal}");
             if ($vendorId) {
                 $svc->sendTyped($vendorId, 'order_created', (int) $orderId, '/orders', 'New order', "Order #{$orderId} — ₹{$grandTotal}");
-                // Notify driver(s) assigned to this vendor — the order is theirs to deliver.
-                $drivers = (new UserModel())
-                    ->where('assigned_vendor_id', $vendorId)
-                    ->where('role', 'driver')
-                    ->where('status', 'active')
-                    ->findAll();
-                foreach ($drivers as $d) {
-                    $svc->sendTyped((int) $d['id'], 'order_created', (int) $orderId, '/driver/orders', 'New delivery', "Order #{$orderId} — ₹{$grandTotal} ready to deliver");
-                }
+                // Driver is assigned later, per-order, by the vendor on the Orders
+                // page — the driver is notified at that point (see setDriver()).
             }
             $svc->sendTypedToRole('admin', 'order_created', (int) $orderId, '/orders', 'New order', "Order #{$orderId} — ₹{$grandTotal}");
         } catch (\Throwable $e) {
@@ -445,15 +438,17 @@ class OrderController extends BaseApiController
         $total = (int) ($db->query("SELECT COUNT(*) AS c FROM orders o WHERE $whereSql", $params)->getRow()->c ?? 0);
 
         $rows = $db->query(
-            "SELECT o.id, o.customer_id, o.vendor_id, o.total, o.status, o.notes, o.created_at,
+            "SELECT o.id, o.customer_id, o.vendor_id, o.driver_id, o.total, o.status, o.notes, o.created_at,
                     cu.name AS customer_name,
                     ve.name AS vendor_name,
                     vp.shop_name AS shop_name,
+                    dr.name AS driver_name,
                     (SELECT COALESCE(SUM(qty),0) FROM order_items oi WHERE oi.order_id = o.id) AS item_count,
                     (SELECT GROUP_CONCAT(NULLIF(oi.name, 'Item') ORDER BY oi.id SEPARATOR ', ') FROM order_items oi WHERE oi.order_id = o.id) AS product_names
              FROM orders o
              LEFT JOIN users cu            ON cu.id = o.customer_id
              LEFT JOIN users ve            ON ve.id = o.vendor_id
+             LEFT JOIN users dr            ON dr.id = o.driver_id
              LEFT JOIN vendor_profiles vp  ON vp.user_id = o.vendor_id
              WHERE $whereSql
              ORDER BY o.id DESC
@@ -462,6 +457,91 @@ class OrderController extends BaseApiController
         )->getResultArray();
 
         return $this->ok(['items' => $rows, 'total' => $total, 'page' => $p['page'], 'per_page' => $p['perPage']]);
+    }
+
+    /**
+     * Vendor / admin: assign (or clear) the delivery driver for one order.
+     * Per-order assignment — a driver busy on another active order (anything
+     * not delivered/cancelled) can't be picked. Sending an empty driver_id
+     * unassigns the order. The chosen driver must live in the order's taluk.
+     */
+    public function setDriver(int $id): ResponseInterface
+    {
+        $auth = $this->authUser();
+        if (! $auth) return $this->fail('Unauthorized', 401);
+        if (! in_array($auth->role, ['vendor', 'admin'], true)) return $this->fail('Forbidden', 403);
+        if (! $this->validate(['driver_id' => 'permit_empty|is_natural'])) {
+            return $this->fail('Validation failed', 422, $this->validator->getErrors());
+        }
+
+        $model = new OrderModel();
+        $order = $model->find($id);
+        if (! $order) return $this->fail('Not found', 404);
+        if ($auth->role === 'vendor' && (int) ($order['vendor_id'] ?? 0) !== (int) $auth->id) {
+            return $this->fail('Forbidden', 403);
+        }
+
+        // A finished order never enters the driver's delivery queue, so changing
+        // its driver is meaningless and only fires a misleading "assigned to you"
+        // notification — block it.
+        if (in_array($order['status'] ?? '', ['delivered', 'cancelled'], true)) {
+            return $this->fail('This order is already ' . $order['status'] . ' — its driver can\'t be changed', 422);
+        }
+
+        $d        = $this->request->getJSON(true) ?? $this->request->getPost();
+        $driverId = (isset($d['driver_id']) && $d['driver_id']) ? (int) $d['driver_id'] : null;
+
+        // Unassign
+        if (! $driverId) {
+            $model->update($id, ['driver_id' => null]);
+            return $this->ok(null, 'Driver unassigned');
+        }
+
+        $users  = new UserModel();
+        $driver = $users->find($driverId);
+        if (! $driver || $driver['role'] !== 'driver') return $this->fail('Driver not found', 404);
+
+        // Driver must belong to the order's vendor's taluk.
+        $vendorTaluk = $this->vendorTalukId((int) ($order['vendor_id'] ?? 0));
+        if (! $vendorTaluk || (int) ($driver['taluk_id'] ?? 0) !== $vendorTaluk) {
+            return $this->fail('Driver is not in this order\'s area', 422);
+        }
+
+        // Busy check (taluk-wide): the driver may not hold another active order.
+        // "Active" = pending/paid/shipped (the driver's delivery queue). Legacy
+        // orders carry a driver_id but are never delivered here, so they're
+        // excluded — they must not block assigning the driver to live orders.
+        $db    = \Config\Database::connect();
+        $busyQ = (new OrderModel())
+            ->where('driver_id', $driverId)
+            ->where('id !=', $id)
+            ->whereIn('status', ['pending', 'paid', 'shipped']);
+        if ($db->tableExists('legacy_id_map')) {
+            $busyQ->where("NOT EXISTS (SELECT 1 FROM legacy_id_map lim WHERE lim.old_table = 'order' AND lim.new_id = orders.id)", null, false);
+        }
+        if ($busyQ->countAllResults() > 0) return $this->fail('Driver is already assigned to another order', 409);
+
+        $model->update($id, ['driver_id' => $driverId]);
+
+        try {
+            (new NotificationService())->sendTyped(
+                $driverId, 'driver_assigned', $id, '/driver/orders',
+                'New delivery assigned',
+                "Order #{$id} — ₹{$order['total']} is assigned to you."
+            );
+        } catch (\Throwable $e) {
+            log_message('error', 'Order driver assign push failed: ' . $e->getMessage());
+        }
+
+        return $this->ok(null, 'Driver assigned');
+    }
+
+    /** Taluk id for a vendor (via their vendor profile). 0 when unknown. */
+    private function vendorTalukId(int $vendorId): int
+    {
+        if (! $vendorId) return 0;
+        $vp = (new VendorProfileModel())->where('user_id', $vendorId)->first();
+        return $vp && ! empty($vp['taluk_id']) ? (int) $vp['taluk_id'] : 0;
     }
 
     /**
@@ -475,13 +555,11 @@ class OrderController extends BaseApiController
         if ($auth->role !== 'driver') return $this->fail('Forbidden', 403);
 
         $users = new UserModel();
-        $driver = $users->find((int) $auth->id);
-        $vendorId = (int) ($driver['assigned_vendor_id'] ?? 0);
-        if (! $vendorId) return $this->ok(['items' => []]);
 
-        // Deliverable = new COD orders awaiting delivery (pending) + wallet orders
-        // (paid/shipped). Legacy-imported orders are excluded — they were handled
-        // on the old site and must not reappear in the driver queue.
+        // Per-order assignment: the driver delivers exactly the orders the vendor
+        // assigned to them (orders.driver_id = me), not the whole vendor's queue.
+        // Deliverable = COD awaiting delivery (pending) + wallet orders (paid/
+        // shipped). Legacy-imported orders are excluded — handled on the old site.
         $db = \Config\Database::connect();
         $legacyIds = [];
         if ($db->tableExists('legacy_id_map')) {
@@ -490,21 +568,20 @@ class OrderController extends BaseApiController
             }
         }
         $builder = (new OrderModel())
-            ->where('vendor_id', $vendorId)
+            ->where('driver_id', (int) $auth->id)
             ->whereIn('status', ['pending', 'paid', 'shipped']);
         if ($legacyIds) $builder->whereNotIn('id', $legacyIds);
         $orders = $builder->orderBy('id', 'DESC')->findAll(200);
         if (! $orders) return $this->ok(['items' => []]);
 
-        // Vendor profile for pickup address
-        $vendor = $users->find($vendorId);
-        $vProfile = (new VendorProfileModel())->find($vendorId) ?: [];
-        $pickup = trim(implode(', ', array_filter([
-            $vProfile['shop_name'] ?? null,
-            $vProfile['address'] ?? null,
-            $vProfile['area']    ?? null,
-            $vProfile['pincode'] ?? null,
-        ])));
+        // Assigned orders can span multiple vendors → resolve each order's pickup
+        // from its own vendor. Batch-load vendor names + profiles.
+        $vendorIds = array_values(array_unique(array_filter(array_map(static fn ($o) => (int) ($o['vendor_id'] ?? 0), $orders))));
+        $vendorById = []; $profileById = [];
+        if ($vendorIds) {
+            foreach ($users->whereIn('id', $vendorIds)->findAll() as $v) $vendorById[(int) $v['id']] = $v;
+            foreach ((new VendorProfileModel())->whereIn('user_id', $vendorIds)->findAll() as $vp) $profileById[(int) $vp['user_id']] = $vp;
+        }
 
         // Customer details for drops
         $custIds = array_values(array_unique(array_map(static fn ($o) => (int) $o['customer_id'], $orders)));
@@ -512,9 +589,47 @@ class OrderController extends BaseApiController
         $byId = [];
         foreach ($customers as $c) $byId[(int) $c['id']] = $c;
 
+        // Line items per order (name + image + qty + price) so the driver sees
+        // exactly what to deliver. Same display-name/image resolution as show().
+        $orderIds = array_map(static fn ($o) => (int) $o['id'], $orders);
+        $linesByOrder = [];
+        if ($orderIds) {
+            $ph   = implode(',', array_fill(0, count($orderIds), '?'));
+            $rows = $db->query(
+                "SELECT oi.order_id, oi.id, oi.qty, oi.price,
+                        COALESCE(NULLIF(oi.name, 'Item'), pv.name, p.name, 'Item') AS display_name,
+                        COALESCE(NULLIF(p.image, ''), SUBSTRING_INDEX(NULLIF(pv.image, ''), '<->', 1)) AS product_image,
+                        pv.name AS variant_name
+                 FROM order_items oi
+                 LEFT JOIN products p          ON p.id  = oi.product_id
+                 LEFT JOIN product_variants pv ON pv.id = oi.variation_id
+                 WHERE oi.order_id IN ($ph)
+                 ORDER BY oi.id",
+                $orderIds
+            )->getResultArray();
+            foreach ($rows as $r) {
+                $linesByOrder[(int) $r['order_id']][] = [
+                    'id'           => (int) $r['id'],
+                    'name'         => $r['display_name'],
+                    'variant_name' => $r['variant_name'],
+                    'image'        => $r['product_image'],
+                    'qty'          => (int) $r['qty'],
+                    'price'        => (float) $r['price'],
+                ];
+            }
+        }
+
         $items = [];
         foreach ($orders as $o) {
-            $c = $byId[(int) $o['customer_id']] ?? null;
+            $c   = $byId[(int) $o['customer_id']] ?? null;
+            $vid = (int) ($o['vendor_id'] ?? 0);
+            $vp  = $profileById[$vid] ?? [];
+            $pickup = trim(implode(', ', array_filter([
+                $vp['shop_name'] ?? null,
+                $vp['address']   ?? null,
+                $vp['area']      ?? null,
+                $vp['pincode']   ?? null,
+            ])));
             // Prefer the address snapshotted on the order at checkout; fall back
             // to the customer's live address for legacy orders without a snapshot.
             $drop = trim((string) ($o['delivery_address'] ?? ''));
@@ -531,11 +646,12 @@ class OrderController extends BaseApiController
                 'id'              => (int) $o['id'],
                 'status'          => $o['status'],
                 'total'           => (float) $o['total'],
-                'pickup_address'  => $pickup ?: ($vendor['name'] ?? 'Vendor'),
+                'pickup_address'  => $pickup ?: ($vendorById[$vid]['name'] ?? 'Vendor'),
                 'drop_address'    => $drop ?: 'Customer',
                 'customer_name'   => $c['name']          ?? '',
                 'customer_mobile' => $c['mobile_number'] ?? '',
                 'created_at'      => $o['created_at'] ?? null,
+                'items'           => $linesByOrder[(int) $o['id']] ?? [],
             ];
         }
         return $this->ok(['items' => $items]);
@@ -569,8 +685,8 @@ class OrderController extends BaseApiController
         if (! $order) return $this->fail('Not found', 404);
         if ($auth->role === 'vendor' && (int) ($order['vendor_id'] ?? 0) !== (int) $auth->id) return $this->fail('Forbidden', 403);
         if ($auth->role === 'driver') {
-            $driver = (new UserModel())->find((int) $auth->id);
-            if (! $driver || (int) ($driver['assigned_vendor_id'] ?? 0) !== (int) ($order['vendor_id'] ?? 0)) {
+            // Per-order assignment: a driver may only act on the order assigned to them.
+            if ((int) ($order['driver_id'] ?? 0) !== (int) $auth->id) {
                 return $this->fail('Forbidden', 403);
             }
             if ($status !== 'delivered') return $this->fail('Drivers can only mark delivered', 403);
@@ -612,24 +728,17 @@ class OrderController extends BaseApiController
             log_message('error', 'Order status push failed: ' . $e->getMessage());
         }
 
-        // When the order is marked ready ('shipped'), ping the vendor's assigned
-        // driver(s) that it's ready to pick up. This also reaches drivers who were
-        // assigned to the vendor AFTER the order was created (the create-time
-        // notification would have missed them). Guarded to fire only on the first
+        // When the order is marked ready ('shipped'), ping the driver assigned to
+        // this order that it's ready to pick up. Guarded to fire only on the first
         // transition into 'shipped'.
         if ($status === 'shipped' && ($order['status'] ?? '') !== 'shipped') {
             try {
-                $vId = (int) ($order['vendor_id'] ?? 0);
-                if ($vId) {
-                    $drivers = (new UserModel())
-                        ->where('assigned_vendor_id', $vId)
-                        ->where('role', 'driver')
-                        ->where('status', 'active')
-                        ->findAll();
-                    $svc = new NotificationService();
-                    foreach ($drivers as $drv) {
-                        $svc->sendTyped((int) $drv['id'], 'order_created', $id, '/driver/orders', 'New delivery', "Order #{$id} — ₹{$order['total']} ready to deliver");
-                    }
+                $drvId = (int) ($order['driver_id'] ?? 0);
+                if ($drvId) {
+                    (new NotificationService())->sendTyped(
+                        $drvId, 'order_created', $id, '/driver/orders',
+                        'Ready to pick up', "Order #{$id} — ₹{$order['total']} is ready to deliver"
+                    );
                 }
             } catch (\Throwable $e) {
                 log_message('error', 'Order shipped driver push failed: ' . $e->getMessage());

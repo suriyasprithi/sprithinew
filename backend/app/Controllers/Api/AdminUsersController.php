@@ -54,6 +54,62 @@ class AdminUsersController extends BaseApiController
         ]);
     }
 
+    /**
+     * Admin creates a customer directly — no SMS OTP and no login tokens
+     * (unlike public AuthController::register). Mirrors that insert otherwise.
+     */
+    public function create(): ResponseInterface
+    {
+        if ($r = $this->requireAdmin()) return $r;
+
+        if (! $this->validate([
+            'name'          => 'required|string|min_length[2]|max_length[100]',
+            'mobile_number' => 'required|regex_match[/^[0-9]{10}$/]',
+            'password'      => 'required|string|min_length[6]|max_length[64]',
+            'email'         => 'permit_empty|valid_email|max_length[150]',
+            'pincode'       => 'permit_empty|string|max_length[10]',
+            'dob'           => 'permit_empty|valid_date',
+            'state_id'      => 'permit_empty|is_natural_no_zero',
+            'district_id'   => 'permit_empty|is_natural_no_zero',
+            'taluk_id'      => 'permit_empty|is_natural_no_zero',
+            'referrer_code' => 'permit_empty|regex_match[/^[0-9]{10}$/]',
+        ])) return $this->fail('Validation failed', 422, $this->validator->getErrors());
+
+        $d = $this->request->getJSON(true) ?? $this->request->getPost();
+        $users = new UserModel();
+        if ($users->mobileExistsForRole($d['mobile_number'], 'customer')) {
+            return $this->fail('Mobile number already registered', 409);
+        }
+
+        // Link the referrer (by mobile) but do NOT fire the welcome bonus or the
+        // upline-count bump — admin-created accounts must not trigger payouts.
+        $referrerId = null;
+        if (! empty($d['referrer_code'])) {
+            $ref = $users->where('mobile_number', $d['referrer_code'])
+                ->where('role', 'customer')->where('status', 'active')->first();
+            if ($ref) $referrerId = (int) $ref['id'];
+        }
+
+        $userId = $users->insert([
+            'name'          => trim((string) $d['name']),
+            'mobile_number' => trim((string) $d['mobile_number']),
+            'email'         => ! empty($d['email']) ? trim((string) $d['email']) : null,
+            'password_hash' => password_hash((string) $d['password'], PASSWORD_BCRYPT),
+            'role'          => 'customer',
+            'status'        => 'active',
+            'pincode'       => ! empty($d['pincode']) ? trim((string) $d['pincode']) : null,
+            'referrer_id'   => $referrerId,
+            'dob'           => ! empty($d['dob']) ? $d['dob'] : null,
+            'state_id'      => ! empty($d['state_id']) ? (int) $d['state_id'] : null,
+            'district_id'   => ! empty($d['district_id']) ? (int) $d['district_id'] : null,
+            'taluk_id'      => ! empty($d['taluk_id']) ? (int) $d['taluk_id'] : null,
+        ], true);
+        if (! $userId) return $this->fail('Could not create customer', 422, $users->errors());
+
+        $fresh  = $users->find($userId);
+        return $this->ok($this->formatCustomer($fresh, $this->referrerMap([$fresh])), 'Customer created');
+    }
+
     public function activate(int $id): ResponseInterface
     {
         if ($r = $this->requireAdmin()) return $r;

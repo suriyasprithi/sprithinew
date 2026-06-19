@@ -9,9 +9,18 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { ProductImage } from "@/components/ui/custom/product-image";
 import { api, apiErrorMessage } from "@/lib/api";
 
 type Status = "paid" | "shipped" | "delivered";
+type DriverOrderItem = {
+  id: number;
+  name: string;
+  variant_name: string | null;
+  image: string | null;
+  qty: number;
+  price: number;
+};
 type DriverOrder = {
   id: number;
   status: Status;
@@ -20,6 +29,7 @@ type DriverOrder = {
   drop_address: string;
   customer_name: string;
   customer_mobile: string;
+  items: DriverOrderItem[];
 };
 
 const formatCurrency = (n: number) =>
@@ -34,6 +44,7 @@ const STATUS_STYLE: Record<Status, string> = {
 function normalize(raw: unknown): DriverOrder {
   const r = raw as Record<string, unknown>;
   const s = (r.status as string) === "shipped" ? "shipped" : (r.status as string) === "delivered" ? "delivered" : "paid";
+  const rawItems = Array.isArray(r.items) ? (r.items as Record<string, unknown>[]) : [];
   return {
     id:              Number(r.id ?? 0),
     status:          s,
@@ -42,6 +53,14 @@ function normalize(raw: unknown): DriverOrder {
     drop_address:    String(r.drop_address ?? ""),
     customer_name:   String(r.customer_name ?? ""),
     customer_mobile: String(r.customer_mobile ?? ""),
+    items: rawItems.map((it) => ({
+      id:           Number(it.id ?? 0),
+      name:         String(it.name ?? "Item"),
+      variant_name: (it.variant_name as string | null) ?? null,
+      image:        (it.image as string | null) ?? null,
+      qty:          Number(it.qty ?? 0),
+      price:        Number(it.price ?? 0),
+    })),
   };
 }
 
@@ -90,6 +109,24 @@ export default function DriverOrdersPage() {
             <p className="font-semibold">Order #{o.id}</p>
             <span className={"rounded-full px-2 py-0.5 text-[10px] uppercase " + STATUS_STYLE[o.status]}>{o.status}</span>
           </div>
+          {o.items.length > 0 && (
+            <ul className="space-y-2 rounded-lg border border-border/60 bg-muted/30 p-2">
+              {o.items.map((it) => (
+                <li key={it.id} className="flex items-center gap-3">
+                  <div className="h-11 w-11 shrink-0 overflow-hidden rounded-md border border-border bg-surface-2">
+                    <ProductImage src={it.image} alt={it.name} />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium">{it.name}</p>
+                    {it.variant_name && it.variant_name !== it.name ? (
+                      <p className="truncate text-xs text-muted-foreground">{it.variant_name}</p>
+                    ) : null}
+                    <p className="text-xs text-muted-foreground">Qty {it.qty} × {formatCurrency(it.price)}</p>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
           <a
             href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(o.pickup_address)}`}
             target="_blank"

@@ -454,28 +454,6 @@ export default function AdminDriversPage() {
                 </SelectContent>
               </Select>
             </div>
-            <div className="space-y-1.5">
-              <Label>Delivery Time rate</Label>
-              <Select value={adding?.hour_rate || ""} onValueChange={(v) => setAdding((p) => p && ({ ...p, hour_rate: v }))} disabled={!adding?.taluk_id}>
-                <SelectTrigger>
-                  <SelectValue placeholder={adding?.taluk_id ? "Select Time rate" : "Pick a taluk first"}>
-                    {(v: string) => {
-                      if (!v) return null;
-                      const list = timeOptionsFor(adding?.taluk_id ? Number(adding.taluk_id) : null);
-                      const r = list.find((x) => String(x.price) === v);
-                      return r ? `${r.taluk_name ?? "—"} · ${r.time_min} min · ${fmtINR(r.price)}` : `${fmtINR(Number(v))}`;
-                    }}
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectContent>
-                  {timeOptionsFor(adding?.taluk_id ? Number(adding.taluk_id) : null).map((r) => (
-                    <SelectItem key={r.id} value={String(r.price)}>
-                      {(r.taluk_name ?? "—") + " · " + r.time_min + " min · " + fmtINR(r.price)}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
           </div>
           <DialogFooter>
             <Button variant="ghost" onClick={() => setAdding(null)} disabled={saving}>Cancel</Button>
@@ -527,28 +505,6 @@ export default function AdminDriversPage() {
                         <span>{s.name}</span>
                         {shiftTime(s) && <span className="text-xs text-muted-foreground">{shiftTime(s)}</span>}
                       </span>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1.5">
-              <Label>Delivery Time rate</Label>
-              <Select value={editing?.hour_rate || ""} onValueChange={(v) => setEditing((p) => p && ({ ...p, hour_rate: v }))} disabled={!editing?.taluk_id}>
-                <SelectTrigger>
-                  <SelectValue placeholder={editing?.taluk_id ? "Select Time rate" : "Pick a taluk first"}>
-                    {(v: string) => {
-                      if (!v) return null;
-                      const list = timeOptionsFor(editing?.taluk_id ? Number(editing.taluk_id) : null);
-                      const r = list.find((x) => String(x.price) === v);
-                      return r ? `${r.taluk_name ?? "—"} · ${r.time_min} min · ${fmtINR(r.price)}` : `${fmtINR(Number(v))}`;
-                    }}
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectContent>
-                  {timeOptionsFor(editing?.taluk_id ? Number(editing.taluk_id) : null).map((r) => (
-                    <SelectItem key={r.id} value={String(r.price)}>
-                      {(r.taluk_name ?? "—") + " · " + r.time_min + " min · " + fmtINR(r.price)}
                     </SelectItem>
                   ))}
                 </SelectContent>

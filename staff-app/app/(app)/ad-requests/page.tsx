@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Video, Check, X, ExternalLink, Loader2, Image as ImageIcon, Eye, EyeOff } from "lucide-react";
+import { Video, Check, X, Play, Loader2, Image as ImageIcon, Eye, EyeOff } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { StatusBadge } from "@/components/data-table/status-badge";
 import { EmptyState } from "@/components/data-table/empty-state";
 import { MobileHeader } from "@/components/layout/mobile-nav";
@@ -24,6 +25,7 @@ export default function AdRequestsPage() {
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<number | null>(null);
+  const [preview, setPreview] = useState<{ type: "banner" | "video"; url: string } | null>(null);
 
   async function refresh() {
     setLoading(true);
@@ -96,18 +98,35 @@ export default function AdRequestsPage() {
                   <div className="min-w-0">
                     <p className="truncate text-sm font-semibold">{r.vendor_name}</p>
                     <p className="truncate text-xs text-muted-foreground">{r.notes || "—"} · {r.created_at}</p>
+                    {/* Mobile-only creative preview trigger (the Creative column is hidden < md). */}
+                    {r.attachment && (
+                      <div className="mt-2 md:hidden">
+                        {r.type === "banner" ? (
+                          <button type="button" onClick={() => setPreview({ type: "banner", url: fileUrl(r.attachment) ?? "" })} aria-label="Preview banner">
+                            <img src={fileUrl(r.attachment) ?? ""} alt="" className="h-12 w-20 rounded object-cover" />
+                          </button>
+                        ) : (
+                          <button type="button" onClick={() => setPreview({ type: "video", url: fileUrl(r.attachment) ?? "" })} className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-xs text-brand">
+                            <Play className="h-3 w-3" /> Play video
+                          </button>
+                        )}
+                      </div>
+                    )}
                   </div>
                   <span className="hidden text-xs capitalize md:block">{r.type}</span>
                   <div className="hidden md:block">
                     {r.attachment ? (
                       r.type === "banner" ? (
-                        <a href={fileUrl(r.attachment) ?? "#"} target="_blank" rel="noreferrer">
-                          <img src={fileUrl(r.attachment) ?? ""} alt="" className="h-10 w-16 rounded object-cover" />
-                        </a>
+                        <button type="button" onClick={() => setPreview({ type: "banner", url: fileUrl(r.attachment) ?? "" })} className="group relative block" aria-label="Preview banner">
+                          <img src={fileUrl(r.attachment) ?? ""} alt="" className="h-10 w-16 rounded object-cover transition group-hover:opacity-80" />
+                          <span className="absolute inset-0 flex items-center justify-center rounded opacity-0 transition group-hover:bg-black/30 group-hover:opacity-100">
+                            <Eye className="h-4 w-4 text-white" />
+                          </span>
+                        </button>
                       ) : (
-                        <a href={fileUrl(r.attachment) ?? "#"} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs text-brand hover:underline">
-                          <ExternalLink className="h-3 w-3" /> View video
-                        </a>
+                        <button type="button" onClick={() => setPreview({ type: "video", url: fileUrl(r.attachment) ?? "" })} className="inline-flex items-center gap-1 text-xs text-brand hover:underline">
+                          <Play className="h-3 w-3" /> Play video
+                        </button>
                       )
                     ) : (
                       <span className="text-xs text-muted-foreground">—</span>
@@ -148,6 +167,21 @@ export default function AdRequestsPage() {
           )}
         </div>
       </section>
+
+      {/* Banner / video preview — responsive: fills the phone width (minus a margin),
+          caps at 2xl on tablet/desktop; media scales to fit and never overflows. */}
+      <Dialog open={!!preview} onOpenChange={(o) => !o && setPreview(null)}>
+        <DialogContent className="w-full max-w-[calc(100vw-1.5rem)] rounded-2xl border-border bg-popover sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>{preview?.type === "video" ? "Video preview" : "Banner preview"}</DialogTitle>
+          </DialogHeader>
+          {preview?.type === "video" ? (
+            <video src={preview.url} controls autoPlay playsInline className="mx-auto max-h-[70vh] w-full rounded-lg bg-black object-contain" />
+          ) : preview ? (
+            <img src={preview.url} alt="" className="mx-auto max-h-[70vh] w-full rounded-lg object-contain" />
+          ) : null}
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

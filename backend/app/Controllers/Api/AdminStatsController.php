@@ -444,26 +444,10 @@ class AdminStatsController extends BaseApiController
         $did   = (int) $auth->id;
         $today = date('Y-m-d');
 
-        $driver  = $db->query('SELECT assigned_vendor_id, monthly_salary FROM users WHERE id = ?', [$did])->getRow();
-        $vendorId = (int) ($driver->assigned_vendor_id ?? 0);
+        // Per-order assignment: stats are scoped to the orders the vendor assigned
+        // to this driver (orders.driver_id = me), not a claimed vendor's whole queue.
+        $driver        = $db->query('SELECT monthly_salary FROM users WHERE id = ?', [$did])->getRow();
         $monthlySalary = (float) ($driver->monthly_salary ?? 0);
-
-        if (! $vendorId) {
-            $emptySeries = [];
-            for ($i = 13; $i >= 0; $i--) {
-                $emptySeries[] = ['date' => date('Y-m-d', strtotime("-{$i} days")), 'orders' => 0];
-            }
-            return $this->ok([
-                'totals' => [
-                    'pending_deliveries' => 0,
-                    'delivered_today'    => 0,
-                    'total_delivered'    => 0,
-                    'monthly_salary'     => $monthlySalary,
-                ],
-                'orders_series' => $emptySeries,
-                'recent_orders' => [],
-            ]);
-        }
 
         // Only live orders count toward driver stats — legacy-imported orders
         // were handled on the old site and never enter the driver queue (see
@@ -476,27 +460,27 @@ class AdminStatsController extends BaseApiController
         // Pending deliveries must mirror the My Deliveries queue: pending (COD)
         // + paid/shipped (wallet) orders awaiting delivery.
         $pending = (int) $db->query(
-            'SELECT COUNT(*) c FROM orders WHERE vendor_id = ? AND status IN ("pending","paid","shipped")' . $legacyExcl,
-            [$vendorId]
+            'SELECT COUNT(*) c FROM orders WHERE driver_id = ? AND status IN ("pending","paid","shipped")' . $legacyExcl,
+            [$did]
         )->getRow()->c;
 
         $deliveredToday = (int) $db->query(
-            'SELECT COUNT(*) c FROM orders WHERE vendor_id = ? AND status = "delivered" AND DATE(updated_at) = ?' . $legacyExcl,
-            [$vendorId, $today]
+            'SELECT COUNT(*) c FROM orders WHERE driver_id = ? AND status = "delivered" AND DATE(updated_at) = ?' . $legacyExcl,
+            [$did, $today]
         )->getRow()->c;
 
         $totalDelivered = (int) $db->query(
-            'SELECT COUNT(*) c FROM orders WHERE vendor_id = ? AND status = "delivered"' . $legacyExcl,
-            [$vendorId]
+            'SELECT COUNT(*) c FROM orders WHERE driver_id = ? AND status = "delivered"' . $legacyExcl,
+            [$did]
         )->getRow()->c;
 
         // 14-day delivered count
         $since = date('Y-m-d', strtotime('-13 days'));
         $rows  = $db->query(
             'SELECT DATE(updated_at) d, COUNT(*) c FROM orders
-             WHERE vendor_id = ? AND status = "delivered" AND DATE(updated_at) >= ?' . $legacyExcl . '
+             WHERE driver_id = ? AND status = "delivered" AND DATE(updated_at) >= ?' . $legacyExcl . '
              GROUP BY DATE(updated_at)',
-            [$vendorId, $since]
+            [$did, $since]
         )->getResultArray();
         $byDay = [];
         foreach ($rows as $r) $byDay[$r['d']] = (int) $r['c'];
@@ -510,9 +494,9 @@ class AdminStatsController extends BaseApiController
         $recentRows = $db->query(
             'SELECT o.id, o.total, o.status, o.created_at, cu.name AS customer_name
              FROM orders o LEFT JOIN users cu ON cu.id = o.customer_id
-             WHERE o.vendor_id = ?' . $legacyExclO . '
+             WHERE o.driver_id = ?' . $legacyExclO . '
              ORDER BY o.id DESC LIMIT 8',
-            [$vendorId]
+            [$did]
         )->getResultArray();
         $recentOrders = array_map(static fn ($r) => [
             'id'         => (int) $r['id'],

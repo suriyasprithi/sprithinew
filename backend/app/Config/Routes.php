@@ -107,6 +107,7 @@ $routes->group('api/v1', ['filter' => 'cors'], static function ($routes) {
         $routes->get('list',           'Api\OrderController::listForRole');
         $routes->get('(:num)',         'Api\OrderController::show/$1');
         $routes->patch('(:num)/status','Api\OrderController::setStatus/$1');
+        $routes->patch('(:num)/driver','Api\OrderController::setDriver/$1');   // vendor+admin: assign delivery driver
         $routes->post('(:num)/return', 'Api\OrderController::requestReturn/$1');
         $routes->post('(:num)/cancel', 'Api\OrderController::cancel/$1');
     });
@@ -277,6 +278,7 @@ $routes->group('api/v1', ['filter' => 'cors'], static function ($routes) {
         $routes->post('returns/(:num)/reject',       'Api\AdminReturnController::reject/$1');
         // customers
         $routes->get('customers',                    'Api\AdminUsersController::customers');
+        $routes->post('customers',                   'Api\AdminUsersController::create');
         $routes->patch('customers/(:num)',           'Api\AdminUsersController::update/$1');
         $routes->post('customers/(:num)/activate',   'Api\AdminUsersController::activate/$1');
         $routes->post('customers/(:num)/deactivate', 'Api\AdminUsersController::deactivate/$1');

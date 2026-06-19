@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Film, Upload, Loader2, Eye, EyeOff, Trash2 } from "lucide-react";
+import { Film, Upload, Loader2, Eye, EyeOff, Trash2, Play } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { LuxuryCard } from "@/components/ui/custom/luxury-card";
 import { GradientButton } from "@/components/ui/custom/gradient-button";
 import { StatusBadge } from "@/components/data-table/status-badge";
@@ -31,6 +32,7 @@ export default function CustomerVideosPage() {
   const [actBusy, setActBusy] = useState<number | null>(null);
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
+  const [preview, setPreview] = useState<{ url: string; title: string } | null>(null);
 
   async function refresh() {
     setLoading(true);
@@ -133,7 +135,17 @@ export default function CustomerVideosPage() {
               {rows.map((r) => (
                 <LuxuryCard key={r.id} className="flex items-center justify-between gap-3 p-3">
                   <div className="flex min-w-0 items-center gap-3">
-                    <video src={fileUrl(r.video_url) ?? ""} muted playsInline className="h-12 w-20 shrink-0 rounded bg-black object-cover" />
+                    <button
+                      type="button"
+                      onClick={() => setPreview({ url: fileUrl(r.video_url) ?? "", title: r.title || "Untitled video" })}
+                      className="group relative h-12 w-20 shrink-0 overflow-hidden rounded bg-black"
+                      aria-label="Play video"
+                    >
+                      <video src={fileUrl(r.video_url) ?? ""} muted playsInline className="h-full w-full object-cover" />
+                      <span className="absolute inset-0 flex items-center justify-center bg-black/20 transition group-hover:bg-black/40">
+                        <Play className="h-4 w-4 fill-white text-white" />
+                      </span>
+                    </button>
                     <div className="min-w-0">
                       <p className="truncate text-sm">{r.title || "Untitled video"}</p>
                       <p className="text-xs text-muted-foreground">{r.created_at}</p>
@@ -155,6 +167,19 @@ export default function CustomerVideosPage() {
           )}
         </div>
       </section>
+
+      {/* Video preview — responsive: fills the phone width (minus a margin), caps
+          at 2xl on tablet/desktop; the video scales to fit and never overflows. */}
+      <Dialog open={!!preview} onOpenChange={(o) => !o && setPreview(null)}>
+        <DialogContent className="w-full max-w-[calc(100vw-1.5rem)] rounded-2xl border-border bg-popover sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="truncate">{preview?.title ?? "Video preview"}</DialogTitle>
+          </DialogHeader>
+          {preview ? (
+            <video src={preview.url} controls autoPlay playsInline className="mx-auto max-h-[70vh] w-full rounded-lg bg-black object-contain" />
+          ) : null}
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

@@ -34,7 +34,32 @@ class DriverManagementController extends BaseApiController
             ->where('taluk_id', $talukId)
             ->orderBy('id', 'DESC')
             ->findAll(500);
-        return $this->ok(['items' => $this->decorate($rows), 'taluk_id' => $talukId]);
+
+        // Mark drivers currently busy on an active order (taluk-wide) so the
+        // per-order assign dropdown can hide them. "Active" mirrors the driver's
+        // delivery queue: pending/paid/shipped. A driver frees up once that order
+        // is delivered or cancelled.
+        $items     = $this->decorate($rows);
+        $driverIds = array_map(static fn ($r) => (int) $r['id'], $items);
+        $busy      = [];
+        if ($driverIds) {
+            $db = \Config\Database::connect();
+            $q  = $db->table('orders')
+                ->select('driver_id')
+                ->whereIn('driver_id', $driverIds)
+                ->whereIn('status', ['pending', 'paid', 'shipped'])
+                ->groupBy('driver_id');
+            // Legacy-imported orders carry a driver_id but are never delivered in
+            // the app — exclude them so they don't pin a driver as busy forever.
+            if ($db->tableExists('legacy_id_map')) {
+                $q->where("NOT EXISTS (SELECT 1 FROM legacy_id_map lim WHERE lim.old_table = 'order' AND lim.new_id = orders.id)", null, false);
+            }
+            foreach ($q->get()->getResultArray() as $r) $busy[(int) $r['driver_id']] = true;
+        }
+        foreach ($items as &$it) { $it['busy'] = isset($busy[(int) $it['id']]); }
+        unset($it);
+
+        return $this->ok(['items' => $items, 'taluk_id' => $talukId]);
     }
 
     /** Taluk id for a taluk user (their taluk) or a vendor (their profile's taluk). */
