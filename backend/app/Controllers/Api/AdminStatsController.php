@@ -446,8 +446,20 @@ class AdminStatsController extends BaseApiController
 
         // Per-order assignment: stats are scoped to the orders the vendor assigned
         // to this driver (orders.driver_id = me), not a claimed vendor's whole queue.
-        $driver        = $db->query('SELECT monthly_salary FROM users WHERE id = ?', [$did])->getRow();
+        $driver        = $db->query('SELECT monthly_salary, shift FROM users WHERE id = ?', [$did])->getRow();
         $monthlySalary = (float) ($driver->monthly_salary ?? 0);
+        $currentShift  = $driver->shift ?? null;
+
+        // Admin-defined shifts the driver can choose from (active only).
+        $shifts = $db->query(
+            'SELECT id, name, start_time, end_time FROM driver_shifts WHERE is_active = 1 ORDER BY start_time IS NULL, start_time, id'
+        )->getResultArray();
+        $shifts = array_map(static fn ($s) => [
+            'id'         => (int) $s['id'],
+            'name'       => $s['name'],
+            'start_time' => $s['start_time'],
+            'end_time'   => $s['end_time'],
+        ], $shifts);
 
         // Only live orders count toward driver stats — legacy-imported orders
         // were handled on the old site and never enter the driver queue (see
@@ -515,6 +527,8 @@ class AdminStatsController extends BaseApiController
             ],
             'orders_series' => $series,
             'recent_orders' => $recentOrders,
+            'shifts'        => $shifts,
+            'current_shift' => $currentShift,
         ]);
     }
 }

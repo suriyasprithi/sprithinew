@@ -91,6 +91,8 @@ export type DriverDashboard = {
     status: string;
     created_at: string;
   }[];
+  shifts: { id: number; name: string; start_time: string | null; end_time: string | null }[];
+  current_shift: string | null;
 };
 
 export async function getDriverDashboard(): Promise<DriverDashboard> {

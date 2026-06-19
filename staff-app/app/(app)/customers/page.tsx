@@ -30,6 +30,27 @@ const fmtINR = (n: number) => new Intl.NumberFormat("en-IN", { style: "currency"
 const fmtDate = (s: string) => (s ? new Date(s.replace(" ", "T")).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "—");
 
 type CustomerStats = { total: number; active: number; inactive: number; wallet_sum: number };
+type CustomerDetail = ManagedCustomer & {
+  dob: string | null;
+  state_name: string | null;
+  district_name: string | null;
+  taluk_name: string | null;
+  orders_count: number;
+  orders_spent: number;
+  referrals_count: number;
+  kyc_status: string;
+  kyc_note: string | null;
+  aadhar: string | null;
+  pan: string | null;
+  aadhar_image_url: string | null;
+  pan_image_url: string | null;
+  bank_passbook_url: string | null;
+  account_holder: string | null;
+  bank_name: string | null;
+  account_number: string | null;
+  ifsc_code: string | null;
+  upi: string | null;
+};
 
 // Edit form carries an extra (write-only) password field the row model doesn't have.
 type EditForm = ManagedCustomer & { password: string };
@@ -67,6 +88,42 @@ function normalizeCustomer(raw: unknown): ManagedCustomer {
   };
 }
 
+function Field({ label, value }: { label: string; value: string | null | undefined }) {
+  return (
+    <div className="min-w-0">
+      <p className="text-[11px] uppercase tracking-wider text-muted-foreground">{label}</p>
+      <p className="truncate text-sm font-medium">{value || "—"}</p>
+    </div>
+  );
+}
+
+function kycPill(status: string): string {
+  switch (status) {
+    case "verified": return "bg-emerald-500/15 text-emerald-500";
+    case "pending":  return "bg-amber-500/15 text-amber-500";
+    case "rejected": return "bg-rose-500/15 text-rose-500";
+    default:         return "bg-muted text-muted-foreground";
+  }
+}
+
+function DocThumb({ label, url, onOpen }: { label: string; url: string | null; onOpen: (p: { url: string; title: string }) => void }) {
+  return (
+    <div className="space-y-1">
+      <p className="text-[10px] uppercase tracking-wider text-muted-foreground">{label}</p>
+      {url ? (
+        <button type="button" onClick={() => onOpen({ url, title: label })} className="block w-full">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={url} alt={label} className="h-20 w-full rounded-lg border border-border object-cover transition hover:opacity-90" />
+        </button>
+      ) : (
+        <div className="flex h-20 w-full items-center justify-center rounded-lg border border-dashed border-border text-[11px] text-muted-foreground">
+          —
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function AdminCustomersPage() {
   const [items, setItems] = useState<ManagedCustomer[]>([]);
   const [loading, setLoading] = useState(true);
@@ -82,6 +139,10 @@ export default function AdminCustomersPage() {
   const [creating, setCreating] = useState<CreateForm | null>(null);
   const [geo, setGeo] = useState<GeoData>({ states: [], districts: [], taluks: [] });
   const [saving, setSaving] = useState(false);
+  const [viewing, setViewing] = useState<ManagedCustomer | null>(null);
+  const [detail, setDetail] = useState<CustomerDetail | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [docPreview, setDocPreview] = useState<{ url: string; title: string } | null>(null);
 
   // Geo options for the Add-customer dropdowns (public endpoint, cascaded client-side).
   useEffect(() => {
@@ -159,6 +220,42 @@ export default function AdminCustomersPage() {
 
   const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const safePage = Math.min(page, pageCount);
+
+  async function openProfile(c: ManagedCustomer) {
+    setViewing(c);
+    setDetail(null);
+    setDetailLoading(true);
+    try {
+      const res = await api.get(`/admin/customers/${c.id}`);
+      const d = res.data.data as Record<string, unknown>;
+      setDetail({
+        ...normalizeCustomer(d),
+        dob: (d.dob as string) ?? null,
+        state_name: (d.state_name as string) ?? null,
+        district_name: (d.district_name as string) ?? null,
+        taluk_name: (d.taluk_name as string) ?? null,
+        orders_count: Number(d.orders_count ?? 0),
+        orders_spent: Number(d.orders_spent ?? 0),
+        referrals_count: Number(d.referrals_count ?? 0),
+        kyc_status: (d.kyc_status as string) ?? "none",
+        kyc_note: (d.kyc_note as string) ?? null,
+        aadhar: (d.aadhar as string) ?? null,
+        pan: (d.pan as string) ?? null,
+        aadhar_image_url: (d.aadhar_image_url as string) ?? null,
+        pan_image_url: (d.pan_image_url as string) ?? null,
+        bank_passbook_url: (d.bank_passbook_url as string) ?? null,
+        account_holder: (d.account_holder as string) ?? null,
+        bank_name: (d.bank_name as string) ?? null,
+        account_number: (d.account_number as string) ?? null,
+        ifsc_code: (d.ifsc_code as string) ?? null,
+        upi: (d.upi as string) ?? null,
+      });
+    } catch (err) {
+      toast.error(apiErrorMessage(err, "Could not load profile"));
+    } finally {
+      setDetailLoading(false);
+    }
+  }
 
   async function toggle(c: ManagedCustomer) {
     const next = c.status === "active" ? "inactive" : "active";
@@ -326,18 +423,18 @@ export default function AdminCustomersPage() {
                       className="grid grid-cols-[1fr_auto] items-center gap-3 px-4 py-3 transition-colors hover:bg-surface-2/40 md:grid-cols-[56px_minmax(150px,1.3fr)_120px_minmax(170px,1.6fr)_150px_110px_110px_100px_44px]"
                     >
                       <p className="hidden font-mono text-xs text-muted-foreground md:block">#{c.id}</p>
-                      <div className="flex min-w-0 items-center gap-3">
+                      <button type="button" onClick={() => void openProfile(c)} className="group flex min-w-0 items-center gap-3 text-left">
                         <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brand/10 text-xs font-semibold text-brand">
                           {(c.name || "?").charAt(0).toUpperCase()}
                         </span>
                         <div className="min-w-0">
-                          <p className="truncate text-sm font-semibold">{c.name || "—"}</p>
+                          <p className="truncate text-sm font-semibold underline-offset-2 group-hover:text-brand group-hover:underline">{c.name || "—"}</p>
                           <p className="truncate text-xs text-muted-foreground">
                             <span className="md:hidden">#{c.id} · </span>
                             {c.mobile || c.pincode || "—"}
                           </p>
                         </div>
-                      </div>
+                      </button>
                       <p className="hidden text-sm font-mono text-muted-foreground md:block">{c.mobile || "—"}</p>
                       <p className="hidden truncate text-sm text-muted-foreground md:block" title={c.email || ""}>{c.email || "—"}</p>
                       <div className="hidden min-w-0 md:block">
@@ -389,6 +486,106 @@ export default function AdminCustomersPage() {
           )}
         </div>
       </section>
+
+      {/* Customer profile */}
+      <Dialog open={!!viewing} onOpenChange={(o) => { if (!o) { setViewing(null); setDetail(null); } }}>
+        <DialogContent className="max-h-[90vh] overflow-y-auto rounded-2xl border-border bg-popover sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <span className="truncate">{viewing?.name || "Customer"}</span>
+              {viewing && <StatusBadge status={viewing.status} />}
+            </DialogTitle>
+            <DialogDescription>#{viewing?.id} · Customer profile</DialogDescription>
+          </DialogHeader>
+          {detailLoading ? (
+            <div className="py-10 text-center text-sm text-muted-foreground">Loading profile…</div>
+          ) : detail ? (
+            <div className="grid grid-cols-2 gap-x-4 gap-y-3">
+              <Field label="Mobile" value={detail.mobile} />
+              <Field label="Email" value={detail.email} />
+              <Field label="Date of birth" value={detail.dob ? fmtDate(detail.dob) : "—"} />
+              <Field label="Pincode" value={detail.pincode} />
+              <Field label="Taluk" value={detail.taluk_name} />
+              <Field label="District" value={detail.district_name} />
+              <Field label="State" value={detail.state_name} />
+              <Field label="Joined" value={fmtDate(detail.created_at)} />
+              <Field label="Wallet balance" value={fmtINR(detail.wallet_balance)} />
+              <Field label="Referred by" value={detail.referrer_name ? `${detail.referrer_name}${detail.referrer_mobile ? " · " + detail.referrer_mobile : ""}` : "—"} />
+              <Field label="Total orders" value={String(detail.orders_count)} />
+              <Field label="Spent (delivered)" value={fmtINR(detail.orders_spent)} />
+              <Field label="Referrals made" value={String(detail.referrals_count)} />
+            </div>
+          ) : (
+            <div className="py-10 text-center text-sm text-muted-foreground">Could not load profile.</div>
+          )}
+
+          {detail && !detailLoading && (
+            <>
+              {/* KYC */}
+              <div className="space-y-3 border-t border-border pt-4">
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">KYC</p>
+                  <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold capitalize ${kycPill(detail.kyc_status)}`}>{detail.kyc_status || "none"}</span>
+                </div>
+                <div className="grid grid-cols-2 gap-x-4 gap-y-3">
+                  <Field label="Aadhaar no." value={detail.aadhar} />
+                  <Field label="PAN no." value={detail.pan} />
+                  {detail.kyc_note && <div className="col-span-2"><Field label="KYC note" value={detail.kyc_note} /></div>}
+                </div>
+                <div className="grid grid-cols-3 gap-3">
+                  <DocThumb label="Aadhaar" url={detail.aadhar_image_url} onOpen={setDocPreview} />
+                  <DocThumb label="PAN" url={detail.pan_image_url} onOpen={setDocPreview} />
+                  <DocThumb label="Passbook" url={detail.bank_passbook_url} onOpen={setDocPreview} />
+                </div>
+              </div>
+
+              {/* Bank details */}
+              <div className="space-y-3 border-t border-border pt-4">
+                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Bank details</p>
+                <div className="grid grid-cols-2 gap-x-4 gap-y-3">
+                  <Field label="Account holder" value={detail.account_holder} />
+                  <Field label="Bank name" value={detail.bank_name} />
+                  <Field label="Account number" value={detail.account_number} />
+                  <Field label="IFSC" value={detail.ifsc_code} />
+                  <Field label="UPI" value={detail.upi} />
+                </div>
+              </div>
+            </>
+          )}
+          <DialogFooter className="gap-2 sm:justify-start">
+            {viewing && (
+              <>
+                <Button variant="ghost" onClick={() => { const c = viewing; setViewing(null); setDetail(null); setEditing({ ...c, password: "" }); }}>
+                  <Pencil className="h-4 w-4" /> Edit
+                </Button>
+                <Button variant="ghost" onClick={() => { const c = viewing; setViewing(null); setDetail(null); setWallet({ id: c.id, name: c.name, balance: c.wallet_balance, direction: "credit", amount: "", notes: "" }); }}>
+                  <WalletIcon className="h-4 w-4" /> Adjust wallet
+                </Button>
+              </>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* KYC document preview */}
+      <Dialog open={!!docPreview} onOpenChange={(o) => { if (!o) setDocPreview(null); }}>
+        <DialogContent className="sm:max-w-3xl rounded-2xl border-border bg-popover">
+          <DialogHeader>
+            <DialogTitle className="truncate pr-6">{docPreview?.title}</DialogTitle>
+            <DialogDescription>Document preview</DialogDescription>
+          </DialogHeader>
+          {docPreview && (
+            <div className="flex max-h-[72vh] w-full items-center justify-center overflow-hidden rounded-xl bg-surface-2/40 p-2">
+              <img src={docPreview.url} alt={docPreview.title} className="h-auto max-h-[68vh] w-auto max-w-full rounded-lg object-contain" />
+            </div>
+          )}
+          <DialogFooter>
+            <a href={docPreview?.url ?? "#"} target="_blank" rel="noreferrer" className="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground">
+              Open original ↗
+            </a>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Edit customer */}
       <Dialog open={!!editing} onOpenChange={(o) => !o && setEditing(null)}>

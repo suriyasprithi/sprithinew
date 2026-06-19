@@ -449,6 +449,28 @@ class AuthController extends BaseApiController
         return $this->ok($this->publicUser($user), 'Updated');
     }
 
+    /**
+     * Driver picks their own shift. The value must be the name of an ACTIVE
+     * admin-defined shift (or empty to clear). Saved to users.shift, which the
+     * admin Drivers page already reads — so the admin sees the driver's choice.
+     */
+    public function updateShift(): ResponseInterface
+    {
+        $auth = $this->authUser();
+        if (! $auth) return $this->fail('Unauthorized', 401);
+        if ($auth->role !== 'driver') return $this->fail('Only drivers have a shift', 403);
+
+        $d     = $this->request->getJSON(true) ?? $this->request->getPost() ?? [];
+        $shift = trim((string) ($d['shift'] ?? ''));
+        if ($shift !== '') {
+            $ok = (new \App\Models\DriverShiftModel())->where('name', $shift)->where('is_active', 1)->first();
+            if (! $ok) return $this->fail('Invalid shift', 422);
+        }
+
+        (new UserModel())->update((int) $auth->id, ['shift' => $shift !== '' ? $shift : null]);
+        return $this->ok(['shift' => $shift !== '' ? $shift : null], 'Shift updated');
+    }
+
     public function updateBank(): ResponseInterface
     {
         $auth = $this->authUser();

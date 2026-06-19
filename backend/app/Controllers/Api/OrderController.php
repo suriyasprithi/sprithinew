@@ -176,8 +176,10 @@ class OrderController extends BaseApiController
             // the commission pool distributed by CommissionService below. The
             // vendor never gets a share of the delivery fee.
             if ($vendorId) {
-                $vendorShare = round((float) $total * 0.90, 2);
-                (new WalletService())->credit($vendorId, 'wallet', $vendorShare, 'receive', 'order#' . $orderId, 'Sale (90% of order)');
+                $poolPct     = CommissionService::poolPctForVendor($vendorId);
+                $sharePct    = rtrim(rtrim(number_format(100 - $poolPct, 2, '.', ''), '0'), '.');
+                $vendorShare = round((float) $total * (1 - $poolPct / 100), 2);
+                (new WalletService())->credit($vendorId, 'wallet', $vendorShare, 'receive', 'order#' . $orderId, "Sale ({$sharePct}% of order)");
             }
 
             // Delivery fee is the platform's logistics revenue → admin pool, so the
@@ -716,8 +718,10 @@ class OrderController extends BaseApiController
             // delivery fee (collected in cash) is not the vendor's revenue.
             $codItems = (float) $order['total'] - (float) ($order['delivery_fee'] ?? 0);
             if ($codVendorId) {
-                $vendorShare = round($codItems * 0.90, 2);
-                (new WalletService())->credit($codVendorId, 'wallet', $vendorShare, 'receive', 'order#' . $id, 'COD sale (90% of order)');
+                $poolPct     = CommissionService::poolPctForVendor($codVendorId);
+                $sharePct    = rtrim(rtrim(number_format(100 - $poolPct, 2, '.', ''), '0'), '.');
+                $vendorShare = round($codItems * (1 - $poolPct / 100), 2);
+                (new WalletService())->credit($codVendorId, 'wallet', $vendorShare, 'receive', 'order#' . $id, "COD sale ({$sharePct}% of order)");
             }
             (new CommissionService())->distributeForOrder($id, (int) $order['customer_id'], $codItems, $codVendorId);
         }

@@ -28,6 +28,7 @@ $routes->group('api/v1', ['filter' => 'cors'], static function ($routes) {
         $routes->post('logout', 'Api\AuthController::logout');
         $routes->patch('me/address', 'Api\AuthController::updateAddress');
         $routes->patch('me/bank',    'Api\AuthController::updateBank');
+        $routes->patch('me/shift',   'Api\AuthController::updateShift');
         $routes->post('me/shop-image', 'Api\AuthController::updateShopImage');
     });
 
@@ -239,6 +240,7 @@ $routes->group('api/v1', ['filter' => 'cors'], static function ($routes) {
     // ===== Vendor management (Phase 2/6 will revisit) =====
     $routes->group('vendors', ['filter' => 'auth'], static function ($routes) {
         $routes->get('/',                  'Api\VendorManagementController::index');
+        $routes->get('(:num)',             'Api\VendorManagementController::show/$1');
         $routes->post('/',                 'Api\VendorManagementController::create');
         $routes->patch('(:num)',           'Api\VendorManagementController::update/$1');
         $routes->post('(:num)/block',          'Api\VendorManagementController::block/$1');
@@ -278,6 +280,7 @@ $routes->group('api/v1', ['filter' => 'cors'], static function ($routes) {
         $routes->post('returns/(:num)/reject',       'Api\AdminReturnController::reject/$1');
         // customers
         $routes->get('customers',                    'Api\AdminUsersController::customers');
+        $routes->get('customers/(:num)',             'Api\AdminUsersController::show/$1');
         $routes->post('customers',                   'Api\AdminUsersController::create');
         $routes->patch('customers/(:num)',           'Api\AdminUsersController::update/$1');
         $routes->post('customers/(:num)/activate',   'Api\AdminUsersController::activate/$1');

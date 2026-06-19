@@ -50,10 +50,14 @@ class PurchaseController extends BaseApiController
         $tx = new WalletTransactionModel();
         $tx->insert(['user_id' => $auth->id, 'peer_user_id' => $vendor['id'], 'amount' => $amount, 'type' => 'payment', 'reference' => 'qr#' . $orderId, 'notes' => 'Vendor purchase']);
 
-        // Credit vendor 90% to the QR wallet — remaining 10% becomes the commission pool below.
+        // Credit the vendor their share — (100 − the vendor's commission %) — to
+        // the QR wallet; the remaining commission % is the pool distributed below.
+        // The same per-vendor % drives both, so the books reconcile.
         // The vendor later transfers from qr_wallet to their main wallet to spend/withdraw.
-        $vendorShare = round((float) $amount * 0.90, 2);
-        (new WalletService())->credit((int) $vendor['id'], 'qr', $vendorShare, 'receive', 'qr#' . $orderId, 'Sale (90% of QR purchase)');
+        $poolPct     = CommissionService::poolPctForVendor((int) $vendor['id']);
+        $sharePct    = rtrim(rtrim(number_format(100 - $poolPct, 2, '.', ''), '0'), '.');
+        $vendorShare = round((float) $amount * (1 - $poolPct / 100), 2);
+        (new WalletService())->credit((int) $vendor['id'], 'qr', $vendorShare, 'receive', 'qr#' . $orderId, "Sale ({$sharePct}% of QR purchase)");
 
         // 9-way commission pool distribution (L1/L2/L3 + buyback x4 + global + admin)
         (new CommissionService())->distributeForOrder((int) $orderId, (int) $auth->id, $amount, (int) $vendor['id']);
@@ -105,11 +109,13 @@ class PurchaseController extends BaseApiController
         $users->update((int) $customer['id'], ['wallet_balance' => (float) $customer['wallet_balance'] - $amount]);
         (new WalletTransactionModel())->insert(['user_id' => (int) $customer['id'], 'peer_user_id' => (int) $auth->id, 'amount' => $amount, 'type' => 'payment', 'reference' => 'qr#' . $orderId, 'notes' => 'Vendor purchase']);
 
-        // Credit vendor 90% to the MAIN wallet — only customer-scanned QR sales
-        // land in the QR wallet; vendor-entered in-store purchases go to the main
-        // wallet. Remaining 10% is the commission pool.
-        $vendorShare = round($amount * 0.90, 2);
-        (new WalletService())->credit((int) $auth->id, 'wallet', $vendorShare, 'receive', 'order#' . $orderId, 'Sale (90% of in-store purchase)');
+        // Credit the vendor their share — (100 − the vendor's commission %) — to
+        // the MAIN wallet; only customer-scanned QR sales land in the QR wallet.
+        // The remaining commission % is the pool distributed below.
+        $poolPct     = CommissionService::poolPctForVendor((int) $auth->id);
+        $sharePct    = rtrim(rtrim(number_format(100 - $poolPct, 2, '.', ''), '0'), '.');
+        $vendorShare = round($amount * (1 - $poolPct / 100), 2);
+        (new WalletService())->credit((int) $auth->id, 'wallet', $vendorShare, 'receive', 'order#' . $orderId, "Sale ({$sharePct}% of in-store purchase)");
 
         // 9-way commission pool distribution
         (new CommissionService())->distributeForOrder((int) $orderId, (int) $customer['id'], $amount, (int) $auth->id);

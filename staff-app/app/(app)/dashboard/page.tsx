@@ -7,6 +7,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { Shimmer } from "@/components/ui/custom/shimmer";
+import { GradientButton } from "@/components/ui/custom/gradient-button";
 import { StatCard, type StatTone } from "@/components/dashboard/stat-card";
 import { RevenueChart } from "@/components/dashboard/revenue-chart";
 import { ActivityTimeline } from "@/components/dashboard/activity-timeline";
@@ -18,8 +19,21 @@ import { MobileHeader } from "@/components/layout/mobile-nav";
 import { useAuth } from "@/stores/auth";
 import { ROLE_LABEL } from "@/lib/role-menu";
 import { mock, type StaffStats, type ChartPoint, type ActivityRow } from "@/lib/mock";
-import { getAdminDashboard, getVendorDashboard, getStaffDashboard, getDriverDashboard, type AdminDashboard, type VendorDashboard } from "@/lib/admin-stats";
-import { api } from "@/lib/api";
+import { getAdminDashboard, getVendorDashboard, getStaffDashboard, getDriverDashboard, type AdminDashboard, type VendorDashboard, type DriverDashboard } from "@/lib/admin-stats";
+import { api, apiErrorMessage } from "@/lib/api";
+import { toast } from "sonner";
+
+type DriverShift = DriverDashboard["shifts"][number];
+const fmtShiftTime = (s: DriverShift) => {
+  const t = (v: string | null) => {
+    if (!v) return null;
+    const [h, m] = v.split(":");
+    const hr = Number(h); const ap = hr >= 12 ? "PM" : "AM"; const h12 = hr % 12 || 12;
+    return `${h12}:${m ?? "00"} ${ap}`;
+  };
+  const a = t(s.start_time); const b = t(s.end_time);
+  return a && b ? `${s.name} · ${a}–${b}` : s.name;
+};
 
 const fmtINR = (n: number) =>
   new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(n);
@@ -151,6 +165,11 @@ export default function StaffDashboardPage() {
   const [vendorData, setVendorData] = useState<VendorDashboard | null>(null);
   const [loading, setLoading] = useState(true);
 
+  // Driver shift selector
+  const [driverShifts, setDriverShifts] = useState<DriverShift[]>([]);
+  const [currentShift, setCurrentShift] = useState<string>("");
+  const [savingShift, setSavingShift] = useState(false);
+
   // Infinite-scroll pagination for the Recent Orders widget (vendor + admin)
   const [extraOrderRows, setExtraOrderRows] = useState<ActivityRow[]>([]);
   const [extraAdminOrders, setExtraAdminOrders] = useState<AdminDashboard["recent_orders"]>([]);
@@ -281,6 +300,8 @@ export default function StaffDashboardPage() {
       } else if (user.role === "driver") {
         try {
           const d = await getDriverDashboard();
+          setDriverShifts(d.shifts ?? []);
+          setCurrentShift(d.current_shift ?? "");
           const chartSeries: ChartPoint[] = d.orders_series.map((p) => ({ label: p.date.slice(5), value: p.orders }));
           const activityRows: ActivityRow[] = d.recent_orders.map((o) => ({
             name: o.customer,
@@ -334,6 +355,18 @@ export default function StaffDashboardPage() {
     })();
   }, [user]);
 
+  async function saveShift() {
+    setSavingShift(true);
+    try {
+      await api.patch("/auth/me/shift", { shift: currentShift });
+      toast.success(currentShift ? "Shift updated" : "Shift cleared");
+    } catch (e) {
+      toast.error(apiErrorMessage(e, "Could not update shift"));
+    } finally {
+      setSavingShift(false);
+    }
+  }
+
   const tiles = useMemo(() => (user ? tilesFor(user.role, stats) : []), [user, stats]);
   const quick = user ? QUICK_BY_ROLE[user.role] ?? [] : [];
   const series = stats.chart_series ?? [];
@@ -379,6 +412,35 @@ export default function StaffDashboardPage() {
                 />
               ))}
             </div>
+
+            {user?.role === "driver" && (
+              <div className="luxe-card p-5">
+                <div className="mb-3 flex items-center gap-2">
+                  <Truck className="h-4 w-4 text-brand" />
+                  <p className="text-sm font-semibold">Your shift</p>
+                </div>
+                {driverShifts.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">No shifts set up yet. Ask admin to add shifts.</p>
+                ) : (
+                  <div className="flex flex-wrap items-end gap-3">
+                    <div className="min-w-[220px] flex-1 space-y-1.5">
+                      <label className="text-xs font-medium text-muted-foreground">Select your shift</label>
+                      <select
+                        value={currentShift}
+                        onChange={(e) => setCurrentShift(e.target.value)}
+                        className="h-10 w-full appearance-none rounded-xl border border-input bg-surface-2/60 px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+                      >
+                        <option value="">No shift</option>
+                        {driverShifts.map((s) => <option key={s.id} value={s.name}>{fmtShiftTime(s)}</option>)}
+                      </select>
+                    </div>
+                    <GradientButton onClick={() => void saveShift()} disabled={savingShift}>
+                      {savingShift ? "Saving…" : "Save shift"}
+                    </GradientButton>
+                  </div>
+                )}
+              </div>
+            )}
 
             <div className="grid gap-4 lg:grid-cols-3">
               <div className="lg:col-span-2">

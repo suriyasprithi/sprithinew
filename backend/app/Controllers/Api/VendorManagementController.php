@@ -101,6 +101,68 @@ class VendorManagementController extends BaseApiController
         return $this->ok(['items' => $items]);
     }
 
+    /** Full profile for one vendor — shop, geo names, bank, KYC and lifetime counts. */
+    public function show(int $id): ResponseInterface
+    {
+        if ($r = $this->requireRole(['vmanager', 'admin', 'taluk', 'district', 'state'])) return $r;
+        $auth = $this->authUser();
+
+        $u = (new UserModel())->find($id);
+        if (! $u || $u['role'] !== 'vendor') return $this->fail('Vendor not found', 404);
+
+        $p = (new VendorProfileModel())->find($id); // PK = user_id
+        if ($auth->role === 'vmanager' && (! $p || (int) ($p['vendor_manager_id'] ?? 0) !== (int) $auth->id)) {
+            return $this->fail('Forbidden', 403);
+        }
+
+        $stateName = $districtName = $talukName = $catName = null;
+        if ($p) {
+            if (! empty($p['state_id']))    { $s = (new \App\Models\StateModel())->find((int) $p['state_id']);    $stateName    = $s['name'] ?? null; }
+            if (! empty($p['district_id'])) { $d = (new \App\Models\DistrictModel())->find((int) $p['district_id']); $districtName = $d['name'] ?? null; }
+            if (! empty($p['taluk_id']))    { $t = (new TalukModel())->find((int) $p['taluk_id']);                 $talukName    = $t['name'] ?? null; }
+            if (! empty($p['vendor_category_id'])) { $c = (new \App\Models\VendorCategoryModel())->find((int) $p['vendor_category_id']); $catName = $c['name'] ?? null; }
+        }
+
+        $db = db_connect();
+        $products = (int) $db->query("SELECT COUNT(*) cnt FROM products WHERE vendor_id = ?", [$id])->getRow()->cnt;
+        $orders   = $db->query(
+            "SELECT COUNT(*) cnt, COALESCE(SUM(CASE WHEN status = 'delivered' THEN total ELSE 0 END), 0) sales
+             FROM orders WHERE vendor_id = ?",
+            [$id]
+        )->getRow();
+
+        return $this->ok([
+            'id'             => (int) $u['id'],
+            'name'           => $u['name'],
+            'mobile_number'  => $u['mobile_number'],
+            'email'          => $u['email'],
+            'status'         => $u['status'],
+            'created_at'     => $u['created_at'] ?? null,
+            // shop
+            'shop_name'      => $p['shop_name'] ?? null,
+            'category_name'  => $catName,
+            'commission_pct' => $p ? (float) ($p['commission_pct'] ?? 0) : null,
+            'gst'            => $p['gst'] ?? null,
+            // address
+            'address'        => $p['address'] ?? null,
+            'area'           => $p['area'] ?? null,
+            'pincode'        => $p['pincode'] ?? ($u['pincode'] ?? null),
+            'state_name'     => $stateName,
+            'district_name'  => $districtName,
+            'taluk_name'     => $talukName,
+            // counts
+            'products_count' => $products,
+            'orders_count'   => (int) $orders->cnt,
+            'total_sales'    => (float) $orders->sales,
+            // bank
+            'account_holder' => $u['account_holder'] ?? null,
+            'bank_name'      => $u['bank_name'] ?? null,
+            'account_number' => $u['account_number'] ?? null,
+            'ifsc_code'      => $u['ifsc_code'] ?? null,
+            'upi'            => $u['upi'] ?? null,
+        ]);
+    }
+
     /** Create a vendor account + profile. */
     public function create(): ResponseInterface
     {

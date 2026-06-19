@@ -4,6 +4,9 @@ namespace App\Controllers\Api;
 
 use App\Models\UserModel;
 use App\Models\WalletTransactionModel;
+use App\Models\StateModel;
+use App\Models\DistrictModel;
+use App\Models\TalukModel;
 use CodeIgniter\HTTP\ResponseInterface;
 
 class AdminUsersController extends BaseApiController
@@ -52,6 +55,60 @@ class AdminUsersController extends BaseApiController
                 'wallet_sum' => (float) $agg->wallet_sum,
             ],
         ]);
+    }
+
+    /** Full profile for one customer — geo names, lifetime orders and referrals. */
+    public function show(int $id): ResponseInterface
+    {
+        if ($r = $this->requireAdmin()) return $r;
+
+        $users = new UserModel();
+        $u = $users->where('role', 'customer')->find($id);
+        if (! $u) return $this->fail('Customer not found', 404);
+
+        $base = $this->formatCustomer($u, $this->referrerMap([$u]));
+
+        $stateName = $districtName = $talukName = null;
+        if (! empty($u['state_id']))    { $s = (new StateModel())->find((int) $u['state_id']);    $stateName    = $s['name'] ?? null; }
+        if (! empty($u['district_id'])) { $d = (new DistrictModel())->find((int) $u['district_id']); $districtName = $d['name'] ?? null; }
+        if (! empty($u['taluk_id']))    { $t = (new TalukModel())->find((int) $u['taluk_id']);     $talukName    = $t['name'] ?? null; }
+
+        $db = db_connect();
+        $orders = $db->query(
+            "SELECT COUNT(*) cnt, COALESCE(SUM(CASE WHEN status = 'delivered' THEN total ELSE 0 END), 0) spent
+             FROM orders WHERE customer_id = ?",
+            [$id]
+        )->getRow();
+        $referrals = (int) $db->query(
+            "SELECT COUNT(*) cnt FROM users WHERE referrer_id = ? AND deleted_at IS NULL",
+            [$id]
+        )->getRow()->cnt;
+
+        $fileUrl = static fn ($p) => $p ? base_url($p) : null;
+
+        return $this->ok(array_merge($base, [
+            'dob'             => $u['dob'] ?? null,
+            'state_name'      => $stateName,
+            'district_name'   => $districtName,
+            'taluk_name'      => $talukName,
+            'orders_count'    => (int) $orders->cnt,
+            'orders_spent'    => (float) $orders->spent,
+            'referrals_count' => $referrals,
+            // KYC
+            'kyc_status'        => $u['kyc_status'] ?? 'none',
+            'kyc_note'          => $u['kyc_note'] ?? null,
+            'aadhar'            => $u['aadhar'] ?? null,
+            'pan'               => $u['pan'] ?? null,
+            'aadhar_image_url'  => $fileUrl($u['aadhar_image'] ?? null),
+            'pan_image_url'     => $fileUrl($u['pan_image'] ?? null),
+            'bank_passbook_url' => $fileUrl($u['bank_passbook'] ?? null),
+            // Bank
+            'account_holder'    => $u['account_holder'] ?? null,
+            'bank_name'         => $u['bank_name'] ?? null,
+            'account_number'    => $u['account_number'] ?? null,
+            'ifsc_code'         => $u['ifsc_code'] ?? null,
+            'upi'               => $u['upi'] ?? null,
+        ]));
     }
 
     /**

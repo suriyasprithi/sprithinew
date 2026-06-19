@@ -53,6 +53,23 @@ class CommissionService
         'admin'       => 22.0,
     ];
 
+    /**
+     * Commission pool % for a vendor — their profile's commission_pct when set,
+     * else the platform default. This is the single source of truth: the
+     * vendor's wallet credit is (100 − this) and the distributed pool is (this),
+     * so the credit and the cascade always reconcile to the order total.
+     */
+    public static function poolPctForVendor(?int $vendorId): float
+    {
+        if ($vendorId) {
+            $profile = (new \App\Models\VendorProfileModel())->where('user_id', $vendorId)->first();
+            if ($profile && isset($profile['commission_pct'])) {
+                return (float) $profile['commission_pct'];
+            }
+        }
+        return self::POOL_PCT_DEFAULT;
+    }
+
     public function distributeForOrder(int $orderId, int $purchaserUserId, float $orderTotal, ?int $vendorId = null): array
     {
         $wallet = new WalletService();
@@ -63,13 +80,7 @@ class CommissionService
 
         // Pool % comes from the vendor's profile when present, falling back to
         // the platform default so legacy orders without a vendor still work.
-        $poolPct = self::POOL_PCT_DEFAULT;
-        if ($vendorId) {
-            $profile = (new \App\Models\VendorProfileModel())->where('user_id', $vendorId)->first();
-            if ($profile && isset($profile['commission_pct'])) {
-                $poolPct = (float) $profile['commission_pct'];
-            }
-        }
+        $poolPct = self::poolPctForVendor($vendorId);
         $pool = round($orderTotal * ($poolPct / 100), 2);
         if ($pool <= 0) return [];
 

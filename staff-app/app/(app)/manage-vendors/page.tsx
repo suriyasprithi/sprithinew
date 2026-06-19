@@ -28,6 +28,8 @@ import { api, apiErrorMessage } from "@/lib/api";
 import type { ManagedVendor } from "@/lib/mock";
 
 const PAGE_SIZE = 10;
+const fmtINR = (n: number) => new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(n);
+const fmtDate = (s: string | null) => (s ? new Date(s.replace(" ", "T")).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "—");
 
 type NewVendor = { name: string; mobile: string; shop_name: string; password: string; vendor_category_id: string; commission_pct: string };
 type EditVendor = { id: number; name: string; shop_name: string; vendor_category_id: string; commission_pct: string };
@@ -42,6 +44,14 @@ type Vendor = ManagedVendor & {
   area: string | null;
   pincode: string | null;
   bank: BankInfo;
+};
+type VendorDetail = {
+  id: number; name: string; mobile: string; email: string | null; status: string; created_at: string | null;
+  shop_name: string | null; category_name: string | null; commission_pct: number | null; gst: string | null;
+  address: string | null; area: string | null; pincode: string | null;
+  state_name: string | null; district_name: string | null; taluk_name: string | null;
+  products_count: number; orders_count: number; total_sales: number;
+  account_holder: string | null; bank_name: string | null; account_number: string | null; ifsc_code: string | null; upi: string | null;
 };
 
 function normalizeVendor(raw: unknown): Vendor {
@@ -86,6 +96,9 @@ export default function ManageVendorsPage() {
   const [status, setStatus] = useState<"all" | "active" | "inactive" | "blocked">("all");
   const [page, setPage] = useState(1);
   const [openId, setOpenId] = useState<number | null>(null); // expanded bank/address row
+  const [viewing, setViewing] = useState<Vendor | null>(null);
+  const [detail, setDetail] = useState<VendorDetail | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
   const [adding, setAdding] = useState<NewVendor | null>(null);
   const [editing, setEditing] = useState<EditVendor | null>(null);
   const [resetting, setResetting] = useState<ResetPw | null>(null);
@@ -188,6 +201,30 @@ export default function ManageVendorsPage() {
       toast.error(apiErrorMessage(err, "Could not create vendor"));
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function openProfile(v: Vendor) {
+    setViewing(v);
+    setDetail(null);
+    setDetailLoading(true);
+    try {
+      const res = await api.get(`/vendors/${v.id}`);
+      const d = res.data.data as Record<string, unknown>;
+      const num = (x: unknown) => Number(x ?? 0);
+      const str = (x: unknown) => (x === null || x === undefined || x === "" ? null : String(x));
+      setDetail({
+        id: num(d.id), name: String(d.name ?? ""), mobile: String(d.mobile_number ?? ""), email: str(d.email), status: String(d.status ?? ""), created_at: str(d.created_at),
+        shop_name: str(d.shop_name), category_name: str(d.category_name), commission_pct: d.commission_pct == null ? null : num(d.commission_pct), gst: str(d.gst),
+        address: str(d.address), area: str(d.area), pincode: str(d.pincode),
+        state_name: str(d.state_name), district_name: str(d.district_name), taluk_name: str(d.taluk_name),
+        products_count: num(d.products_count), orders_count: num(d.orders_count), total_sales: num(d.total_sales),
+        account_holder: str(d.account_holder), bank_name: str(d.bank_name), account_number: str(d.account_number), ifsc_code: str(d.ifsc_code), upi: str(d.upi),
+      });
+    } catch (err) {
+      toast.error(apiErrorMessage(err, "Could not load vendor profile"));
+    } finally {
+      setDetailLoading(false);
     }
   }
 
@@ -378,13 +415,15 @@ export default function ManageVendorsPage() {
                       >
                         <ChevronDown className={`h-4 w-4 transition-transform ${openId === v.id ? "rotate-180" : ""}`} />
                       </button>
-                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brand/10 text-xs font-semibold text-brand">
-                        {(v.shop_name || v.name || "?").charAt(0).toUpperCase()}
-                      </span>
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-semibold">{v.shop_name || "—"}</p>
-                        <p className="truncate text-xs text-muted-foreground">{v.name}</p>
-                      </div>
+                      <button type="button" onClick={() => void openProfile(v)} className="group flex min-w-0 items-center gap-2 text-left">
+                        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brand/10 text-xs font-semibold text-brand">
+                          {(v.shop_name || v.name || "?").charAt(0).toUpperCase()}
+                        </span>
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-semibold underline-offset-2 group-hover:text-brand group-hover:underline">{v.shop_name || "—"}</p>
+                          <p className="truncate text-xs text-muted-foreground">{v.name}</p>
+                        </div>
+                      </button>
                     </div>
                     <p className="hidden min-w-0 truncate text-sm text-muted-foreground md:block">{v.taluk || "—"}</p>
                     <p className="hidden min-w-0 truncate text-sm text-muted-foreground md:block">{v.mobile}</p>
@@ -454,6 +493,74 @@ export default function ManageVendorsPage() {
           )}
         </div>
       </section>
+
+      {/* Vendor profile */}
+      <Dialog open={!!viewing} onOpenChange={(o) => { if (!o) { setViewing(null); setDetail(null); } }}>
+        <DialogContent className="max-h-[90vh] overflow-y-auto rounded-2xl border-border bg-popover sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <span className="truncate">{viewing?.shop_name || viewing?.name || "Vendor"}</span>
+              {viewing && <StatusBadge status={viewing.status} />}
+            </DialogTitle>
+            <DialogDescription>#{viewing?.id} · Vendor profile</DialogDescription>
+          </DialogHeader>
+          {detailLoading ? (
+            <div className="py-10 text-center text-sm text-muted-foreground">Loading profile…</div>
+          ) : detail ? (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-x-4 gap-y-3">
+                <Field label="Owner" value={detail.name} />
+                <Field label="Mobile" value={detail.mobile} />
+                <Field label="Email" value={detail.email} />
+                <Field label="Joined" value={fmtDate(detail.created_at)} />
+                <Field label="Category" value={detail.category_name} />
+                <Field label="Commission" value={detail.commission_pct == null ? null : `${detail.commission_pct.toFixed(2)}%`} />
+                <Field label="GST" value={detail.gst} />
+                <Field label="Total products" value={String(detail.products_count)} />
+                <Field label="Total orders" value={String(detail.orders_count)} />
+                <Field label="Sales (delivered)" value={fmtINR(detail.total_sales)} />
+              </div>
+
+              <div className="space-y-3 border-t border-border pt-4">
+                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Address</p>
+                <div className="grid grid-cols-2 gap-x-4 gap-y-3">
+                  <Field label="Address" value={detail.address} />
+                  <Field label="Area" value={detail.area} />
+                  <Field label="Taluk" value={detail.taluk_name} />
+                  <Field label="District" value={detail.district_name} />
+                  <Field label="State" value={detail.state_name} />
+                  <Field label="Pincode" value={detail.pincode} />
+                </div>
+              </div>
+
+              <div className="space-y-3 border-t border-border pt-4">
+                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Bank details</p>
+                <div className="grid grid-cols-2 gap-x-4 gap-y-3">
+                  <Field label="Account holder" value={detail.account_holder} />
+                  <Field label="Bank name" value={detail.bank_name} />
+                  <Field label="Account number" value={detail.account_number} />
+                  <Field label="IFSC" value={detail.ifsc_code} />
+                  <Field label="UPI" value={detail.upi} />
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="py-10 text-center text-sm text-muted-foreground">Could not load profile.</div>
+          )}
+          <DialogFooter className="gap-2 sm:justify-start">
+            {viewing && (
+              <>
+                <Button variant="ghost" onClick={() => { const v = viewing; setViewing(null); setDetail(null); startEdit(v); }}>
+                  <Pencil className="h-4 w-4" /> Edit
+                </Button>
+                <Button variant="ghost" onClick={() => { const v = viewing; setViewing(null); setDetail(null); setResetting({ id: v.id, shop_name: v.shop_name, password: "" }); }}>
+                  <KeyRound className="h-4 w-4" /> Reset password
+                </Button>
+              </>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={!!adding} onOpenChange={(o) => !o && setAdding(null)}>
         <DialogContent className="rounded-2xl border-border bg-popover">
@@ -617,3 +724,13 @@ export default function ManageVendorsPage() {
     </>
   );
 }
+
+function Field({ label, value }: { label: string; value: string | null | undefined }) {
+  return (
+    <div className="min-w-0">
+      <p className="text-[11px] uppercase tracking-wider text-muted-foreground">{label}</p>
+      <p className="truncate text-sm font-medium">{value || "—"}</p>
+    </div>
+  );
+}
+
