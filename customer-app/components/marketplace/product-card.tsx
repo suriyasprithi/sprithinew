@@ -131,9 +131,9 @@ export function ProductCard({ product, onAdd }: {
       {/* Body */}
       <div className="flex flex-1 flex-col gap-2 p-3">
         {product.vendor_name && (
-          <p className="flex items-center gap-1 text-[10px] text-[var(--mk-text-muted)]">
-            <Store className="h-3 w-3" /> {product.vendor_name}
-          </p>
+          <span className="inline-flex w-fit items-center gap-1 self-start rounded-full bg-[var(--mk-brand-soft)] px-2 py-0.5 text-xs font-bold text-[var(--mk-brand-deep)]">
+            <Store className="h-3.5 w-3.5" /> {product.vendor_name}
+          </span>
         )}
 
         <Link href={`/product-public?id=${product.id}`} className="line-clamp-2 text-sm font-semibold leading-tight hover:text-[var(--mk-brand-deep)]">

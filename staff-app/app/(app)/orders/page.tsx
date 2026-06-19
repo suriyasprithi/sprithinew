@@ -185,8 +185,9 @@ export default function StaffOrdersPage() {
     }
   }
 
-  // Selectable drivers for one order: free drivers + the one already on it.
-  const driverOptionsFor = (o: OrderRow) => drivers.filter((d) => !d.busy || d.id === o.driver_id);
+  // Every driver in the area is selectable for any order — a driver may now hold
+  // multiple orders at once. (The `busy` flag is kept only as a label hint.)
+  const driverOptionsFor = (_o: OrderRow) => drivers;
   // Finished orders never enter the driver's delivery queue → assigning a driver
   // there is a dead end. Show the driver read-only instead of an editable picker.
   const isFinished = (o: OrderRow) => o.status === "delivered" || o.status === "cancelled";
@@ -301,7 +302,7 @@ export default function StaffOrdersPage() {
                           <SelectTrigger className="h-8 w-full rounded-lg bg-surface-2/60 text-xs"><SelectValue /></SelectTrigger>
                           <SelectContent>
                             <SelectItem value="0">Unassigned</SelectItem>
-                            {driverOptionsFor(o).map((d) => <SelectItem key={d.id} value={String(d.id)}>{d.name}</SelectItem>)}
+                            {driverOptionsFor(o).map((d) => <SelectItem key={d.id} value={String(d.id)}>{d.name}{d.busy && d.id !== o.driver_id ? " · busy" : ""}</SelectItem>)}
                           </SelectContent>
                         </Select>
                       )}
@@ -325,7 +326,7 @@ export default function StaffOrdersPage() {
                           <SelectTrigger className="h-8 flex-1 rounded-lg bg-surface-2/60 text-xs"><SelectValue /></SelectTrigger>
                           <SelectContent>
                             <SelectItem value="0">Unassigned</SelectItem>
-                            {driverOptionsFor(o).map((d) => <SelectItem key={d.id} value={String(d.id)}>{d.name}</SelectItem>)}
+                            {driverOptionsFor(o).map((d) => <SelectItem key={d.id} value={String(d.id)}>{d.name}{d.busy && d.id !== o.driver_id ? " · busy" : ""}</SelectItem>)}
                           </SelectContent>
                         </Select>
                       )}

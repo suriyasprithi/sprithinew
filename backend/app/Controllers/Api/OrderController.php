@@ -509,20 +509,8 @@ class OrderController extends BaseApiController
             return $this->fail('Driver is not in this order\'s area', 422);
         }
 
-        // Busy check (taluk-wide): the driver may not hold another active order.
-        // "Active" = pending/paid/shipped (the driver's delivery queue). Legacy
-        // orders carry a driver_id but are never delivered here, so they're
-        // excluded — they must not block assigning the driver to live orders.
-        $db    = \Config\Database::connect();
-        $busyQ = (new OrderModel())
-            ->where('driver_id', $driverId)
-            ->where('id !=', $id)
-            ->whereIn('status', ['pending', 'paid', 'shipped']);
-        if ($db->tableExists('legacy_id_map')) {
-            $busyQ->where("NOT EXISTS (SELECT 1 FROM legacy_id_map lim WHERE lim.old_table = 'order' AND lim.new_id = orders.id)", null, false);
-        }
-        if ($busyQ->countAllResults() > 0) return $this->fail('Driver is already assigned to another order', 409);
-
+        // A driver may hold multiple orders at once — no "busy" restriction.
+        // (Still scoped to the order's taluk via the area check above.)
         $model->update($id, ['driver_id' => $driverId]);
 
         try {

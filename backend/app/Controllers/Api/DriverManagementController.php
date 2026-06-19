@@ -29,6 +29,9 @@ class DriverManagementController extends BaseApiController
         $talukId = $this->resolveTalukId($auth);
         if (! $talukId) return $this->ok(['items' => []]);
 
+        // Drivers in the vendor's/taluk's taluk — so every vendor under a taluk
+        // sees that taluk's drivers. Busy drivers are NOT excluded (a driver can
+        // hold multiple orders; the `busy` flag is only a UI hint).
         $rows = (new UserModel())
             ->where('role', 'driver')
             ->where('taluk_id', $talukId)
