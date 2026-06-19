@@ -12,6 +12,17 @@ use CodeIgniter\HTTP\ResponseInterface;
 
 class ProductController extends BaseApiController
 {
+    /** Material Master import columns by type — written through persistProduct(). */
+    private const MM_DECIMALS = [
+        'cost_price', 'profit_percent', 'profit', 'basic_price', 'discount_percent', 'discount',
+        'wholesale_profit_percent', 'wholesale_profit', 'wholesale_price', 'incentive', 'incentive_percent',
+        'cashback', 'cashback_percent', 'net_profit', 'tax_amount', 'wholesales_2', 'gst', 'gst_value',
+        'supplier_price', 'agent_commission_perc', 'agent_commission', 'cess', 'cess_rate', 'covid',
+        'covid_percent', 'cost_price_exceed',
+    ];
+    private const MM_STRINGS = ['manual_rate', 'tax_type', 'agent', 'csquare', 'multi_pricing'];
+    private const MM_DATES   = ['created_date', 'modified_date'];
+
     /** Customer-facing list — only active products. Staff may pass location filters. */
     public function index(): ResponseInterface
     {
@@ -286,6 +297,98 @@ class ProductController extends BaseApiController
     }
 
     /**
+     * Admin bulk-import a vendor's catalog from the POS "Material Master" sheet.
+     * Body: { vendor_id, items: [{ code, barcode, name, mrp, price, category, image, status }] }.
+     * Categories are matched by name (created if missing). Rows duplicating an
+     * existing product (same vendor + name, or same non-empty code) are skipped;
+     * invalid rows are reported but don't abort the rest. Customer-relevant
+     * columns only — accounting columns in the sheet are ignored.
+     */
+    public function adminImport(): ResponseInterface
+    {
+        $auth = $this->authUser();
+        if (! $auth) return $this->fail('Unauthorized', 401);
+        if ($auth->role !== 'admin') return $this->fail('Forbidden', 403);
+
+        $d        = $this->request->getJSON(true) ?? $this->request->getPost();
+        $vendorId = isset($d['vendor_id']) ? (int) $d['vendor_id'] : 0;
+        $items    = $d['items'] ?? null;
+        if (! is_array($items) || ! $items) return $this->fail('No rows to import', 422);
+        if (count($items) > 2000)           return $this->fail('Too many rows (max 2000 per import)', 422);
+
+        $vendor = (new UserModel())->find($vendorId);
+        if (! $vendor || $vendor['role'] !== 'vendor') return $this->fail('Pick a valid vendor', 422);
+
+        // Category name -> id (lowercased), created on demand within the run.
+        $catModel = new CategoryModel();
+        $catMap   = [];
+        foreach ($catModel->findAll() as $c) $catMap[mb_strtolower(trim((string) $c['name']))] = (int) $c['id'];
+
+        // Existing products for this vendor — to skip duplicates on re-import.
+        $names = [];
+        $codes = [];
+        foreach ((new ProductModel())->where('vendor_id', $vendorId)->findAll() as $p) {
+            $names[mb_strtolower(trim((string) $p['name']))] = true;
+            if (! empty($p['code'])) $codes[mb_strtolower(trim((string) $p['code']))] = true;
+        }
+
+        $db = \Config\Database::connect();
+        $db->transStart();
+
+        $created = 0; $skipped = 0; $errors = [];
+        foreach (array_values($items) as $i => $item) {
+            $line = $i + 1;
+            if (! is_array($item)) { $errors[] = ['row' => $line, 'reason' => 'Invalid row']; continue; }
+            $name  = trim((string) ($item['name'] ?? ''));
+            $price = $item['price'] ?? null;
+            if ($name === '')                               { $errors[] = ['row' => $line, 'reason' => 'Name required']; continue; }
+            if (! is_numeric($price) || (float) $price < 0) { $errors[] = ['row' => $line, 'reason' => 'Valid price required']; continue; }
+
+            $code = trim((string) ($item['code'] ?? ''));
+            $nKey = mb_strtolower($name);
+            $cKey = $code !== '' ? mb_strtolower($code) : null;
+            if (isset($names[$nKey]) || ($cKey && isset($codes[$cKey]))) { $skipped++; continue; }
+
+            $catId   = null;
+            $catName = trim((string) ($item['category'] ?? ''));
+            if ($catName !== '') {
+                $key = mb_strtolower($catName);
+                if (! isset($catMap[$key])) {
+                    $catMap[$key] = (int) $catModel->insert(['name' => $catName, 'status' => 'active'], true);
+                }
+                $catId = $catMap[$key];
+            }
+
+            $statusRaw = mb_strtolower(trim((string) ($item['status'] ?? '')));
+            $status    = in_array($statusRaw, ['inactive', '0', 'no', 'disabled', 'off'], true) ? 'inactive' : 'active';
+
+            // Merge the raw row (carries all Material Master extra columns) with the
+            // resolved/overridden fields, so persistProduct() stores every column.
+            $this->persistProduct(array_merge($item, [
+                'name'        => $name,
+                'price'       => (float) $price,
+                'mrp'         => $item['mrp'] ?? null,
+                'code'        => $code,
+                'barcode'     => trim((string) ($item['barcode'] ?? '')),
+                'image'       => ! empty($item['image']) ? trim((string) $item['image']) : null,
+                'category_id' => $catId,
+                'status'      => $status,
+                'stock'       => 9999,   // sheet has no stock — default in-stock so the catalog is sellable
+            ]), $vendorId);
+
+            $names[$nKey] = true;
+            if ($cKey) $codes[$cKey] = true;
+            $created++;
+        }
+
+        $db->transComplete();
+        if ($db->transStatus() === false) return $this->fail('Import failed', 500);
+
+        $msg = "Imported {$created}, skipped {$skipped}" . ($errors ? (', ' . count($errors) . ' error rows') : '');
+        return $this->ok(['created' => $created, 'skipped' => $skipped, 'errors' => $errors], $msg);
+    }
+
+    /**
      * Insert one product plus its variants from a (decoded) request item.
      * Shared by create() and bulkCreate(); caller resolves $vendorId + auth.
      */
@@ -295,13 +398,16 @@ class ProductController extends BaseApiController
         $vTypes   = $this->normalizeVariantTypes($d['variant_types'] ?? null);
         $variants = $this->normalizeVariants($d['variants'] ?? null, $vTypes);
         $vImages  = $this->normalizeVariantImages($d['variant_images'] ?? null, $vTypes);
-        $id = (new ProductModel())->insert([
+        $payload = [
             'vendor_id'          => $vendorId,
             'category_id'        => $d['category_id'] ?? null,
             'vendor_category_id' => isset($d['vendor_category_id']) ? (int) $d['vendor_category_id'] : null,
             'name'               => $d['name'],
             'description'        => $d['description'] ?? null,
             'price'              => $d['price'],
+            'mrp'                => isset($d['mrp']) && $d['mrp'] !== '' ? (float) $d['mrp'] : null,
+            'code'               => ! empty($d['code']) ? (string) $d['code'] : null,
+            'barcode'            => ! empty($d['barcode']) ? (string) $d['barcode'] : null,
             'stock'              => $d['stock'] ?? 0,
             'has_variants'       => $variants ? 1 : 0,
             'variant_types'      => $vTypes ? json_encode($vTypes, JSON_UNESCAPED_UNICODE) : null,
@@ -309,7 +415,16 @@ class ProductController extends BaseApiController
             'image'              => $d['image'] ?? null,
             'attributes'         => $attrs !== null ? json_encode($attrs, JSON_UNESCAPED_UNICODE) : null,
             'status'             => $d['status'] ?? 'active',
-        ], true);
+        ];
+        // Material Master extra columns — only set when present (normal create → null).
+        foreach (self::MM_DECIMALS as $f) $payload[$f] = (isset($d[$f]) && is_numeric($d[$f])) ? (float) $d[$f] : null;
+        foreach (self::MM_STRINGS as $f)  $payload[$f] = (isset($d[$f]) && trim((string) $d[$f]) !== '') ? trim((string) $d[$f]) : null;
+        foreach (self::MM_DATES as $f) {
+            $ts = ! empty($d[$f]) ? strtotime((string) $d[$f]) : false;
+            $payload[$f] = $ts ? date('Y-m-d H:i:s', $ts) : null;
+        }
+
+        $id = (new ProductModel())->insert($payload, true);
         $this->syncVariants((int) $id, $variants);
         return (int) $id;
     }

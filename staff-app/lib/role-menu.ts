@@ -28,6 +28,7 @@ import {
   ShieldCheck,
   RotateCcw,
   Clock,
+  Upload,
   type LucideIcon,
 } from "lucide-react";
 import { StaffRole } from "@/lib/api";
@@ -106,6 +107,7 @@ export const ROLE_MENU: Record<StaffRole, MenuItem[]> = {
     { href: "/manage-districts",  label: "Districts",          icon: Building2 },
     { href: "/manage-taluks",     label: "Taluks",             icon: Building2 },
     { href: "/manage-vendors",    label: "Vendors",            icon: Store },
+    { href: "/import-products",   label: "Import Products",    icon: Upload },
     { href: "/wallet",            label: "Wallet",             icon: Wallet },
     { href: "/withdrawals",       label: "Withdrawals",        icon: Banknote },
     { href: "/kyc",               label: "KYC Review",         icon: ShieldCheck },

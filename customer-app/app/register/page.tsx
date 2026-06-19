@@ -15,6 +15,7 @@ import { useAuth } from "@/stores/auth";
 import { api, apiErrorMessage } from "@/lib/api";
 import { cleanMobile, isMobile } from "@/lib/phone";
 import { saveLocation } from "@/components/marketplace/location-picker";
+import { getPendingReferral, clearPendingReferral } from "@/lib/referral";
 
 type GeoState    = { id: number; name: string };
 type GeoDistrict = { id: number; state_id: number; name: string };
@@ -69,6 +70,7 @@ function RegisterInner() {
   const [referrerCode, setReferrerCode] = useState("");
   const [referrerName, setReferrerName] = useState<string | null>(null);
   const [refChecking, setRefChecking] = useState(false);
+  const [lockedReferrer, setLockedReferrer] = useState(false);
   const [mobileTaken, setMobileTaken] = useState<boolean | null>(null);
   const [mobileChecking, setMobileChecking] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -84,9 +86,16 @@ function RegisterInner() {
   const [districtId, setDistrictId] = useState<number | null>(null);
   const [talukId, setTalukId] = useState<number | null>(null);
 
+  // Auto-fill the referral code from the URL (?ref=) or a pending referral
+  // captured from the Install Referrer / a deep link. When it comes from either
+  // source the field locks read-only — the customer never types it manually.
   useEffect(() => {
-    const ref = sp?.get("ref");
-    if (ref) setReferrerCode(cleanMobile(ref));
+    const fromUrl = sp?.get("ref");
+    const code = fromUrl ? cleanMobile(fromUrl) : (getPendingReferral() ?? "");
+    if (code) {
+      setReferrerCode(code);
+      setLockedReferrer(true);
+    }
   }, [sp]);
 
   // Resolve the referral code (= referrer's mobile) to a name, so the customer
@@ -220,6 +229,8 @@ function RegisterInner() {
         taluk_id: talukId,
         label: [tName, dName, stName].filter(Boolean).join(", "),
       });
+      // Referral consumed — clear the pending code so it can't re-attach.
+      clearPendingReferral();
       toast.success("Account created");
       router.replace("/home");
     } catch (err) {
@@ -323,13 +334,30 @@ function RegisterInner() {
               </div>
               <div className="space-y-1.5 sm:col-span-2">
                 <Label htmlFor="ref">Referral code <span className="text-muted-foreground">(optional)</span></Label>
-                <Input id="ref" inputMode="numeric" placeholder="Referrer's mobile" value={referrerCode} onChange={(e) => setReferrerCode(cleanMobile(e.target.value))} disabled={busy || isLoading} className="h-11 rounded-xl bg-surface-2/60" />
-                {isMobile(referrerCode) && (
-                  refChecking
-                    ? <p className="text-xs text-muted-foreground">Checking…</p>
-                    : referrerName
-                      ? <p className="text-xs font-medium text-emerald-600">✓ Referred by {referrerName}</p>
-                      : <p className="text-xs text-muted-foreground">No account found for this code</p>
+                {lockedReferrer ? (
+                  // Auto-filled from a referral link / Install Referrer — read-only.
+                  <div className="rounded-xl border border-brand/30 bg-brand/5 p-3">
+                    <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Referred By</p>
+                    <p className="text-sm font-semibold">
+                      {refChecking ? "Checking…" : (referrerName ?? "Unknown referrer")}
+                    </p>
+                    <div className="mt-2 flex items-center justify-between border-t border-border/60 pt-2">
+                      <span className="text-xs text-muted-foreground">Referral Code</span>
+                      <span className="font-mono text-sm font-medium">{referrerCode}</span>
+                    </div>
+                    <input type="hidden" id="ref" value={referrerCode} readOnly />
+                  </div>
+                ) : (
+                  <>
+                    <Input id="ref" inputMode="numeric" placeholder="Referrer's mobile" value={referrerCode} onChange={(e) => setReferrerCode(cleanMobile(e.target.value))} disabled={busy || isLoading} className="h-11 rounded-xl bg-surface-2/60" />
+                    {isMobile(referrerCode) && (
+                      refChecking
+                        ? <p className="text-xs text-muted-foreground">Checking…</p>
+                        : referrerName
+                          ? <p className="text-xs font-medium text-emerald-600">✓ Referred by {referrerName}</p>
+                          : <p className="text-xs text-muted-foreground">No account found for this code</p>
+                    )}
+                  </>
                 )}
               </div>
               <div className="space-y-1.5 sm:col-span-2">

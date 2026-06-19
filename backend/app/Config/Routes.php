@@ -7,6 +7,10 @@ use CodeIgniter\Router\RouteCollection;
  */
 $routes->get('/', 'Home::index');
 
+// Referral deep-link landing + Android App Links verification (public, no API).
+$routes->get('ref/(:segment)', 'RefController::landing/$1');
+$routes->get('.well-known/assetlinks.json', 'WellKnown::assetlinks');
+
 $routes->options('(:any)', static function () {
     return service('response')->setStatusCode(204);
 });
@@ -287,6 +291,7 @@ $routes->group('api/v1', ['filter' => 'cors'], static function ($routes) {
         $routes->get('customers',                    'Api\AdminUsersController::customers');
         $routes->get('customers/(:num)',             'Api\AdminUsersController::show/$1');
         $routes->post('customers',                   'Api\AdminUsersController::create');
+        $routes->post('products/import',             'Api\ProductController::adminImport');
         $routes->patch('customers/(:num)',           'Api\AdminUsersController::update/$1');
         $routes->post('customers/(:num)/activate',   'Api\AdminUsersController::activate/$1');
         $routes->post('customers/(:num)/deactivate', 'Api\AdminUsersController::deactivate/$1');

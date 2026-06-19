@@ -120,10 +120,17 @@ class AuthController extends BaseApiController
             return $this->fail('Invalid or expired OTP. Please resend.', 422);
         }
 
-        // Resolve referrer (by mobile_number = referral_code)
-        $referrerId = null;
-        if (! empty($data['referrer_code'])) {
-            $ref = $users->where('mobile_number', $data['referrer_code'])
+        // Resolve referrer (by mobile_number = referral_code). Security:
+        //  - self-referral (code == own mobile) is ignored,
+        //  - an invalid/expired code that doesn't resolve to an active customer
+        //    simply yields no referrer (no error, no reward),
+        //  - duplicate rewards are impossible because a mobile can register only
+        //    once per role (the mobileExistsForRole() check above), so one
+        //    account is created — and rewarded — at most once.
+        $referrerId   = null;
+        $referrerCode = ! empty($data['referrer_code']) ? preg_replace('/\D/', '', (string) $data['referrer_code']) : '';
+        if ($referrerCode !== '' && $referrerCode !== trim((string) $data['mobile_number'])) {
+            $ref = $users->where('mobile_number', $referrerCode)
                 ->where('role', 'customer')
                 ->where('status', 'active')
                 ->first();
@@ -155,6 +162,9 @@ class AuthController extends BaseApiController
         if ($referrerId) {
             $this->bumpUplineLevelCounts($referrerId, (int) $userId);
             (new WelcomeBonusService())->award($referrerId, (int) $userId);
+            log_message('info', 'referral attached: new_user={u} referrer={r} code={c}', [
+                'u' => (int) $userId, 'r' => $referrerId, 'c' => $referrerCode,
+            ]);
         }
 
         return $this->issueTokens((int) $userId, $role, $users->find($userId), 201, 'Registered');

@@ -5,6 +5,7 @@ namespace App\Controllers\Api;
 use App\Models\UserModel;
 use App\Models\WalletTransactionModel;
 use App\Services\NotificationService;
+use App\Services\SystemSettingsService;
 use App\Services\WalletService;
 use CodeIgniter\HTTP\ResponseInterface;
 
@@ -273,12 +274,26 @@ class WalletController extends BaseApiController
         $auth = $this->authUser();
         if (! $auth) return $this->fail('Unauthorized', 401);
         if (! $this->validate([
-            'from'   => 'required|in_list[wallet,monthly,level,global,buyback,qr]',
-            'to'     => 'required|in_list[wallet,monthly,level,global,buyback,qr]',
+            'from'   => 'required|in_list[wallet,monthly,level,level_1,level_2,level_3,global,buyback,qr]',
+            'to'     => 'required|in_list[wallet,monthly,level,level_1,level_2,level_3,global,buyback,qr]',
             'amount' => 'required|numeric|greater_than[0]',
         ])) return $this->fail('Validation failed', 422, $this->validator->getErrors());
         $d = $this->request->getJSON(true) ?? $this->request->getPost();
         if ($d['from'] === $d['to']) return $this->fail('Source and destination must differ', 422);
+
+        // Level wallets (L1/L2/L3) are gated: transfer unlocks only once the
+        // user's referral count for that level reaches its threshold.
+        $gatedLevel = ['level_1' => 1, 'level_2' => 2, 'level_3' => 3][$d['from']] ?? null;
+        if ($gatedLevel !== null) {
+            $defaults  = [1 => 100, 2 => 10000, 3 => 100000];
+            $threshold = (int) (new SystemSettingsService())->getFloat("level.unlock_threshold_{$gatedLevel}", $defaults[$gatedLevel]);
+            $u         = (new UserModel())->find((int) $auth->id);
+            $count     = (int) ($u["level_{$gatedLevel}_count"] ?? 0);
+            if ($count < $threshold) {
+                return $this->fail("Level {$gatedLevel} is locked — reach {$threshold} referrals to unlock transfer.", 403);
+            }
+        }
+
         $svc = new WalletService();
         $ok = $svc->transfer((int) $auth->id, $d['from'], $d['to'], (float) $d['amount']);
         if (! $ok) return $this->fail('Insufficient balance in source wallet', 402);

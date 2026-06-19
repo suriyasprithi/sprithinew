@@ -1,0 +1,19 @@
+{
+  "name": "install-referrer",
+  "version": "1.0.0",
+  "description": "Google Play Install Referrer bridge for SPRITHI (Android-only).",
+  "main": "index.js",
+  "types": "index.d.ts",
+  "capacitor": {
+    "android": {
+      "src": "android"
+    }
+  },
+  "author": "SPRITHI",
+  "license": "UNLICENSED",
+  "files": [
+    "android/",
+    "index.js",
+    "index.d.ts"
+  ]
+}

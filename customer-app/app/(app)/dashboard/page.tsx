@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
-import { ArrowDownLeft, ArrowLeftRight, Bell, Gift, ShoppingBag, Send, Sparkles, Store, Users, Wallet as WalletIcon } from "lucide-react";
+import { ArrowDownLeft, ArrowLeftRight, Bell, Gift, Lock, ShoppingBag, Send, Sparkles, Store, Users, Wallet as WalletIcon } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { AppHeader } from "@/components/layout/app-header";
 import { LuxuryCard } from "@/components/ui/custom/luxury-card";
@@ -67,12 +67,17 @@ export default function DashboardPage() {
     { key: "global",  label: "Global",  value: user?.global_wallet  ?? 0, tone: "amber",  transferable: true  },
   ];
 
+  // Referral counts that unlock each level's transfer (mirrors the backend
+  // level.unlock_threshold_* defaults; the backend is the authority and still
+  // rejects a locked transfer, this just decides the button vs Locked badge).
+  const LEVEL_UNLOCK: Record<string, number> = { level_1: 100, level_2: 10000, level_3: 100000 };
+
   // Each level card combines the wallet balance with its referral head-count.
   // Distinct tones per level, like the wallet cards above.
-  const levelCards: { key: WalletKey; label: string; value: number; users: number; tone: keyof typeof WALLET_TONE }[] = [
-    { key: "level_1", label: "L1", value: user?.level_1_wallet ?? 0, users: user?.level_1_count ?? 0, tone: "sky"   },
-    { key: "level_2", label: "L2", value: user?.level_2_wallet ?? 0, users: user?.level_2_count ?? 0, tone: "amber" },
-    { key: "level_3", label: "L3", value: user?.level_3_wallet ?? 0, users: user?.level_3_count ?? 0, tone: "rose"  },
+  const levelCards: { key: WalletKey; label: string; value: number; users: number; tone: keyof typeof WALLET_TONE; unlock: number }[] = [
+    { key: "level_1", label: "L1", value: user?.level_1_wallet ?? 0, users: user?.level_1_count ?? 0, tone: "sky",   unlock: LEVEL_UNLOCK.level_1 },
+    { key: "level_2", label: "L2", value: user?.level_2_wallet ?? 0, users: user?.level_2_count ?? 0, tone: "amber", unlock: LEVEL_UNLOCK.level_2 },
+    { key: "level_3", label: "L3", value: user?.level_3_wallet ?? 0, users: user?.level_3_count ?? 0, tone: "rose",  unlock: LEVEL_UNLOCK.level_3 },
   ];
 
   return (
@@ -199,6 +204,18 @@ export default function DashboardPage() {
                   >
                     History →
                   </Link>
+                  {lc.users >= lc.unlock ? (
+                    <Link
+                      href={`/wallet/transfer?from=${lc.key}`}
+                      className="mt-1 block rounded-lg border border-brand/30 bg-brand/10 py-1 text-center text-[11px] font-semibold text-brand hover:bg-brand/15"
+                    >
+                      Transfer
+                    </Link>
+                  ) : (
+                    <span className="mt-1 flex items-center justify-center gap-1 rounded-lg border border-black/10 bg-black/[0.03] py-1 text-center text-[10px] font-semibold text-[#9ca3af]">
+                      <Lock className="h-3 w-3" /> {lc.unlock.toLocaleString("en-IN")} refs
+                    </span>
+                  )}
                 </div>
               ))}
             </div>

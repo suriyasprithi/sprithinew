@@ -116,6 +116,9 @@ fi
 echo "==> cap sync android…"
 npx cap sync android
 
+# Referral App Links: route https://app.sprithi.com/ref/* into the app.
+bash "$(dirname "$0")/patch-applinks.sh"
+
 # ---------------------------------------------------------------------------
 # 5b. Wire Firebase Android config AFTER cap sync (cap sync may rewrite gradle
 #     files, so we patch after). Source of truth: customer-app/firebase/.

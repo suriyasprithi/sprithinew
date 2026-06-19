@@ -92,11 +92,14 @@ class PurchaseController extends BaseApiController
         if (! $customer) return $this->fail('Customer not found', 404);
 
         $amount = (float) $d['amount'];
-        if ((float) ($customer['wallet_balance'] ?? 0) < $amount) return $this->fail('Customer has insufficient wallet balance', 402);
 
         $vendor = $users->find($auth->id);
 
-        // Synthetic order record (no items)
+        // Synthetic order record (no items). The customer's wallet is NOT charged
+        // for a vendor-entered in-store purchase — the customer pays in person.
+        // The vendor still receives their sale share and the MLM commission still
+        // runs (business-funded), so the sale generates rewards without touching
+        // the customer's wallet balance.
         $orderId = (new OrderModel())->insert([
             'customer_id' => (int) $customer['id'],
             'vendor_id'   => (int) $auth->id,
@@ -104,10 +107,6 @@ class PurchaseController extends BaseApiController
             'status'      => 'paid',
             'notes'       => 'In-store purchase (vendor-entered)',
         ], true);
-
-        // Debit customer
-        $users->update((int) $customer['id'], ['wallet_balance' => (float) $customer['wallet_balance'] - $amount]);
-        (new WalletTransactionModel())->insert(['user_id' => (int) $customer['id'], 'peer_user_id' => (int) $auth->id, 'amount' => $amount, 'type' => 'payment', 'reference' => 'qr#' . $orderId, 'notes' => 'Vendor purchase']);
 
         // Credit the vendor their share — (100 − the vendor's commission %) — to
         // the MAIN wallet; only customer-scanned QR sales land in the QR wallet.
@@ -121,10 +120,10 @@ class PurchaseController extends BaseApiController
         (new CommissionService())->distributeForOrder((int) $orderId, (int) $customer['id'], $amount, (int) $auth->id);
 
         $svc = new NotificationService();
-        $svc->sendToUser((int) $customer['id'], 'Purchase complete', "₹{$amount} paid to {$vendor['name']}");
+        $svc->sendToUser((int) $customer['id'], 'Purchase recorded', "Your ₹{$amount} purchase at {$vendor['name']} was recorded.");
         $svc->sendToUser((int) $auth->id,       'New sale',          "₹{$amount} from {$customer['name']}");
 
-        return $this->ok(['order_id' => (int) $orderId], 'Purchase complete');
+        return $this->ok(['order_id' => (int) $orderId], 'Purchase recorded');
     }
 
     /**

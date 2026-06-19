@@ -61,17 +61,15 @@ export default function ReferPage() {
     })();
   }, []);
 
-  // Build the shareable URL from the current location so it survives whatever
-  // host / basePath the app is served at (localhost:8000/customer, a tunnel
-  // URL, a Capacitor-bundled APK, etc.).
+  // Build the shareable referral link against the production App Links domain
+  // (NEXT_PUBLIC_REFERRAL_DOMAIN). It must be the verified domain so that
+  // https://<domain>/ref/{code} opens the installed app, or falls back to the
+  // Play Store / web register. The APK runs on a localhost origin, so we can't
+  // derive the domain from window.location here.
   useEffect(() => {
-    if (typeof window === "undefined" || !user?.mobile_number) return;
-    const origin = window.location.origin;
-    // Strip the trailing "/refer/..." off the current pathname and use whatever
-    // is left as the app's basePath. Keeps the link working at any deploy host.
-    const path = window.location.pathname;
-    const basePath = path.replace(/\/refer\/?.*$/, "");
-    setShareUrl(`${origin}${basePath}/register/?ref=${encodeURIComponent(user.mobile_number)}`);
+    if (!user?.mobile_number) return;
+    const domain = (process.env.NEXT_PUBLIC_REFERRAL_DOMAIN ?? "https://app.sprithi.com").replace(/\/+$/, "");
+    setShareUrl(`${domain}/ref/${encodeURIComponent(user.mobile_number)}`);
   }, [user?.mobile_number]);
 
   const code = user?.mobile_number ?? "";
