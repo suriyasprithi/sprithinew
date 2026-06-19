@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Image as ImageIcon, Check, X, Loader2, EyeOff, Eye } from "lucide-react";
+import { Image as ImageIcon, Check, X, Loader2, EyeOff, Eye, ZoomIn } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { GradientButton } from "@/components/ui/custom/gradient-button";
@@ -33,6 +33,7 @@ export default function ShopImageApprovalPage() {
   const [busy, setBusy] = useState<number | null>(null);
   const [rejecting, setRejecting] = useState<Row | null>(null);
   const [reason, setReason] = useState("");
+  const [preview, setPreview] = useState<{ url: string; title: string } | null>(null);
 
   async function refresh() {
     setLoading(true);
@@ -100,17 +101,28 @@ export default function ShopImageApprovalPage() {
             <div className="divide-y divide-border">
               {rows.map((r) => {
                 const img = r.state === "pending" ? r.image_pending_url : r.image_url;
+                const openPreview = () => { if (img) setPreview({ url: img, title: r.shop_name || r.vendor_name }); };
                 return (
                   <div key={r.vendor_id} className="grid grid-cols-[1fr_auto] items-center gap-3 px-4 py-3 md:grid-cols-[1fr_140px_110px_110px_180px]">
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-semibold">{r.shop_name || r.vendor_name}</p>
-                      <p className="truncate text-xs text-muted-foreground">{r.vendor_name}</p>
+                    <div className="flex min-w-0 items-center gap-3">
+                      {img && (
+                        <button type="button" onClick={openPreview} aria-label="Preview shop image" className="shrink-0 md:hidden">
+                          <img src={img} alt="" className={`h-11 w-11 rounded-lg border border-border object-cover ${r.state === "inactive" ? "opacity-40 grayscale" : ""}`} />
+                        </button>
+                      )}
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-semibold">{r.shop_name || r.vendor_name}</p>
+                        <p className="truncate text-xs text-muted-foreground">{r.vendor_name}</p>
+                      </div>
                     </div>
                     <div className="hidden md:block">
                       {img ? (
-                        <a href={img} target="_blank" rel="noreferrer">
-                          <img src={img} alt="" className={`h-14 w-28 rounded-lg border border-border object-cover ${r.state === "inactive" ? "opacity-40 grayscale" : ""}`} />
-                        </a>
+                        <button type="button" onClick={openPreview} aria-label="Preview shop image" className="group relative block">
+                          <img src={img} alt="" className={`h-14 w-28 rounded-lg border border-border object-cover transition group-hover:brightness-90 ${r.state === "inactive" ? "opacity-40 grayscale" : ""}`} />
+                          <span className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-lg opacity-0 transition group-hover:bg-black/30 group-hover:opacity-100">
+                            <ZoomIn className="h-5 w-5 text-white" />
+                          </span>
+                        </button>
                       ) : (
                         <span className="text-xs text-muted-foreground">—</span>
                       )}
@@ -166,6 +178,25 @@ export default function ShopImageApprovalPage() {
             <GradientButton onClick={() => void submitReject()} disabled={busy !== null}>
               {busy !== null ? "Rejecting…" : "Reject"}
             </GradientButton>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!preview} onOpenChange={(o) => { if (!o) setPreview(null); }}>
+        <DialogContent className="sm:max-w-3xl rounded-2xl border-border bg-popover">
+          <DialogHeader>
+            <DialogTitle className="truncate pr-6">{preview?.title}</DialogTitle>
+            <DialogDescription>Shop image preview</DialogDescription>
+          </DialogHeader>
+          {preview && (
+            <div className="flex max-h-[72vh] w-full items-center justify-center overflow-hidden rounded-xl bg-surface-2/40 p-2">
+              <img src={preview.url} alt={preview.title} className="h-auto max-h-[68vh] w-auto max-w-full rounded-lg object-contain" />
+            </div>
+          )}
+          <DialogFooter>
+            <a href={preview?.url ?? "#"} target="_blank" rel="noreferrer" className="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground">
+              Open original ↗
+            </a>
           </DialogFooter>
         </DialogContent>
       </Dialog>

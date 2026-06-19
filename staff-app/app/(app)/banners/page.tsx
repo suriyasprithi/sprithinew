@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import {
-  Image as ImageIcon, Plus, Search, MoreHorizontal, Pencil, Trash2, Eye, EyeOff,
+  Image as ImageIcon, Plus, Search, MoreHorizontal, Pencil, Trash2, Eye, EyeOff, ZoomIn,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
@@ -10,7 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
@@ -83,6 +83,7 @@ export default function BannersPage() {
   const [deleteId, setDeleteId] = useState<number | null>(null);
   const [imageMode, setImageMode] = useState<"url" | "upload">("url");
   const [busy, setBusy] = useState(false);
+  const [preview, setPreview] = useState<{ url: string; title: string } | null>(null);
 
   async function load() {
     setLoading(true);
@@ -225,12 +226,22 @@ export default function BannersPage() {
                   <tr key={b.id} className="border-t border-border hover:bg-popover/60">
                     <td className="px-4 py-3">
                       {b.image_url ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={b.image_url}
-                          alt={b.title ?? ""}
-                          className="h-12 w-20 rounded-lg object-cover ring-1 ring-border"
-                        />
+                        <button
+                          type="button"
+                          onClick={() => setPreview({ url: b.image_url!, title: b.title || b.slot })}
+                          aria-label="Preview banner image"
+                          className="group relative block"
+                        >
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={b.image_url}
+                            alt={b.title ?? ""}
+                            className="h-12 w-20 rounded-lg object-cover ring-1 ring-border transition group-hover:brightness-90"
+                          />
+                          <span className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-lg opacity-0 transition group-hover:bg-black/30 group-hover:opacity-100">
+                            <ZoomIn className="h-4 w-4 text-white" />
+                          </span>
+                        </button>
                       ) : (
                         <div
                           className="h-12 w-20 rounded-lg ring-1 ring-border"
@@ -388,6 +399,26 @@ export default function BannersPage() {
             <GradientButton onClick={() => void save()} disabled={busy}>
               {busy ? "Saving…" : editing?.id ? "Save changes" : "Create banner"}
             </GradientButton>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Image preview */}
+      <Dialog open={!!preview} onOpenChange={(o) => { if (!o) setPreview(null); }}>
+        <DialogContent className="sm:max-w-3xl rounded-2xl border-border bg-popover">
+          <DialogHeader>
+            <DialogTitle className="truncate pr-6">{preview?.title}</DialogTitle>
+            <DialogDescription>Banner image preview</DialogDescription>
+          </DialogHeader>
+          {preview && (
+            <div className="flex max-h-[72vh] w-full items-center justify-center overflow-hidden rounded-xl bg-surface-2/40 p-2">
+              <img src={preview.url} alt={preview.title} className="h-auto max-h-[68vh] w-auto max-w-full rounded-lg object-contain" />
+            </div>
+          )}
+          <DialogFooter>
+            <a href={preview?.url ?? "#"} target="_blank" rel="noreferrer" className="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground">
+              Open original ↗
+            </a>
           </DialogFooter>
         </DialogContent>
       </Dialog>
