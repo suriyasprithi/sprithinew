@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Download, QrCode, Share2, Search } from "lucide-react";
+import { Download, QrCode, Share2, Search, ArrowRightLeft, Check, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
@@ -12,7 +12,7 @@ import { TableSkeleton } from "@/components/data-table/table-skeleton";
 import { Pagination } from "@/components/data-table/pagination";
 import { MobileHeader } from "@/components/layout/mobile-nav";
 import { PageHeader } from "@/components/layout/page-header";
-import { api } from "@/lib/api";
+import { api, apiErrorMessage } from "@/lib/api";
 import { useAuth } from "@/stores/auth";
 
 const PAGE_SIZE = 8;
@@ -26,6 +26,8 @@ type QrPurchase = {
   customer_name: string | null;
   customer_mobile: string | null;
   source: "qr" | "entered";
+  vendor_share: number | string;   // amount actually sitting in the QR wallet
+  transferred: boolean;            // already moved to the main wallet?
 };
 
 /**
@@ -33,7 +35,7 @@ type QrPurchase = {
  * QR scanner can read it and POST /purchase/qr to settle the order.
  */
 export default function QrScannerPage() {
-  const { user } = useAuth();
+  const { user, hydrate } = useAuth();
   const mobile = user?.mobile_number ?? "";
   const name   = user?.name ?? "Vendor";
 
@@ -41,6 +43,22 @@ export default function QrScannerPage() {
   const [loadingPurchases, setLoadingPurchases] = useState(true);
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
+  const [xferId, setXferId] = useState<number | null>(null);
+
+  // Move one QR purchase's share from the QR wallet to the main wallet.
+  async function transferOne(p: QrPurchase) {
+    setXferId(p.id);
+    try {
+      await api.post(`/purchase/${p.id}/transfer`, {});
+      setPurchases((cur) => cur.map((x) => (x.id === p.id ? { ...x, transferred: true } : x)));
+      toast.success(`${fmtINR(Number(p.vendor_share))} moved to main wallet`);
+      await hydrate?.(); // refresh wallet balances from /auth/me
+    } catch (e) {
+      toast.error(apiErrorMessage(e));
+    } finally {
+      setXferId(null);
+    }
+  }
 
   useEffect(() => {
     void (async () => {
@@ -163,10 +181,11 @@ export default function QrScannerPage() {
             </div>
 
             <div className="luxe-card overflow-hidden">
-              <div className="hidden grid-cols-[1fr_120px_160px] gap-3 border-b border-border bg-surface-2/40 px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground md:grid">
+              <div className="hidden grid-cols-[1fr_110px_140px_170px] gap-3 border-b border-border bg-surface-2/40 px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground md:grid">
                 <span>Customer</span>
                 <span className="text-right">Amount</span>
                 <span className="text-right">Date</span>
+                <span className="text-right">Transfer</span>
               </div>
               {loadingPurchases ? (
                 <div className="p-3"><TableSkeleton rows={5} cols={3} /></div>
@@ -180,7 +199,7 @@ export default function QrScannerPage() {
                       initial={{ opacity: 0, y: 4 }}
                       animate={{ opacity: 1, y: 0 }}
                       transition={{ delay: i * 0.02 }}
-                      className="grid grid-cols-[1fr_auto] items-center gap-3 px-4 py-3 transition-colors hover:bg-surface-2/40 md:grid-cols-[1fr_120px_160px]"
+                      className="grid grid-cols-[1fr_auto] items-center gap-3 px-4 py-3 transition-colors hover:bg-surface-2/40 md:grid-cols-[1fr_110px_140px_170px]"
                     >
                       <div className="flex min-w-0 items-center gap-3">
                         <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brand/10 text-xs font-semibold text-brand">
@@ -191,8 +210,30 @@ export default function QrScannerPage() {
                           <p className="truncate text-xs text-muted-foreground">{p.customer_mobile || "—"}</p>
                         </div>
                       </div>
-                      <p className="justify-self-end text-sm font-semibold text-brand md:text-right">{fmtINR(Number(p.total))}</p>
+                      <p className="hidden text-right text-sm font-semibold text-brand md:block">{fmtINR(Number(p.total))}</p>
                       <p className="hidden text-right text-xs text-muted-foreground md:block">{fmtDateTime(p.created_at)}</p>
+                      {/* Action — desktop col 4; on mobile this is the right cell (also shows amount) */}
+                      <div className="flex flex-col items-end gap-1 justify-self-end">
+                        <p className="text-sm font-semibold text-brand md:hidden">{fmtINR(Number(p.total))}</p>
+                        {p.transferred ? (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[11px] font-semibold text-emerald-600">
+                            <Check className="h-3 w-3" /> Transferred
+                          </span>
+                        ) : (
+                          <Button
+                            size="sm"
+                            className="h-8 rounded-lg"
+                            disabled={xferId === p.id}
+                            onClick={() => void transferOne(p)}
+                          >
+                            {xferId === p.id ? (
+                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            ) : (
+                              <><ArrowRightLeft className="h-3.5 w-3.5" /> {fmtINR(Number(p.vendor_share))}</>
+                            )}
+                          </Button>
+                        )}
+                      </div>
                     </motion.div>
                   ))}
                 </div>
@@ -212,7 +253,8 @@ export default function QrScannerPage() {
             <li>Print or display this QR at your counter.</li>
             <li>Customer opens the SPRITHI customer app and taps <span className="text-foreground">Scan</span>.</li>
             <li>They point their camera at the code, enter the bill amount, and confirm.</li>
-            <li>Your wallet is credited immediately and the order shows up in <span className="text-foreground">Orders</span>.</li>
+            <li>The amount lands in your <span className="text-foreground">QR wallet</span> and the sale shows up in <span className="text-foreground">Orders</span>.</li>
+            <li>Open <span className="text-foreground">Wallet → QR wallet → Transfer</span> to move it into your main wallet to spend or withdraw.</li>
           </ol>
         </LuxuryCard>
       </section>

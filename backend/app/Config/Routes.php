@@ -82,6 +82,8 @@ $routes->group('api/v1', ['filter' => 'cors'], static function ($routes) {
     $routes->post('purchase/from-customer', 'Api\PurchaseController::fromCustomer', ['filter' => 'auth']);
     // Vendor's own in-store/QR purchase history (shown on the QR scanner page).
     $routes->get('purchase/mine', 'Api\PurchaseController::mine', ['filter' => 'auth']);
+    // Vendor: move one QR purchase's share from the QR wallet to the main wallet.
+    $routes->post('purchase/(:num)/transfer', 'Api\PurchaseController::transferOne/$1', ['filter' => 'auth']);
 
     $routes->group('vendor/products', ['filter' => 'auth'], static function ($routes) {
         $routes->post('(:num)/variants',                 'Api\ProductVariantController::createVariant/$1');

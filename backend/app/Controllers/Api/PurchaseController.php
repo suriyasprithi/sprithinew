@@ -137,7 +137,7 @@ class PurchaseController extends BaseApiController
         if ($auth->role !== 'vendor') return $this->fail('Forbidden', 403);
 
         $rows = \Config\Database::connect()->query(
-            "SELECT o.id, o.total, o.created_at,
+            "SELECT o.id, o.total, o.created_at, o.qr_transferred_at,
                     cu.name AS customer_name, cu.mobile_number AS customer_mobile,
                     CASE WHEN o.notes LIKE '%vendor-entered%' THEN 'entered' ELSE 'qr' END AS source
              FROM orders o
@@ -148,6 +148,56 @@ class PurchaseController extends BaseApiController
             [(int) $auth->id]
         )->getResultArray();
 
+        // The QR wallet holds the vendor's share (gross minus the commission
+        // pool). Surface that share + whether the row was already moved to the
+        // main wallet, so the QR scanner page can show a per-row Transfer button.
+        $poolPct = CommissionService::poolPctForVendor((int) $auth->id);
+        foreach ($rows as &$r) {
+            $r['vendor_share'] = round((float) $r['total'] * (1 - $poolPct / 100), 2);
+            $r['transferred']  = ! empty($r['qr_transferred_at']);
+        }
+        unset($r);
+
         return $this->ok(['items' => $rows]);
+    }
+
+    /**
+     * Vendor: move one customer-scanned QR purchase's share from the QR wallet
+     * to the main wallet. Per-row transfer — only the vendor's share (gross minus
+     * the commission pool, i.e. what actually landed in the QR wallet) moves.
+     * Blocks double-transfer via orders.qr_transferred_at.
+     */
+    public function transferOne(int $orderId): ResponseInterface
+    {
+        $auth = $this->authUser();
+        if (! $auth) return $this->fail('Unauthorized', 401);
+        if ($auth->role !== 'vendor') return $this->fail('Forbidden', 403);
+
+        $orders = new OrderModel();
+        $order  = $orders->find($orderId);
+        if (! $order) return $this->fail('Not found', 404);
+        if ((int) ($order['vendor_id'] ?? 0) !== (int) $auth->id) return $this->fail('Forbidden', 403);
+        // Only customer-scanned QR purchases live in the QR wallet; vendor-entered
+        // ones already credited the main wallet at sale time.
+        if (($order['notes'] ?? '') !== 'In-store purchase via QR') {
+            return $this->fail('This purchase is not a QR-wallet sale', 422);
+        }
+        if (! empty($order['qr_transferred_at'])) return $this->fail('Already transferred to main wallet', 409);
+
+        $poolPct = CommissionService::poolPctForVendor((int) $auth->id);
+        $share   = round((float) $order['total'] * (1 - $poolPct / 100), 2);
+        if ($share <= 0) return $this->fail('Nothing to transfer', 422);
+
+        if (! (new WalletService())->transfer((int) $auth->id, 'qr', 'wallet', $share)) {
+            return $this->fail('QR wallet balance is too low to transfer this purchase', 422);
+        }
+        $orders->update($orderId, ['qr_transferred_at' => date('Y-m-d H:i:s')]);
+
+        $bal = (new WalletService())->balances((int) $auth->id);
+        return $this->ok([
+            'transferred'    => $share,
+            'qr_balance'     => $bal['qr']     ?? 0,
+            'wallet_balance' => $bal['wallet'] ?? 0,
+        ], 'Moved to main wallet');
     }
 }
