@@ -79,8 +79,11 @@ class TokenService
         if (($recipient['status'] ?? 'active') !== 'active') {
             throw new \DomainException('Recipient is not active');
         }
-        if ($sender['role'] !== 'admin' && (float) ($sender['token_balance'] ?? 0) < $tokens) {
-            throw new \DomainException('Insufficient token_balance');
+        // Sender spends tokens first, then falls back to its main wallet
+        // (1 token = ₹1) for any shortfall — so the combined balance must cover it.
+        $senderSpendable = (float) ($sender['token_balance'] ?? 0) + (float) ($sender['wallet_balance'] ?? 0);
+        if ($sender['role'] !== 'admin' && $senderSpendable < $tokens) {
+            throw new \DomainException("{$sender['name']} has only " . $senderSpendable . " (tokens + wallet); needs {$tokens}");
         }
 
         $rates    = $this->loadRates();
@@ -97,32 +100,31 @@ class TokenService
         $users = new UserModel();
         $db->transStart();
 
-        // Tokens: -sender (admin exempt — infinite source), +recipient
+        // Sender pays the tokens from its token_balance first, then its wallet
+        // (1 token = ₹1) for any shortfall. The recipient's ₹ payment (base +
+        // markup) is folded into the SAME sender wallet update so it isn't lost.
+        // Admin is the infinite source — its ₹ income goes to the admin_wallet pool.
+        $senderTb = (float) ($sender['token_balance'] ?? 0);
+        $senderWb = (float) ($sender['wallet_balance'] ?? 0);
         if ($sender['role'] !== 'admin') {
+            $fromTokens = min($senderTb, (float) $tokens);
+            $fromWallet = round($tokens - $fromTokens, 2);
             $users->update((int) $sender['id'], [
-                'token_balance' => (float) $sender['token_balance'] - $tokens,
+                'token_balance'  => round($senderTb - $fromTokens, 2),
+                'wallet_balance' => round($senderWb - $fromWallet + ($amount > 0 ? $amount : 0.0), 2),
             ]);
+        } elseif ($amount > 0) {
+            $db->table('system_pools')
+                ->where('pool_key', 'admin_wallet')
+                ->set('balance', "balance + {$amount}", false)
+                ->update();
         }
-        $users->update((int) $recipient['id'], [
-            'token_balance' => (float) ($recipient['token_balance'] ?? 0) + $tokens,
-        ]);
 
-        // ₹: -recipient, +sender (admin's ₹ goes to admin_wallet pool instead of user.wallet_balance)
-        if ($amount > 0) {
-            $users->update((int) $recipient['id'], [
-                'wallet_balance' => (float) $recipient['wallet_balance'] - $amount,
-            ]);
-            if ($sender['role'] === 'admin') {
-                $db->table('system_pools')
-                    ->where('pool_key', 'admin_wallet')
-                    ->set('balance', "balance + {$amount}", false)
-                    ->update();
-            } else {
-                $users->update((int) $sender['id'], [
-                    'wallet_balance' => (float) $sender['wallet_balance'] + $amount,
-                ]);
-            }
-        }
+        // Recipient: +tokens, and pays ₹ (base + markup) out of its wallet.
+        $users->update((int) $recipient['id'], [
+            'token_balance'  => round((float) ($recipient['token_balance'] ?? 0) + $tokens, 2),
+            'wallet_balance' => round((float) ($recipient['wallet_balance'] ?? 0) - $amount, 2),
+        ]);
 
         $id = (new DistributeTokenModel())->insert([
             'from_user_id' => (int) $sender['id'],
@@ -168,15 +170,40 @@ class TokenService
         $tokensNeeded = (int) round($itemsSubtotal * $commissionPct / 100);
         if ($tokensNeeded <= 0) return 0;
 
-        // A customer's order must never be blocked by the vendor's token
-        // balance, so we never throw on a shortage — deduct only what's
-        // available (clamped at 0, never negative) and proceed.
-        $have = (float) ($vendor['token_balance'] ?? 0);
-        $consumed = min($have, $tokensNeeded);
+        // A customer's order must never be blocked by the vendor's balance, so we
+        // never throw — the vendor pays from its token_balance first, then its main
+        // wallet (1 token = ₹1) for any shortfall, clamped to what's available.
+        $tb = (float) ($vendor['token_balance'] ?? 0);
+        $wb = (float) ($vendor['wallet_balance'] ?? 0);
+        $consumed = min($tb + $wb, (float) $tokensNeeded);
         if ($consumed > 0) {
-            $users->update($vendorId, ['token_balance' => $have - $consumed]);
+            $fromTokens = min($tb, $consumed);
+            $fromWallet = round($consumed - $fromTokens, 2);
+            $users->update($vendorId, [
+                'token_balance'  => round($tb - $fromTokens, 2),
+                'wallet_balance' => round($wb - $fromWallet, 2),
+            ]);
         }
-        return $consumed;
+        return (int) round($consumed);
+    }
+
+    /**
+     * Debit `$amount` of token-value from $user inside the current transaction,
+     * drawing token_balance first and falling back to wallet_balance (1 token =
+     * ₹1) for any shortfall. Caller must ensure the combined balance covers
+     * `$amount` (or pre-clamp it). Returns [fromTokens, fromWallet].
+     */
+    private function debitTokensThenWallet(UserModel $users, array $user, float $amount): array
+    {
+        $tb = (float) ($user['token_balance'] ?? 0);
+        $wb = (float) ($user['wallet_balance'] ?? 0);
+        $fromTokens = min($tb, $amount);
+        $fromWallet = round($amount - $fromTokens, 2);
+        $users->update((int) $user['id'], [
+            'token_balance'  => round($tb - $fromTokens, 2),
+            'wallet_balance' => round($wb - $fromWallet, 2),
+        ]);
+        return [$fromTokens, $fromWallet];
     }
 
     /**
@@ -188,8 +215,9 @@ class TokenService
     public function gift(array $sender, array $recipient, int $tokens, ?string $notes = null): int
     {
         if ($tokens <= 0) throw new \DomainException('Tokens must be positive');
-        if ($sender['role'] !== 'admin' && (float) ($sender['token_balance'] ?? 0) < $tokens) {
-            throw new \DomainException("{$sender['name']} has only " . (float) ($sender['token_balance'] ?? 0) . " tokens; needs {$tokens}");
+        $spendable = (float) ($sender['token_balance'] ?? 0) + (float) ($sender['wallet_balance'] ?? 0);
+        if ($sender['role'] !== 'admin' && $spendable < $tokens) {
+            throw new \DomainException("{$sender['name']} has only " . $spendable . " (tokens + wallet); needs {$tokens}");
         }
 
         $db    = Database::connect();
@@ -197,9 +225,7 @@ class TokenService
         $db->transStart();
 
         if ($sender['role'] !== 'admin') {
-            $users->update((int) $sender['id'], [
-                'token_balance' => (float) $sender['token_balance'] - $tokens,
-            ]);
+            $this->debitTokensThenWallet($users, $sender, (float) $tokens);
         }
         $users->update((int) $recipient['id'], [
             'token_balance' => (float) ($recipient['token_balance'] ?? 0) + $tokens,
@@ -292,11 +318,13 @@ class TokenService
 
         $approverIsAdmin = $approver['role'] === 'admin';
         $approverTokens  = (float) ($approver['token_balance'] ?? 0);
+        $approverWallet  = (float) ($approver['wallet_balance'] ?? 0);
         $approverPot     = (float) ($approver['bonus_balance'] ?? 0);
 
-        // Non-admin approvers pay the base from their own tokens.
-        if (! $approverIsAdmin && $approverTokens < $tokens) {
-            throw new \DomainException("{$approver['name']} has only {$approverTokens} tokens; needs {$tokens}");
+        // Non-admin approvers pay the base from their token_balance first, then
+        // their main wallet (1 token = ₹1) — so the combined balance must cover it.
+        if (! $approverIsAdmin && ($approverTokens + $approverWallet) < $tokens) {
+            throw new \DomainException("{$approver['name']} has only " . ($approverTokens + $approverWallet) . " (tokens + wallet); needs {$tokens}");
         }
 
         $db    = Database::connect();
@@ -314,9 +342,15 @@ class TokenService
             // so the approver can always cover base + bonus from its tokens.
             $desiredBonus = round($approverPot * $rate, 2);
             $bonus        = round(min($desiredBonus, $approverPot, max(0.0, $approverTokens - $tokens)), 2);
+            // Base comes from token_balance first, then the wallet (1 token = ₹1)
+            // for any shortfall. The bonus is only drawn from the token surplus, so
+            // when the base needs the wallet the surplus — and thus bonus — is 0.
+            $fromTokens = min($approverTokens, (float) $tokens);
+            $fromWallet = round($tokens - $fromTokens, 2);
             $users->update((int) $approver['id'], [
-                'token_balance' => round($approverTokens - $tokens - $bonus, 2),
-                'bonus_balance' => round($approverPot - $bonus, 2),
+                'token_balance'  => round($approverTokens - $fromTokens - $bonus, 2),
+                'wallet_balance' => round($approverWallet - $fromWallet, 2),
+                'bonus_balance'  => round($approverPot - $bonus, 2),
             ]);
             $fundNote = $bonus > 0 ? ('siphoned from ' . ($approver['name'] ?? 'upline')) : 'upline bonus pot empty';
         }
