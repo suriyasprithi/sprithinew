@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Users, Store, ShoppingCart, Banknote, CreditCard, Wallet, Coins, Package, Building2,
-  Plus, Send, Bell as BellIcon, Settings as SettingsIcon, Truck, CheckCircle, QrCode,
+  Plus, Send, Bell as BellIcon, Settings as SettingsIcon, Truck, CheckCircle, QrCode, TrendingUp,
   type LucideIcon,
 } from "lucide-react";
 import { Shimmer } from "@/components/ui/custom/shimmer";
@@ -58,30 +58,31 @@ function tilesFor(role: string, s: StaffStats): TileDef[] {
       return [
         { label: "Today's orders",  value: s.todays_orders ?? 0,    href: "/orders",   icon: ShoppingCart, tone: "brand",   delta:  2.1, spark: SPARKS.upFast },
         { label: "Active products", value: s.active_products ?? 0,  href: "/products", icon: Package,      tone: "emerald", delta:  0.4, spark: SPARKS.flat },
-        { label: "Token balance",   value: s.tokens_received ?? 0,  href: "/tokens",   icon: Coins,        tone: "amber",   delta: -0.8, spark: SPARKS.down },
-        { label: "Wallet",          value: s.wallet ?? 0,           href: "/wallet",   icon: Wallet,       tone: "violet",  delta:  1.6, spark: SPARKS.up, format: fmtINR },
+        { label: "Wallet",          value: (s.tokens_received ?? 0) + (s.wallet ?? 0), href: "/wallet",   icon: Wallet,       tone: "violet",  delta:  1.6, spark: SPARKS.up, format: fmtINR },
         { label: "QR wallet",       value: s.qr_wallet ?? 0,        href: "/wallet",   icon: QrCode,       tone: "cyan",    spark: SPARKS.wave, format: fmtINR },
       ];
     case "taluk":
       return [
         { label: "Vendors in my taluk", value: s.vendors ?? 0,         href: "/manage-vendors",   icon: Store,    tone: "brand",   delta: 1.0, spark: SPARKS.up },
         { label: "Tokens issued",       value: s.tokens_issued ?? 0,   href: "/distribute-token", icon: Coins,    tone: "amber",   delta: 4.2, spark: SPARKS.upFast },
-        { label: "Tokens received",     value: s.tokens_received ?? 0, icon: Coins,    tone: "emerald", delta: 2.5, spark: SPARKS.up },
-        { label: "Wallet",              value: s.wallet ?? 0,          icon: Wallet,   tone: "violet",  delta: 0.8, spark: SPARKS.wave, format: fmtINR },
+        // Tokens received are spendable as ₹ (1 token = ₹1), so they're folded
+        // into the wallet rather than shown as a separate balance.
+        { label: "Wallet",              value: (s.tokens_received ?? 0) + (s.wallet ?? 0), href: "/wallet", icon: Wallet,   tone: "violet",  delta: 0.8, spark: SPARKS.wave, format: fmtINR },
+        { label: "Profit / bonus",      value: s.bonus ?? 0,           href: "/wallet",           icon: TrendingUp, tone: "emerald", spark: SPARKS.up, format: fmtINR },
       ];
     case "district":
       return [
         { label: "Taluks below me",   value: s.team_below ?? 0,      href: "/manage-taluks",    icon: Building2, tone: "brand",   delta: 0.0, spark: SPARKS.flat },
         { label: "Tokens issued",     value: s.tokens_issued ?? 0,   href: "/distribute-token", icon: Coins,     tone: "amber",   delta: 5.1, spark: SPARKS.upFast },
-        { label: "Tokens received",   value: s.tokens_received ?? 0, icon: Coins,     tone: "emerald", delta: 3.3, spark: SPARKS.up },
-        { label: "Wallet",            value: s.wallet ?? 0,          icon: Wallet,    tone: "violet",  delta: 1.2, spark: SPARKS.up, format: fmtINR },
+        { label: "Wallet",            value: (s.tokens_received ?? 0) + (s.wallet ?? 0), href: "/wallet", icon: Wallet,    tone: "violet",  delta: 1.2, spark: SPARKS.up, format: fmtINR },
+        { label: "Profit / bonus",    value: s.bonus ?? 0,           href: "/wallet",           icon: TrendingUp, tone: "emerald", spark: SPARKS.up, format: fmtINR },
       ];
     case "state":
       return [
         { label: "Districts in my state", value: s.team_below ?? 0,      href: "/manage-districts",  icon: Building2, tone: "brand",   delta: 0.0, spark: SPARKS.flat },
         { label: "Tokens issued",         value: s.tokens_issued ?? 0,   href: "/distribute-token",  icon: Coins,     tone: "amber",   delta: 6.4, spark: SPARKS.upFast },
-        { label: "Tokens received",       value: s.tokens_received ?? 0, icon: Coins,     tone: "emerald", delta: 4.7, spark: SPARKS.up },
-        { label: "Wallet",                value: s.wallet ?? 0,          icon: Wallet,    tone: "violet",  delta: 2.0, spark: SPARKS.up, format: fmtINR },
+        { label: "Wallet",                value: (s.tokens_received ?? 0) + (s.wallet ?? 0), href: "/wallet", icon: Wallet,    tone: "violet",  delta: 2.0, spark: SPARKS.up, format: fmtINR },
+        { label: "Profit / bonus",        value: s.bonus ?? 0,           href: "/wallet",            icon: TrendingUp, tone: "emerald", spark: SPARKS.up, format: fmtINR },
       ];
     case "admin":
       return [
@@ -284,8 +285,11 @@ export default function StaffDashboardPage() {
           }));
           setStats({
             tokens_issued:   d.totals.tokens_issued,
-            tokens_received: d.totals.tokens_received,
+            // Current token balance (spendable), NOT the cumulative received
+            // counter — it's folded into the Wallet card (1 token = ₹1).
+            tokens_received: d.totals.token_balance,
             wallet:          d.totals.wallet,
+            bonus:           d.totals.bonus,
             vendors:         user.role === "taluk" ? d.totals.team_below : undefined,
             team_below:      user.role === "taluk" ? undefined : d.totals.team_below,
             chart_title: "Transactions — last 14 days",
@@ -338,6 +342,7 @@ export default function StaffDashboardPage() {
             active_products: d.totals.active_products,
             tokens_received: d.totals.token_balance,
             wallet:          d.totals.wallet,
+            bonus:           d.totals.bonus,
             qr_wallet:       d.totals.qr_wallet,
             chart_title: "Orders — last 14 days",
             chart_unit: "orders",

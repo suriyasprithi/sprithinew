@@ -13,7 +13,7 @@ class ProductVariantModel extends Model
     protected $useSoftDeletes   = false;
     protected $protectFields    = true;
 
-    protected $allowedFields = ['product_id','name','sku','options','price','stock','image','status'];
+    protected $allowedFields = ['product_id','name','sku','options','price','stock','image','status','mrp','barcode','weight'];
 
     protected $useTimestamps = true;
     protected $dateFormat    = 'datetime';

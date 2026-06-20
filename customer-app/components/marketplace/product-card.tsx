@@ -13,7 +13,7 @@ export type MarketplaceProduct = {
   id: number;
   name: string;
   price: number;
-  old_price?: number;
+  old_price?: number | null;
   image: string | null;
   vendor_name?: string | null;
   weights?: string[];       // e.g. ["500g", "1kg", "2kg"]

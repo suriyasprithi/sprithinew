@@ -99,23 +99,18 @@ class DeliveryRateController extends BaseApiController
     }
 
     /**
-     * Live delivery-charge quote for the current cart + chosen time-rate.
+     * Live delivery-charge quote for the current cart + chosen delivery datetime.
      * Drives the checkout "Free Delivery / ₹X" line. The amount is recomputed
      * authoritatively on order placement, so this is display-only.
-     * Query: ?rate_id=N (the selected delivery time-rate, gives estimated minutes).
+     * Query: ?delivery_at=<ISO datetime> (the customer's chosen delivery time).
      */
     public function customerDeliveryQuote(): ResponseInterface
     {
         $auth = $this->authUser();
         if (! $auth) return $this->fail('Unauthorized', 401);
 
-        $rateId  = (int) $this->request->getGet('rate_id');
-        $minutes = 0;
-        if ($rateId) {
-            $rate = (new DeliveryTimeRateModel())->find($rateId);
-            if ($rate) $minutes = (int) $rate['time_min'];
-        }
-        return $this->ok((new DeliveryChargeService())->quote((int) $auth->id, $minutes));
+        $deliveryAt = $this->request->getGet('delivery_at') ?: null;
+        return $this->ok((new DeliveryChargeService())->quote((int) $auth->id, $deliveryAt));
     }
 
     /** Resolve the taluk of the (first) vendor in the customer's cart, or 0. */

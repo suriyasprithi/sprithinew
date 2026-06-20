@@ -275,8 +275,9 @@ export default function ProfilePage() {
                       <Input
                         id="addr_pin"
                         inputMode="numeric"
+                        maxLength={6}
                         value={addrForm.pincode}
-                        onChange={(e) => setAddrForm({ ...addrForm, pincode: e.target.value.replace(/\D/g, "").slice(0, 10) })}
+                        onChange={(e) => setAddrForm({ ...addrForm, pincode: e.target.value.replace(/\D/g, "").slice(0, 6) })}
                       />
                     </div>
                   </div>

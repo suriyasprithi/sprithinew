@@ -4,11 +4,16 @@
 -- Apply via phpMyAdmin → SQL tab. This is everything the catalog import needs.
 -- ============================================================================
 
--- 1) Base product columns the import relies on (mrp/code/barcode)
+-- 1) Base product columns the import relies on. mrp/code/barcode + the
+--    variant / vendor-category columns that persistProduct() always writes
+--    (added by later migrations, so a drifted prod may be missing them).
 ALTER TABLE `products`
-  ADD COLUMN IF NOT EXISTS `mrp`     DECIMAL(12,2) NULL,
-  ADD COLUMN IF NOT EXISTS `code`    VARCHAR(50)   NULL,
-  ADD COLUMN IF NOT EXISTS `barcode` VARCHAR(50)   NULL;
+  ADD COLUMN IF NOT EXISTS `vendor_category_id` INT UNSIGNED  NULL,
+  ADD COLUMN IF NOT EXISTS `variant_types`      TEXT          NULL,
+  ADD COLUMN IF NOT EXISTS `variant_images`     LONGTEXT      NULL,
+  ADD COLUMN IF NOT EXISTS `mrp`                DECIMAL(12,2) NULL,
+  ADD COLUMN IF NOT EXISTS `code`               VARCHAR(50)   NULL,
+  ADD COLUMN IF NOT EXISTS `barcode`            VARCHAR(50)   NULL;
 
 -- 2) Material Master accounting columns (stored, never shown to customers)
 ALTER TABLE `products`
@@ -77,3 +82,9 @@ ALTER TABLE `categories`
 ALTER TABLE `categories` DROP INDEX IF EXISTS `name`;
 ALTER TABLE `categories` ADD INDEX IF NOT EXISTS `idx_categories_name`   (`name`);
 ALTER TABLE `categories` ADD INDEX IF NOT EXISTS `idx_categories_parent` (`parent_id`);
+
+-- 5) Per-variant catalog fields (universal variant importer).
+ALTER TABLE `product_variants`
+  ADD COLUMN IF NOT EXISTS `mrp`     DECIMAL(12,2) NULL,
+  ADD COLUMN IF NOT EXISTS `barcode` VARCHAR(64)   NULL,
+  ADD COLUMN IF NOT EXISTS `weight`  DECIMAL(12,3) NULL;

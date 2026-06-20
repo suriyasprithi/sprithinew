@@ -210,7 +210,9 @@ class AdminStatsController extends BaseApiController
         // the immediately-above role's approvals. Pass-throughs to lower
         // levels don't reduce this displayed value — that's the "from-above
         // approval ledger" view the dashboard surfaces.
-        $wallet = (float) ($db->query('SELECT wallet_balance FROM users WHERE id = ?', [$uid])->getRow()->wallet_balance ?? 0);
+        $balRow = $db->query('SELECT wallet_balance, bonus_balance FROM users WHERE id = ?', [$uid])->getRow();
+        $wallet = (float) ($balRow->wallet_balance ?? 0);
+        $bonus  = (float) ($balRow->bonus_balance ?? 0);
 
         $aboveRole = match ($auth->role) {
             'taluk'    => 'district',
@@ -326,6 +328,7 @@ class AdminStatsController extends BaseApiController
                 'tokens_received' => $tokensReceived,
                 'token_balance'   => $tokenBalance,
                 'wallet'          => $wallet,
+                'bonus'           => $bonus,
                 'team_below'      => $teamBelow,
             ],
             'series' => $series,
@@ -355,9 +358,10 @@ class AdminStatsController extends BaseApiController
         // computed: Σ tokens received from taluk users − Σ consumption from
         // customer orders. (Direct admin distributions or chain transfers
         // from non-taluk senders don't count toward the displayed balance.)
-        $walletRow = $db->query('SELECT wallet_balance, qr_wallet FROM users WHERE id = ?', [$vid])->getRow();
+        $walletRow = $db->query('SELECT wallet_balance, qr_wallet, bonus_balance FROM users WHERE id = ?', [$vid])->getRow();
         $wallet    = (float) ($walletRow->wallet_balance ?? 0);
         $qrWallet  = (float) ($walletRow->qr_wallet ?? 0);
+        $bonus     = (float) ($walletRow->bonus_balance ?? 0);
 
         $receivedFromTaluk = (float) ($db->query(
             'SELECT COALESCE(SUM(dt.tokens),0) s
@@ -428,6 +432,7 @@ class AdminStatsController extends BaseApiController
                 'active_products' => $activeProducts,
                 'token_balance'   => $tokenBalance,
                 'wallet'          => $wallet,
+                'bonus'           => $bonus,
                 'qr_wallet'       => $qrWallet,
             ],
             'orders_series' => $series,

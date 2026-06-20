@@ -228,7 +228,7 @@ export default function ManageStatesPage() {
           <DialogHeader><DialogTitle>{editing?.id ? "Edit state" : "New state"}</DialogTitle></DialogHeader>
           <div className="grid gap-3">
             <div className="space-y-1.5"><Label>Name</Label><Input value={editing?.name ?? ""} onChange={(e) => setEditing((p) => ({ ...(p ?? {}), name: e.target.value }))} placeholder="Tamil Nadu" /></div>
-            <div className="space-y-1.5"><Label>Login mobile number</Label><Input value={editing?.mobile_number ?? ""} onChange={(e) => setEditing((p) => ({ ...(p ?? {}), mobile_number: cleanMobile(e.target.value) }))} placeholder="9999000002" inputMode="numeric" /></div>
+            <div className="space-y-1.5"><Label>Login mobile number</Label><Input value={editing?.mobile_number ?? ""} onChange={(e) => setEditing((p) => ({ ...(p ?? {}), mobile_number: cleanMobile(e.target.value) }))} placeholder="9999000002" inputMode="numeric" maxLength={10} /></div>
             <div className="space-y-1.5">
               <Label>{editing?.id ? "New password (optional)" : "Password"}</Label>
               <Input type="password" value={editing?.password ?? ""} onChange={(e) => setEditing((p) => ({ ...(p ?? {}), password: e.target.value }))} placeholder={editing?.id ? "Leave blank to keep current" : "min 6 chars"} />

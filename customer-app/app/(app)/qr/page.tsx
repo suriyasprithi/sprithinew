@@ -148,7 +148,7 @@ export default function QrPurchasePage() {
         <LuxuryCard hoverLift={false} className="space-y-4 p-5">
           <div className="space-y-1.5">
             <Label htmlFor="m">Vendor mobile</Label>
-            <Input id="m" inputMode="numeric" value={vendorMobile} onChange={(e) => setVendorMobile(cleanMobile(e.target.value))} placeholder="9999000010" className="h-11 rounded-xl bg-surface-2/60" />
+            <Input id="m" inputMode="numeric" maxLength={10} value={vendorMobile} onChange={(e) => setVendorMobile(cleanMobile(e.target.value))} placeholder="9999000010" className="h-11 rounded-xl bg-surface-2/60" />
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="a">Amount (₹)</Label>

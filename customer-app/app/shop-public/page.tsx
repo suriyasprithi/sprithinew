@@ -16,7 +16,7 @@ import { api, apiErrorMessage } from "@/lib/api";
 import { readSavedLocation } from "@/components/marketplace/location-picker";
 
 type ApiProduct = {
-  id: number; name: string; price: number | string; image: string | null;
+  id: number; name: string; price: number | string; old_price?: number | string | null; image: string | null;
   stock: number; category_id: number | null; vendor_name?: string | null;
   has_variants?: boolean;
   default_variant_id?: number | null;
@@ -30,6 +30,7 @@ function adapt(raw: ApiProduct): MarketplaceProduct {
     id: Number(raw.id),
     name: raw.name,
     price: Number(raw.price),
+    old_price: raw.old_price != null ? Number(raw.old_price) : undefined,
     image: raw.image,
     vendor_name: raw.vendor_name ?? null,
     stock: raw.stock,
@@ -180,7 +181,9 @@ function PublicShopInner() {
             </div>
             <input
               value={pincode}
-              onChange={(e) => setPincode(e.target.value)}
+              inputMode="numeric"
+              maxLength={6}
+              onChange={(e) => setPincode(e.target.value.replace(/\D/g, "").slice(0, 6))}
               placeholder="Pincode"
               className="h-11 w-36 rounded-xl border border-[var(--mk-border)] bg-[var(--mk-surface-2)] px-3 text-sm text-[var(--mk-text)] outline-none focus:border-[var(--mk-brand)]"
             />

@@ -107,6 +107,8 @@ class ProductController extends BaseApiController
             $v['options'] = is_string($raw) ? (json_decode($raw, true) ?: []) : (is_array($raw) ? $raw : []);
             $v['price']   = (float) ($v['price'] ?? 0);
             $v['stock']   = (int) ($v['stock'] ?? 0);
+            // Per-variant MRP for the detail strikethrough/% OFF (null when not discounted).
+            $v['mrp']     = (isset($v['mrp']) && (float) $v['mrp'] > (float) $v['price']) ? (float) $v['mrp'] : null;
             return $v;
         }, $variants);
 
@@ -158,6 +160,7 @@ class ProductController extends BaseApiController
         $profiles  = $vendorIds ? (new VendorProfileModel())->whereIn('user_id', $vendorIds)->findAll() : [];
         $variants  = $productIds ? (new ProductVariantModel())->whereIn('product_id', $productIds)->orderBy('id', 'ASC')->findAll() : [];
         $catName   = []; foreach ($cats     as $c) $catName[(int) $c['id']]      = $c['name'];
+        $catParent = []; foreach ($cats     as $c) $catParent[(int) $c['id']]    = isset($c['parent_id']) && $c['parent_id'] !== null ? (int) $c['parent_id'] : null;
         $vendName  = []; foreach ($vendors  as $v) $vendName[(int) $v['id']]     = $v['name'];
         $shopName  = []; foreach ($profiles as $p) $shopName[(int) $p['user_id']] = $p['shop_name'];
         $variantsByProduct = [];
@@ -169,7 +172,7 @@ class ProductController extends BaseApiController
             $v['stock']   = (int) ($v['stock'] ?? 0);
             $variantsByProduct[$pid][] = $v;
         }
-        return array_map(static function ($r) use ($catName, $vendName, $shopName, $variantsByProduct) {
+        return array_map(static function ($r) use ($catName, $catParent, $vendName, $shopName, $variantsByProduct) {
             $rawAttrs = $r['attributes'] ?? null;
             $attrs    = is_string($rawAttrs) ? (json_decode($rawAttrs, true) ?: null) : (is_array($rawAttrs) ? $rawAttrs : null);
             $rawTypes = $r['variant_types'] ?? null;
@@ -177,9 +180,12 @@ class ProductController extends BaseApiController
             $rawImgs  = $r['variant_images'] ?? null;
             $vImgs    = is_string($rawImgs) ? (json_decode($rawImgs, true) ?: []) : (is_array($rawImgs) ? $rawImgs : []);
             return array_merge($r, [
-                'category_name'  => $catName[(int) ($r['category_id'] ?? 0)]  ?? null,
+                'category_name'      => $catName[(int) ($r['category_id'] ?? 0)]  ?? null,
+                'category_parent_id' => $catParent[(int) ($r['category_id'] ?? 0)] ?? null,
                 'vendor_name'    => $shopName[(int) ($r['vendor_id'] ?? 0)] ?? $vendName[(int) ($r['vendor_id'] ?? 0)] ?? null,
                 'price'          => (float) ($r['price'] ?? 0),
+                // Strikethrough MRP for the customer card (₹offer / ₹mrp / N% OFF). Only when mrp > price.
+                'old_price'      => (isset($r['mrp']) && (float) $r['mrp'] > (float) ($r['price'] ?? 0)) ? (float) $r['mrp'] : null,
                 'stock'          => (int)   ($r['stock'] ?? 0),
                 'has_variants'   => (bool)  ($r['has_variants'] ?? 0),
                 'attributes'     => $attrs,
@@ -219,6 +225,7 @@ class ProductController extends BaseApiController
         }
         $d        = $this->request->getJSON(true) ?? $this->request->getPost();
         $vendorId = $auth->role === 'admin' ? (int) ($d['vendor_id'] ?? $auth->id) : (int) $auth->id;
+        $d['category_id'] = $this->applySubCategory($d);
         $id       = $this->persistProduct($d, $vendorId);
         return $this->ok(['id' => $id], 'Created');
     }
@@ -312,7 +319,7 @@ class ProductController extends BaseApiController
      *    a row with no code falls back to skip-by-name,
      *  - stores every catalog column and computes discount_amount / tax_amount.
      * Bad rows are reported but never abort the rest (no all-or-nothing rollback).
-     * The frontend chunks large catalogs into ~250-row calls and aggregates this.
+     * The frontend chunks large catalogs into per-group calls and aggregates this.
      * Returns: { created, updated, skipped, failed_count, failed[], total }.
      */
     public function adminImport(): ResponseInterface
@@ -330,11 +337,49 @@ class ProductController extends BaseApiController
         $vendor = (new UserModel())->find($vendorId);
         if (! $vendor || $vendor['role'] !== 'vendor') return $this->fail('Pick a valid vendor', 422);
 
-        $model    = new ProductModel();
+        [$summary, $msg] = $this->runCatalogImport($vendorId, $items);
+        return $this->ok($summary, $msg);
+    }
+
+    /**
+     * Vendor self-import — the same comprehensive engine scoped to the logged-in
+     * vendor (no vendor picker; they import into their own catalog).
+     */
+    public function vendorImport(): ResponseInterface
+    {
+        $auth = $this->authUser();
+        if (! $auth) return $this->fail('Unauthorized', 401);
+        if ($auth->role !== 'vendor') return $this->fail('Forbidden', 403);
+
+        $d     = $this->request->getJSON(true) ?? $this->request->getPost();
+        $items = $d['items'] ?? null;
+        if (! is_array($items) || ! $items) return $this->fail('No rows to import', 422);
+        if (count($items) > 2000)           return $this->fail('Too many rows (max 2000 per request)', 422);
+
+        [$summary, $msg] = $this->runCatalogImport((int) $auth->id, $items);
+        return $this->ok($summary, $msg);
+    }
+
+    /**
+     * Universal, attribute-agnostic catalog import engine (adminImport + vendorImport).
+     * Each item is a product GROUP keyed by item_code:
+     *   { code, name, category, sub_category, brand, hsn_code, description, status,
+     *     featured, image, tax_type, tax_percentage, price?, mrp?, stock?,
+     *     variants: [ { sku, options:{<attr>:<val>…}, price, mrp, stock, barcode } ] }
+     * Variant attributes are whatever keys appear in `options` — the engine never
+     * hardcodes Color/Size/RAM; variant_types (axes) are derived from their union.
+     * Product upserts by code (never via persistProduct/syncVariants → no wipe);
+     * variants merge by sku (append/update, never delete). discount is computed from
+     * mrp vs price. Bad groups are reported but never abort the rest.
+     *
+     * @return array{0: array, 1: string} [summary, message]
+     */
+    private function runCatalogImport(int $vendorId, array $items): array
+    {
+        $pm       = new ProductModel();
         $catModel = new CategoryModel();
 
-        // Categories keyed by "<parentId|0>|<lower name>" — created on demand so a
-        // sub-category resolves under its own parent (uniqueness per parent+name).
+        // Category resolver: find/create by (parent, name), cached for the run.
         $catMap = [];
         foreach ($catModel->findAll() as $c) {
             $pid = isset($c['parent_id']) && $c['parent_id'] !== null ? (int) $c['parent_id'] : 0;
@@ -345,107 +390,248 @@ class ProductController extends BaseApiController
             if ($name === '') return null;
             $key = $parentId . '|' . mb_strtolower($name);
             if (isset($catMap[$key])) return $catMap[$key];
-            $id = (int) $catModel->insert([
-                'name'      => $name,
-                'parent_id' => $parentId ?: null,
-                'status'    => 'active',
-            ], true);
+            $id = (int) $catModel->insert(['name' => $name, 'parent_id' => $parentId ?: null, 'status' => 'active'], true);
             $catMap[$key] = $id;
             return $id;
         };
 
-        // Existing products for this vendor — for upsert-by-code / skip-by-name.
-        $byCode = [];
-        $byName = [];
-        foreach ($model->where('vendor_id', $vendorId)->findAll() as $p) {
-            $byName[mb_strtolower(trim((string) $p['name']))] = (int) $p['id'];
-            if (! empty($p['code'])) $byCode[mb_strtolower(trim((string) $p['code']))] = (int) $p['id'];
+        // Existing products for THIS batch only (scale): look up by the codes present,
+        // not the whole vendor catalog. ci collation makes whereIn case-insensitive.
+        $rawCodes = [];
+        foreach ($items as $it) {
+            if (is_array($it)) { $c = trim((string) ($it['code'] ?? '')); if ($c !== '') $rawCodes[] = $c; }
+        }
+        $byCode = []; // lower(code) => full product row
+        if ($rawCodes) {
+            foreach ($pm->where('vendor_id', $vendorId)->whereIn('code', array_values(array_unique($rawCodes)))->findAll() as $p) {
+                $byCode[mb_strtolower(trim((string) $p['code']))] = $p;
+            }
         }
 
-        $created = 0; $updated = 0; $skipped = 0; $failed = [];
+        $prodCreated = 0; $prodUpdated = 0; $prodSkipped = 0; $varCreated = 0; $varUpdated = 0; $failed = [];
 
         foreach (array_values($items) as $i => $item) {
             $line = $i + 1;
             try {
                 if (! is_array($item)) { $failed[] = ['row' => $line, 'name' => '', 'reason' => 'Invalid row']; continue; }
+                $name = trim((string) ($item['name'] ?? ''));
+                $code = trim((string) ($item['code'] ?? ''));
+                if ($name === '') { $failed[] = ['row' => $line, 'name' => '', 'reason' => 'product_name required']; continue; }
+                if ($code === '') { $failed[] = ['row' => $line, 'name' => $name, 'reason' => 'item_code required']; continue; }
 
-                $name  = trim((string) ($item['name'] ?? ''));
-                $price = $item['price'] ?? null;
-                if ($name === '')                               { $failed[] = ['row' => $line, 'name' => $name, 'reason' => 'Product Name required']; continue; }
-                if (! is_numeric($price) || (float) $price < 0) { $failed[] = ['row' => $line, 'name' => $name, 'reason' => 'Valid Selling Price required']; continue; }
-                $price = (float) $price;
+                // Normalize variants (drop ones without a valid price).
+                $variants = [];
+                foreach (is_array($item['variants'] ?? null) ? $item['variants'] : [] as $rv) {
+                    if (! is_array($rv)) continue;
+                    $vp = $rv['price'] ?? null;
+                    if (! is_numeric($vp) || (float) $vp < 0) continue;
+                    $opts = [];
+                    foreach (is_array($rv['options'] ?? null) ? $rv['options'] : [] as $k => $val) {
+                        $k = trim((string) $k); $val = trim((string) $val);
+                        if ($k !== '' && $val !== '') $opts[$k] = $val;
+                    }
+                    $variants[] = [
+                        'sku'     => trim((string) ($rv['sku'] ?? '')),
+                        'options' => $opts,
+                        'price'   => (float) $vp,
+                        'mrp'     => isset($rv['mrp']) && is_numeric($rv['mrp']) ? (float) $rv['mrp'] : null,
+                        'stock'   => isset($rv['stock']) && is_numeric($rv['stock']) ? (int) $rv['stock'] : 0,
+                        'barcode' => trim((string) ($rv['barcode'] ?? '')) !== '' ? trim((string) $rv['barcode']) : null,
+                        'weight'  => isset($rv['weight']) && is_numeric($rv['weight']) ? (float) $rv['weight'] : null,
+                        'name'    => trim((string) ($rv['name'] ?? '')),
+                    ];
+                }
+                $axes        = $this->deriveAxes($variants);
+                $hasVariants = $variants && $axes;   // real variants only when there are axes (avoids phantom-variant carts)
 
-                // Category → Sub Category (the deepest resolved one wins as category_id).
+                // Product-level price/mrp/stock: min/sum across variants, else the group row.
+                if ($hasVariants) {
+                    $price = min(array_map(static fn ($v) => $v['price'], $variants));
+                    $mrps  = array_values(array_filter(array_map(static fn ($v) => $v['mrp'], $variants), static fn ($m) => $m !== null));
+                    $mrp   = $mrps ? min($mrps) : null;
+                    $stock = array_sum(array_map(static fn ($v) => $v['stock'], $variants));
+                } else {
+                    $price = $item['price'] ?? null;
+                    if (! is_numeric($price) || (float) $price < 0) { $failed[] = ['row' => $line, 'name' => $name, 'reason' => 'price/offer_price required']; continue; }
+                    $price = (float) $price;
+                    $mrp   = isset($item['mrp']) && is_numeric($item['mrp']) ? (float) $item['mrp'] : null;
+                    $stock = isset($item['stock']) && is_numeric($item['stock']) ? (int) $item['stock'] : 0;
+                }
+                [$discPct, $discAmt] = $this->computeDiscount($mrp, $price);
+
+                // Category → Sub Category.
                 $catId      = null;
                 $parentName = trim((string) ($item['category'] ?? ''));
                 $subName    = trim((string) ($item['sub_category'] ?? ''));
                 if ($parentName !== '') {
                     $catId = $resolveCat($parentName, 0);
-                    if ($subName !== '' && $catId) {
-                        $sid = $resolveCat($subName, $catId);
-                        if ($sid) $catId = $sid;
-                    }
+                    if ($subName !== '' && $catId) { $sid = $resolveCat($subName, $catId); if ($sid) $catId = $sid; }
                 } elseif ($subName !== '') {
                     $catId = $resolveCat($subName, 0);
                 }
 
-                $code = trim((string) ($item['code'] ?? ''));
-                $cKey = $code !== '' ? mb_strtolower($code) : null;
-                $nKey = mb_strtolower($name);
-
-                // Resolved base fields. null = "leave unchanged" on update.
                 $statusRaw = mb_strtolower(trim((string) ($item['status'] ?? '')));
                 $status    = $statusRaw === '' ? null : (in_array($statusRaw, ['inactive', '0', 'no', 'disabled', 'off'], true) ? 'inactive' : 'active');
-                $stockRaw  = $item['stock'] ?? '';
-                $stock     = is_numeric($stockRaw) ? (int) $stockRaw : null;
-                $base = [
-                    'category_id' => $catId,
-                    'name'        => $name,
-                    'description' => trim((string) ($item['description'] ?? '')) !== '' ? trim((string) $item['description']) : null,
-                    'price'       => $price,
-                    'mrp'         => isset($item['mrp']) && is_numeric($item['mrp']) ? (float) $item['mrp'] : null,
-                    'code'        => $code !== '' ? $code : null,
-                    'barcode'     => trim((string) ($item['barcode'] ?? '')) !== '' ? trim((string) $item['barcode']) : null,
-                    'image'       => ! empty($item['image']) ? trim((string) $item['image']) : null,
-                    'status'      => $status,
-                    'stock'       => $stock,
-                ];
 
-                // UPDATE existing (matched by code). Strip nulls so blank cells in
-                // the sheet don't wipe existing data.
-                if ($cKey !== null && isset($byCode[$cKey])) {
-                    $payload = array_merge($base, $this->catalogColumns($item));
-                    $payload = array_filter($payload, static fn ($v) => $v !== null);
-                    $model->update($byCode[$cKey], $payload);
-                    $updated++;
-                    continue;
+                $base = [
+                    'category_id'      => $catId,
+                    'name'             => $name,
+                    'description'      => trim((string) ($item['description'] ?? '')) !== '' ? trim((string) $item['description']) : null,
+                    'price'            => $price,
+                    'mrp'              => $mrp,
+                    'code'             => $code,
+                    'barcode'          => trim((string) ($item['barcode'] ?? '')) !== '' ? trim((string) $item['barcode']) : null,
+                    'image'            => ! empty($item['image']) ? trim((string) $item['image']) : null,
+                    'status'           => $status,
+                    'stock'            => $stock,
+                    'has_variants'     => $hasVariants ? 1 : 0,
+                    'discount_percent' => $discPct,
+                    'discount_amount'  => $discAmt,
+                ];
+                // Catalog extras (brand, hsn_code, tax_*, featured, gallery…) then base wins.
+                $full = array_merge($this->catalogColumns($item), $base);
+
+                $cKey     = mb_strtolower($code);
+                $existing = $byCode[$cKey] ?? null;
+
+                if ($existing) {
+                    $productId = (int) $existing['id'];
+                    // Strip nulls so blank cells don't wipe, but always (re)set these.
+                    $always  = ['name', 'price', 'has_variants', 'category_id', 'discount_percent', 'discount_amount', 'mrp'];
+                    $payload = array_filter($full, static fn ($v, $k) => $v !== null || in_array($k, $always, true), ARRAY_FILTER_USE_BOTH);
+                    $pm->update($productId, $payload);
+                    $prodUpdated++;
+                } else {
+                    $full['vendor_id']          = $vendorId;
+                    $full['vendor_category_id'] = isset($item['vendor_category_id']) ? (int) $item['vendor_category_id'] : null;
+                    $full['status'] = $full['status'] ?? 'active';
+                    $productId = (int) $pm->insert($full, true);
+                    $byCode[$cKey] = ['id' => $productId, 'variant_types' => null];
+                    $prodCreated++;
                 }
 
-                // No code but the product name already exists → skip (can't upsert safely).
-                if ($cKey === null && isset($byName[$nKey])) { $skipped++; continue; }
-
-                // INSERT — apply create-time defaults for blank status/stock.
-                $id = $this->persistProduct(array_merge($item, $base, [
-                    'status' => $status ?? 'active',
-                    'stock'  => $stock ?? 0,
-                ]), $vendorId);
-                if ($cKey !== null) $byCode[$cKey] = $id;
-                $byName[$nKey] = $id;
-                $created++;
+                if ($hasVariants) {
+                    $existingTypes = $this->decodeVariantTypes($existing['variant_types'] ?? null);
+                    $mergedTypes   = $this->unionVariantTypes($existingTypes, $axes);
+                    $pm->update($productId, ['variant_types' => json_encode($mergedTypes, JSON_UNESCAPED_UNICODE), 'has_variants' => 1]);
+                    [$vc, $vu] = $this->mergeVariantsBySku($productId, $code, $variants);
+                    $varCreated += $vc; $varUpdated += $vu;
+                    // keep the cached row's types fresh for repeat groups in this batch
+                    $byCode[$cKey]['variant_types'] = json_encode($mergedTypes, JSON_UNESCAPED_UNICODE);
+                }
             } catch (\Throwable $e) {
                 $failed[] = ['row' => $line, 'name' => is_array($item) ? (string) ($item['name'] ?? '') : '', 'reason' => $e->getMessage()];
             }
         }
 
-        $msg = "Created {$created}, updated {$updated}, skipped {$skipped}" . ($failed ? (', ' . count($failed) . ' failed') : '');
-        return $this->ok([
-            'created'      => $created,
-            'updated'      => $updated,
-            'skipped'      => $skipped,
+        $msg = "Products: {$prodCreated} new / {$prodUpdated} updated; Variants: {$varCreated} new / {$varUpdated} updated"
+            . ($failed ? (', ' . count($failed) . ' failed') : '');
+        return [[
+            'products'     => ['created' => $prodCreated, 'updated' => $prodUpdated, 'skipped' => $prodSkipped],
+            'variants'     => ['created' => $varCreated, 'updated' => $varUpdated],
+            // flat aliases for backward-compatible clients
+            'created'      => $prodCreated,
+            'updated'      => $prodUpdated,
+            'skipped'      => $prodSkipped,
             'failed_count' => count($failed),
             'failed'       => array_slice($failed, 0, 100),
             'total'        => count($items),
-        ], $msg);
+        ], $msg];
+    }
+
+    /** Discount % + amount from mrp vs price (offer). [null,null] when no discount. */
+    private function computeDiscount(?float $mrp, ?float $price): array
+    {
+        if ($mrp !== null && $price !== null && $mrp > 0 && $mrp > $price) {
+            return [round(($mrp - $price) / $mrp * 100, 2), round($mrp - $price, 2)];
+        }
+        return [null, null];
+    }
+
+    /** Derive variant axes [{name,options[]}] from the union of variants' option maps. */
+    private function deriveAxes(array $variants): array
+    {
+        $order = []; $opts = [];
+        foreach ($variants as $v) {
+            foreach (($v['options'] ?? []) as $axis => $val) {
+                $axis = trim((string) $axis); $val = trim((string) $val);
+                if ($axis === '' || $val === '') continue;
+                if (! isset($opts[$axis])) { $opts[$axis] = []; $order[] = $axis; }
+                $opts[$axis][$val] = true;
+            }
+        }
+        $out = [];
+        foreach ($order as $axis) $out[] = ['name' => $axis, 'options' => array_keys($opts[$axis])];
+        return $out;
+    }
+
+    /** Union two variant_types lists (merge options per axis, first-seen order). */
+    private function unionVariantTypes(array $existing, array $incoming): array
+    {
+        $byName = []; $order = [];
+        foreach ([$existing, $incoming] as $set) {
+            foreach (is_array($set) ? $set : [] as $t) {
+                $n = trim((string) ($t['name'] ?? ''));
+                if ($n === '') continue;
+                if (! isset($byName[$n])) { $byName[$n] = []; $order[] = $n; }
+                foreach (($t['options'] ?? []) as $o) { $o = trim((string) $o); if ($o !== '') $byName[$n][$o] = true; }
+            }
+        }
+        $out = [];
+        foreach ($order as $n) $out[] = ['name' => $n, 'options' => array_keys($byName[$n])];
+        return $out;
+    }
+
+    /** Append/update product_variants by sku (never delete). Returns [created, updated]. */
+    private function mergeVariantsBySku(int $productId, string $code, array $variants): array
+    {
+        $vm = new ProductVariantModel();
+        $existing = [];
+        foreach ($vm->where('product_id', $productId)->findAll() as $ev) {
+            if (! empty($ev['sku'])) $existing[mb_strtolower(trim((string) $ev['sku']))] = (int) $ev['id'];
+        }
+        $created = 0; $updated = 0; $toInsert = []; $insertIdx = [];
+        foreach ($variants as $v) {
+            $sku  = $v['sku'] !== '' ? $v['sku'] : $this->genVariantSku($code, $v['options']);
+            $name = $v['name'] !== '' ? $v['name'] : ($v['options'] ? implode(' + ', array_values($v['options'])) : $sku);
+            $row  = [
+                'product_id' => $productId,
+                'name'       => mb_substr($name, 0, 100), // product_variants.name is VARCHAR(100)
+                'sku'        => $sku,
+                'options'    => json_encode($v['options'], JSON_UNESCAPED_UNICODE),
+                'price'      => $v['price'],
+                'mrp'        => $v['mrp'],
+                'stock'      => $v['stock'],
+                'barcode'    => $v['barcode'],
+                'weight'     => $v['weight'] ?? null,
+                'status'     => 'active',
+            ];
+            $sKey = mb_strtolower(trim($sku));
+            if (isset($existing[$sKey]) && $existing[$sKey] > 0) {
+                $vm->update($existing[$sKey], $row);   // existing DB row → update
+                $updated++;
+            } elseif (isset($insertIdx[$sKey])) {
+                $toInsert[$insertIdx[$sKey]] = $row;   // duplicate sku within this batch → overwrite the queued insert
+            } else {
+                $insertIdx[$sKey] = count($toInsert);
+                $toInsert[]       = $row;
+                $created++;
+            }
+        }
+        if ($toInsert) $vm->insertBatch(array_values($toInsert));
+        return [$created, $updated];
+    }
+
+    /** Deterministic sku from item_code + option values when a row has no sku. */
+    private function genVariantSku(string $code, array $options): string
+    {
+        $base  = $code !== '' ? $code : 'VAR';
+        $parts = array_values(array_filter(array_map(
+            static fn ($v) => strtoupper(preg_replace('/[^A-Za-z0-9]/', '', (string) $v)),
+            array_values($options),
+        ), static fn ($p) => $p !== ''));
+        $suffix = $parts ? implode('-', $parts) : strtoupper(substr(md5(json_encode($options)), 0, 6));
+        return $base . '-' . $suffix;
     }
 
     /**
@@ -519,6 +705,62 @@ class ProductController extends BaseApiController
         }
         $urls = array_values(array_filter(array_map(static fn ($u) => trim((string) $u), $parts), static fn ($u) => $u !== ''));
         return $urls ? json_encode($urls, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) : null;
+    }
+
+    /**
+     * Effective category_id for a request: when a non-empty sub_category is given
+     * alongside a category_id, the product points at a (find-or-created) child
+     * category under that parent. Returns the leaf id, else the given category_id.
+     */
+    private function applySubCategory(array $d): ?int
+    {
+        $catId = isset($d['category_id']) && $d['category_id'] !== '' ? (int) $d['category_id'] : null;
+        $sub   = trim((string) ($d['sub_category'] ?? ''));
+        if ($catId && $sub !== '') {
+            return $this->resolveSubCategory($catId, $sub);
+        }
+        return $catId;
+    }
+
+    /** Find or create a sub-category by name under a parent category; returns its id. */
+    private function resolveSubCategory(int $parentId, string $name): int
+    {
+        $name = trim($name);
+        $cm   = new CategoryModel();
+        $existing = $cm->where('parent_id', $parentId)->where('name', $name)->first();
+        if ($existing) return (int) $existing['id'];
+        return (int) $cm->insert([
+            'name'      => $name,
+            'parent_id' => $parentId,
+            'status'    => 'active',
+        ], true);
+    }
+
+    /**
+     * Merge mrp/code/barcode + comprehensive catalog columns into an update
+     * payload, applying ONLY keys actually present in $d — so a partial PATCH
+     * (e.g. a status-only toggle) never null-wipes other fields. Computed
+     * discount/tax amounts ride along only when their inputs were sent.
+     */
+    private function mergeCatalogForUpdate(array $payload, array $d): array
+    {
+        if (array_key_exists('mrp', $d))     $payload['mrp']     = is_numeric($d['mrp']) ? (float) $d['mrp'] : null;
+        if (array_key_exists('code', $d))    $payload['code']    = trim((string) $d['code']) !== '' ? trim((string) $d['code']) : null;
+        if (array_key_exists('barcode', $d)) $payload['barcode'] = trim((string) $d['barcode']) !== '' ? trim((string) $d['barcode']) : null;
+
+        $cat     = $this->catalogColumns($d);
+        $catKeys = array_merge(
+            self::MM_DECIMALS, self::MM_STRINGS, self::MM_DATES,
+            self::CAT_DECIMALS, self::CAT_INTS, self::CAT_STRINGS,
+            ['discount_type', 'featured', 'gallery_images'],
+        );
+        foreach ($catKeys as $k) {
+            if (array_key_exists($k, $d)) $payload[$k] = $cat[$k];
+        }
+        if (array_key_exists('discount_value', $d) || array_key_exists('discount_type', $d)) $payload['discount_amount'] = $cat['discount_amount'];
+        if (array_key_exists('tax_percentage', $d)  || array_key_exists('tax_type', $d))     $payload['tax_amount']      = $cat['tax_amount'];
+
+        return $payload;
     }
 
     /**
@@ -807,7 +1049,13 @@ class ProductController extends BaseApiController
         if ($auth->role !== 'admin' && (int) $row['vendor_id'] !== (int) $auth->id) return $this->fail('Forbidden', 403);
 
         $d = $this->request->getJSON(true) ?? $this->request->getPost();
+        if (array_key_exists('category_id', $d)) {
+            $d['category_id'] = $this->applySubCategory($d);
+        }
         $payload = array_intersect_key($d, array_flip(['name', 'description', 'price', 'stock', 'image', 'status', 'category_id', 'vendor_category_id']));
+
+        $payload = $this->mergeCatalogForUpdate($payload, $d);
+
         if (array_key_exists('attributes', $d)) {
             $attrs = $this->normalizeAttributes($d['attributes']);
             $payload['attributes'] = $attrs !== null ? json_encode($attrs, JSON_UNESCAPED_UNICODE) : null;

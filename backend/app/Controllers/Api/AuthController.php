@@ -89,7 +89,7 @@ class AuthController extends BaseApiController
             'mobile_number' => 'required|regex_match[/^[0-9]{10}$/]',
             'password'      => 'required|string|min_length[6]|max_length[64]',
             'email'         => 'permit_empty|valid_email|max_length[150]',
-            'pincode'       => 'permit_empty|string|max_length[10]',
+            'pincode'       => 'permit_empty|regex_match[/^[0-9]{6}$/]',
             'referrer_code' => 'permit_empty|regex_match[/^[0-9]{10}$/]',
             'dob'           => 'required|valid_date',
             'state_id'      => 'required|is_natural_no_zero',
@@ -446,7 +446,7 @@ class AuthController extends BaseApiController
             'address_line' => 'permit_empty|string|max_length[255]',
             'landmark'     => 'permit_empty|string|max_length[100]',
             'city'         => 'permit_empty|string|max_length[80]',
-            'pincode'      => 'permit_empty|string|max_length[10]',
+            'pincode'      => 'permit_empty|regex_match[/^[0-9]{6}$/]',
         ])) return $this->fail('Validation failed', 422, $this->validator->getErrors());
 
         $d = $this->request->getJSON(true) ?? $this->request->getPost();

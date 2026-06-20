@@ -33,7 +33,7 @@ class PincodeController extends BaseApiController
     public function create(): ResponseInterface
     {
         if ($r = $this->requireAdmin()) return $r;
-        if (! $this->validate(['code' => 'required|string|max_length[10]'])) {
+        if (! $this->validate(['code' => 'required|regex_match[/^[0-9]{6}$/]'])) {
             return $this->fail('Validation failed', 422, $this->validator->getErrors());
         }
         $d = $this->request->getJSON(true) ?? $this->request->getPost();

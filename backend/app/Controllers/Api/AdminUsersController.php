@@ -124,7 +124,7 @@ class AdminUsersController extends BaseApiController
             'mobile_number' => 'required|regex_match[/^[0-9]{10}$/]',
             'password'      => 'required|string|min_length[6]|max_length[64]',
             'email'         => 'permit_empty|valid_email|max_length[150]',
-            'pincode'       => 'permit_empty|string|max_length[10]',
+            'pincode'       => 'permit_empty|regex_match[/^[0-9]{6}$/]',
             'dob'           => 'permit_empty|valid_date',
             'state_id'      => 'permit_empty|is_natural_no_zero',
             'district_id'   => 'permit_empty|is_natural_no_zero',

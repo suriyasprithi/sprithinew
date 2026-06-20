@@ -153,6 +153,55 @@ class WalletController extends BaseApiController
 
         $items = array_slice($all, 0, 100);
 
+        // Enrich order-linked rows (buyback / commission credits reference an
+        // order#/qr# id) with the shop, taluk, buyer name and MASKED buyer mobile
+        // (e.g. 98******76), so the customer can see which sale earned the credit.
+        $orderIds = [];
+        foreach ($items as $r) {
+            if (preg_match('/(?:order|qr)#(\d+)/', (string) $r['reference'], $m)) {
+                $orderIds[(int) $m[1]] = true;
+            }
+        }
+        if ($orderIds) {
+            $ids  = array_keys($orderIds);
+            $ph   = implode(',', array_fill(0, count($ids), '?'));
+            $meta = $db->query(
+                "SELECT o.id,
+                        COALESCE(NULLIF(vp.shop_name, ''), vu.name) AS shop,
+                        vt.name AS taluk,
+                        cu.name AS customer_name,
+                        cu.mobile_number AS customer_mobile
+                 FROM orders o
+                 LEFT JOIN users vu           ON vu.id = o.vendor_id
+                 LEFT JOIN vendor_profiles vp ON vp.user_id = o.vendor_id
+                 LEFT JOIN taluks vt          ON vt.id = vp.taluk_id
+                 LEFT JOIN users cu           ON cu.id = o.customer_id
+                 WHERE o.id IN ($ph)",
+                $ids
+            )->getResultArray();
+
+            $mask = static function (?string $mob): ?string {
+                $d = preg_replace('/\D/', '', (string) $mob);
+                if ($d === '') return null;
+                return strlen($d) <= 4 ? $d : substr($d, 0, 2) . str_repeat('*', strlen($d) - 4) . substr($d, -2);
+            };
+            $byId = [];
+            foreach ($meta as $mrow) {
+                $byId[(int) $mrow['id']] = [
+                    'shop'            => $mrow['shop'] ?: null,
+                    'taluk'           => $mrow['taluk'] ?: null,
+                    'customer_name'   => $mrow['customer_name'] ?: null,
+                    'customer_mobile' => $mask($mrow['customer_mobile'] ?? null),
+                ];
+            }
+            foreach ($items as &$r) {
+                $r['meta'] = preg_match('/(?:order|qr)#(\d+)/', (string) $r['reference'], $m)
+                    ? ($byId[(int) $m[1]] ?? null)
+                    : null;
+            }
+            unset($r);
+        }
+
         // Current balance (for the header card).
         $bal = (new \App\Services\WalletService())->balances((int) $auth->id);
         if ($isReferral || $isWelcome) {

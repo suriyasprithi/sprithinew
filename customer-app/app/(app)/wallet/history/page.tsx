@@ -11,6 +11,13 @@ import { LuxuryCard } from "@/components/ui/custom/luxury-card";
 import { AnimatedCounter } from "@/components/ui/custom/animated-counter";
 import { api, apiErrorMessage } from "@/lib/api";
 
+type Meta = {
+  shop: string | null;
+  taluk: string | null;
+  customer_name: string | null;
+  customer_mobile: string | null; // masked, e.g. 98******76
+};
+
 type Item = {
   id: number;
   amount: number;
@@ -19,6 +26,7 @@ type Item = {
   reference: string | null;
   notes: string;
   created_at: string;
+  meta?: Meta | null;
 };
 
 type Payload = {
@@ -143,6 +151,14 @@ function Inner() {
                     <p className="truncate text-xs text-muted-foreground">
                       {it.created_at}{it.reference ? ` · ${it.reference}` : ""}
                     </p>
+                    {it.meta && (it.meta.shop || it.meta.customer_name) && (
+                      <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
+                        {[it.meta.shop, it.meta.taluk].filter(Boolean).join(" · ")}
+                        {it.meta.customer_name
+                          ? `${it.meta.shop || it.meta.taluk ? " — " : ""}${it.meta.customer_name}${it.meta.customer_mobile ? ` (${it.meta.customer_mobile})` : ""}`
+                          : ""}
+                      </p>
+                    )}
                   </div>
                   <p className={
                     "shrink-0 text-sm font-bold " +

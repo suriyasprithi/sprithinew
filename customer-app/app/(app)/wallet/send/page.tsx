@@ -48,7 +48,7 @@ export default function WalletSendPage() {
         <LuxuryCard hoverLift={false} className="space-y-4 p-5">
           <div className="space-y-1.5">
             <Label htmlFor="m">Receiver mobile</Label>
-            <Input id="m" inputMode="numeric" value={mobile} onChange={(e) => setMobile(cleanMobile(e.target.value))} placeholder="9876543210" className="h-11 rounded-xl bg-surface-2/60" />
+            <Input id="m" inputMode="numeric" maxLength={10} value={mobile} onChange={(e) => setMobile(cleanMobile(e.target.value))} placeholder="9876543210" className="h-11 rounded-xl bg-surface-2/60" />
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="a">Amount (₹)</Label>

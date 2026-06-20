@@ -10,23 +10,29 @@ use App\Models\ProductVariantModel;
 /**
  * Rule-based delivery charge.
  *
- * Priority order (matches the admin spec):
- *   1. Current time inside the Paid Window (default 18:00–09:00, wraps midnight)
- *      → PAID (flat charge).
- *   2. Else estimated delivery time > "free above" hours (default 4h) → FREE.
- *   3. Else (≤ 4h): every product category in the cart must have its subtotal
+ * The customer picks a delivery date+time at checkout. Priority order:
+ *   1. The CHOSEN delivery time-of-day falls in the Paid Window (default
+ *      18:00–09:00, wraps midnight) → PAID (flat charge). Highest priority:
+ *      overrides both the long-lead-time rule and per-category free delivery.
+ *   2. Else the chosen time is more than "free above" hours (default 4h) ahead
+ *      of now → FREE.
+ *   3. Else: every product category in the cart must have its subtotal
  *      ≥ that category's "Free delivery above ₹" threshold → FREE, else PAID.
  *
  * Threshold convention: 0 = "free above ₹0" = always qualifies.
+ * If no delivery time is supplied, the paid window is checked against "now" and
+ * the long-lead-time rule never applies (degrades gracefully).
  *
  * All amounts/rules come from system settings so the admin can tune them.
  */
 class DeliveryChargeService
 {
     /**
+     * @param string|null $deliveryAt Customer-chosen delivery datetime (any
+     *                                format DateTime understands), interpreted IST.
      * @return array{free: bool, amount: float, reason: string, charge: float}
      */
-    public function quote(int $customerId, int $estimatedMinutes): array
+    public function quote(int $customerId, ?string $deliveryAt = null): array
     {
         $settings  = new SystemSettingsService();
         $charge    = round($settings->getFloat('delivery.charge', 40), 2);
@@ -34,13 +40,23 @@ class DeliveryChargeService
         $paidStart = self::toMinutes($settings->get('delivery.paid_start', '18:00'), 1080);
         $paidEnd   = self::toMinutes($settings->get('delivery.paid_end', '09:00'), 540);
 
-        // 1. Time-of-day window (server time, IST).
-        if ($this->inPaidWindow($paidStart, $paidEnd)) {
+        $tz  = new \DateTimeZone('Asia/Kolkata');
+        $now = new \DateTime('now', $tz);
+        $selected = null;
+        if ($deliveryAt !== null && $deliveryAt !== '') {
+            try { $selected = new \DateTime($deliveryAt, $tz); } catch (\Throwable $e) { $selected = null; }
+        }
+        $ref = $selected ?? $now;   // paid-window reference (chosen time, else now)
+
+        // 1. Paid window — by the CHOSEN delivery time-of-day. Highest priority.
+        $minOfDay = (int) $ref->format('H') * 60 + (int) $ref->format('i');
+        if ($this->inPaidWindow($minOfDay, $paidStart, $paidEnd)) {
             return $this->result(false, $charge, 'night', $charge);
         }
 
-        // 2. Long ETA → free.
-        if ($estimatedMinutes > (int) round($freeHours * 60)) {
+        // 2. Scheduled far enough ahead of now → free.
+        $minutesAhead = $selected ? (int) round(($selected->getTimestamp() - $now->getTimestamp()) / 60) : 0;
+        if ($minutesAhead > (int) round($freeHours * 60)) {
             return $this->result(true, 0.0, 'eta', $charge);
         }
 
@@ -92,11 +108,9 @@ class DeliveryChargeService
         return $out;
     }
 
-    /** True if the current IST time falls in the paid window (handles midnight wrap). */
-    private function inPaidWindow(int $startMin, int $endMin): bool
+    /** True if minute-of-day $m falls in the paid window (handles midnight wrap). */
+    private function inPaidWindow(int $m, int $startMin, int $endMin): bool
     {
-        $now = new \DateTime('now', new \DateTimeZone('Asia/Kolkata'));
-        $m   = (int) $now->format('H') * 60 + (int) $now->format('i');
         if ($startMin === $endMin) return false;             // empty window
         return $startMin <= $endMin
             ? ($m >= $startMin && $m < $endMin)              // same-day window

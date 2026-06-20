@@ -31,6 +31,7 @@ type ApiProduct = {
   id: number;
   name: string;
   price: number | string;
+  old_price?: number | string | null;
   image: string | null;
   vendor_name?: string | null;
   stock?: number;
@@ -96,6 +97,7 @@ export default function PublicHomePage() {
           id: Number(p.id),
           name: p.name,
           price: Number(p.price),
+          old_price: p.old_price != null ? Number(p.old_price) : undefined,
           image: p.image,
           vendor_name: p.vendor_name ?? null,
           stock: p.stock,

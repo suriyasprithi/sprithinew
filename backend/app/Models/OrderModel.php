@@ -13,7 +13,7 @@ class OrderModel extends Model
     protected $useSoftDeletes   = false;
     protected $protectFields    = true;
 
-    protected $allowedFields = ['customer_id','vendor_id','total','delivery_fee','delivery_minutes','payment_method','status','notes','delivery_address','driver_id','delivered_at','cancel_reason','cancelled_at','penalty','qr_transferred_at'];
+    protected $allowedFields = ['customer_id','vendor_id','total','delivery_fee','delivery_minutes','delivery_at','payment_method','status','notes','delivery_address','driver_id','delivered_at','cancel_reason','cancelled_at','penalty','qr_transferred_at'];
 
     protected $useTimestamps = true;
     protected $dateFormat    = 'datetime';

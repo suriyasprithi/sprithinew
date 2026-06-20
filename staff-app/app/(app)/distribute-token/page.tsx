@@ -41,7 +41,7 @@ export default function DistributeTokenPage() {
   const [mobile, setMobile] = useState("");
   const [tokens, setTokens] = useState("");
   const [busy, setBusy] = useState(false);
-  const [quote, setQuote] = useState<{ unit_cost: number; total_cost: number; recipient_role: string | null } | null>(null);
+  const [quote, setQuote] = useState<{ tokens: number; bonus: number; bonus_pct: number; recipient_gets: number; total_cost: number; recipient_role: string | null } | null>(null);
 
   const target = user?.role ? ROLE_BELOW[user.role] ?? null : null;
 
@@ -93,7 +93,7 @@ export default function DistributeTokenPage() {
           icon={Coins}
           title="Distribute tokens"
           description={target
-            ? `Send inventory tokens down to your ${target}s. Markup applies per level.`
+            ? `Send tokens down to your ${target}s — they get the amount + commission, paid from your wallet.`
             : "Your role can't distribute tokens."}
         />
 
@@ -101,7 +101,7 @@ export default function DistributeTokenPage() {
           <LuxuryCard hoverLift={false} className="space-y-4 p-5">
             <div className="space-y-1.5">
               <Label htmlFor="mobile">Receiver mobile ({target})</Label>
-              <Input id="mobile" inputMode="numeric" value={mobile} onChange={(e) => setMobile(cleanMobile(e.target.value))} placeholder="9999000010" className="h-11 rounded-xl bg-surface-2/60" />
+              <Input id="mobile" inputMode="numeric" maxLength={10} value={mobile} onChange={(e) => setMobile(cleanMobile(e.target.value))} placeholder="9999000010" className="h-11 rounded-xl bg-surface-2/60" />
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="tokens">Tokens</Label>
@@ -111,16 +111,22 @@ export default function DistributeTokenPage() {
             {quote && quote.recipient_role && (
               <div className="rounded-xl border border-border bg-surface-2/40 p-3 text-xs">
                 <div className="flex items-center justify-between">
-                  <span className="text-muted-foreground">Unit cost ({user?.role} → {quote.recipient_role})</span>
-                  <span className="font-medium">{fmtINR(quote.unit_cost)}</span>
+                  <span className="text-muted-foreground">Recipient gets ({quote.recipient_role})</span>
+                  <span className="font-semibold text-brand">{quote.recipient_gets} tokens</span>
                 </div>
+                {quote.bonus > 0 && (
+                  <div className="mt-1 flex items-center justify-between">
+                    <span className="text-muted-foreground">incl. commission @ {quote.bonus_pct}%</span>
+                    <span className="font-medium">+{quote.bonus}</span>
+                  </div>
+                )}
                 <div className="mt-1 flex items-center justify-between">
-                  <span className="text-muted-foreground">Recipient pays</span>
-                  <span className="font-semibold text-brand">{fmtINR(quote.total_cost)}</span>
+                  <span className="text-muted-foreground">You pay (from wallet)</span>
+                  <span className="font-semibold">{fmtINR(quote.total_cost)}</span>
                 </div>
                 {user?.role !== "admin" && (
                   <p className="mt-2 text-[11px] text-muted-foreground">
-                    Markup stays in your wallet. Recipient must have this ₹ in their wallet to accept.
+                    Paid from your wallet. You keep the margin between your rate and theirs.
                   </p>
                 )}
               </div>

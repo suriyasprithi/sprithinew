@@ -62,6 +62,7 @@ export default function LoginPage() {
                   id="mobile"
                   type="tel"
                   inputMode="numeric"
+                  maxLength={10}
                   autoComplete="tel"
                   placeholder="9999999999"
                   value={mobile}

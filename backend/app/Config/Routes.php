@@ -173,6 +173,7 @@ $routes->group('api/v1', ['filter' => 'cors'], static function ($routes) {
     $routes->group('vendor', ['filter' => 'auth'], static function ($routes) {
         $routes->get('products',         'Api\ProductController::mine');
         $routes->post('products/bulk',   'Api\ProductController::bulkCreate');
+        $routes->post('products/import', 'Api\ProductController::vendorImport');
         $routes->post('products',        'Api\ProductController::create');
         $routes->patch('products/(:num)','Api\ProductController::update/$1');
         $routes->delete('products/(:num)','Api\ProductController::delete/$1');

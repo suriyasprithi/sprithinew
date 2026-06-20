@@ -31,15 +31,16 @@ type CartRow = {
 const fmtINR = (n: number) =>
   new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(n);
 
-/** Render total minutes as "1h 33m" / "45m" / "2h". */
-const fmtHM = (m: number) => {
-  const h = Math.floor(m / 60), mm = m % 60;
-  return h ? (mm ? `${h}h ${mm}m` : `${h}h`) : `${mm}m`;
+/** Format a Date as a datetime-local input value ("YYYY-MM-DDTHH:MM"), local tz. */
+const toLocalInput = (d: Date) => {
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
 };
 
 type DeliveryQuote = { free: boolean; amount: number; reason: string };
 const quoteHint = (q: DeliveryQuote | null): string => {
-  if (!q || q.free) return "";
+  if (!q) return "";
+  if (q.free) return q.reason === "eta" ? "Free — scheduled far enough ahead" : "";
   if (q.reason === "night") return "Night-time delivery charge applies";
   if (q.reason === "threshold") return "Order doesn't meet the free-delivery amount";
   return "";
@@ -71,31 +72,15 @@ export default function CheckoutPage() {
   const [makeDefault, setMakeDefault] = useState(false);
   const [savingAddr, setSavingAddr] = useState(false);
 
-  type TimeRate = { id: number; time_min: number; price: number };
-  const [rates, setRates] = useState<TimeRate[]>([]);
-  const [rateId, setRateId] = useState<number | null>(null);
+  const [deliveryAt, setDeliveryAt] = useState("");
+  const [minDateTime, setMinDateTime] = useState("");
   const [quote, setQuote] = useState<DeliveryQuote | null>(null);
 
+  // Default the delivery time to ~1h from now; min = now so no past times.
   useEffect(() => {
-    void (async () => {
-      try {
-        const res = await api.get("/customer/delivery-rates/time");
-        const raw = (Array.isArray(res.data.data?.items) ? res.data.data.items : []) as unknown[];
-        const list = raw.map((r) => {
-          const x = r as Record<string, unknown>;
-          return {
-            id: Number(x.id ?? 0),
-            time_min: Number(x.time_min ?? 0),
-            price: Number(x.price ?? 0),
-          };
-        });
-        setRates(list);
-        // API returns cheapest-first → default-select the cheapest option.
-        if (list.length) setRateId(list[0].id);
-      } catch {
-        // Non-blocking — no rates for this taluk → free delivery (₹0).
-      }
-    })();
+    const now = new Date();
+    setMinDateTime(toLocalInput(now));
+    setDeliveryAt(toLocalInput(new Date(now.getTime() + 60 * 60 * 1000)));
   }, []);
 
   useEffect(() => {
@@ -131,20 +116,20 @@ export default function CheckoutPage() {
   }, [router]);
 
   // Live, server-computed delivery charge (rule-based). Recomputed when the
-  // estimated-time selection changes or once the cart has loaded. The order
+  // chosen delivery date+time changes or once the cart has loaded. The order
   // endpoint recomputes the same amount authoritatively on placement.
   useEffect(() => {
-    if (loading) return;
+    if (loading || !deliveryAt) return;
     void (async () => {
       try {
-        const res = await api.get(`/customer/delivery-quote${rateId ? `?rate_id=${rateId}` : ""}`);
+        const res = await api.get(`/customer/delivery-quote?delivery_at=${encodeURIComponent(deliveryAt)}`);
         const d = (res.data.data ?? {}) as Record<string, unknown>;
         setQuote({ free: Boolean(d.free), amount: Number(d.amount ?? 0), reason: String(d.reason ?? "") });
       } catch {
         setQuote(null);
       }
     })();
-  }, [rateId, loading]);
+  }, [deliveryAt, loading]);
 
   async function addNewAddress() {
     if (!addrForm.address_line.trim()) { toast.error("Full address is required"); return; }
@@ -181,7 +166,7 @@ export default function CheckoutPage() {
     if (!selectedId) { toast.error("Select a delivery address"); return; }
     setPlacing(true);
     try {
-      const res = await api.post("/orders/place", { notes, payment_method: payMethod, address_id: selectedId, delivery_rate_id: rateId });
+      const res = await api.post("/orders/place", { notes, payment_method: payMethod, address_id: selectedId, delivery_at: deliveryAt });
       const orderId = res.data.data?.order_id;
       toast.success(payMethod === "cod" ? `Order #${orderId} placed — pay on delivery` : `Order #${orderId} placed!`);
       try { await hydrate(); } catch { /* non-fatal */ }
@@ -217,21 +202,17 @@ export default function CheckoutPage() {
 
         <LuxuryCard hoverLift={false} className="space-y-2 p-4 text-sm">
           <div className="flex justify-between"><span className="text-muted-foreground">Subtotal</span><span>{fmtINR(subtotal)}</span></div>
-          {rates.length > 0 && (
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-muted-foreground">Estimated time</span>
-              <select
-                value={rateId ?? ""}
-                onChange={(e) => setRateId(Number(e.target.value))}
-                aria-label="Estimated delivery time"
-                className="rounded-lg border border-border bg-surface-2/60 px-2 py-1 text-sm font-medium outline-none focus:border-brand/50"
-              >
-                {rates.map((r) => (
-                  <option key={r.id} value={r.id}>{fmtHM(r.time_min)}</option>
-                ))}
-              </select>
-            </div>
-          )}
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-muted-foreground">Delivery time</span>
+            <input
+              type="datetime-local"
+              value={deliveryAt}
+              min={minDateTime}
+              onChange={(e) => setDeliveryAt(e.target.value)}
+              aria-label="Delivery date and time"
+              className="rounded-lg border border-border bg-surface-2/60 px-2 py-1 text-sm font-medium outline-none focus:border-brand/50"
+            />
+          </div>
           <div className="flex items-center justify-between gap-2">
             <span className="text-muted-foreground">Delivery fee</span>
             {quote?.free

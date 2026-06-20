@@ -62,20 +62,28 @@ class OrderController extends BaseApiController
         }
         $vendorId = count(array_unique($vendorIds)) === 1 ? $vendorIds[0] : null;
 
-        // Estimated delivery time = the minutes of the customer's chosen time-rate
-        // (the tier price is no longer used). The fee itself is computed by the
-        // rule-based DeliveryChargeService — time-of-day paid window, "> N hours
-        // = free", and per-category free-delivery thresholds — never a client
-        // amount. The order total becomes items_subtotal ($total) + delivery fee,
-        // but all vendor / commission / token math below stays on $total (items
-        // only) so the vendor never gets a cut of the delivery fee.
+        // Customer-chosen delivery date+time (IST). The fee is computed by the
+        // rule-based DeliveryChargeService from that datetime — paid window by the
+        // chosen time-of-day, "chosen time > N hours ahead = free", else per-category
+        // free-delivery thresholds — never a client amount. delivery_minutes is kept
+        // as minutes-from-now for backward-compat display. The order total becomes
+        // items_subtotal ($total) + delivery fee, but all vendor / commission / token
+        // math below stays on $total (items only) so the vendor never gets a cut of
+        // the delivery fee.
+        $deliveryAt      = isset($body['delivery_at']) ? trim((string) $body['delivery_at']) : '';
+        $deliveryAt      = $deliveryAt !== '' ? $deliveryAt : null;
+        $deliveryAtSql   = null;
         $deliveryMinutes = null;
-        $rateId = (int) ($body['delivery_rate_id'] ?? 0);
-        if ($rateId) {
-            $rate = (new DeliveryTimeRateModel())->find($rateId);
-            if ($rate) $deliveryMinutes = (int) $rate['time_min'];
+        if ($deliveryAt !== null) {
+            try {
+                $sel             = new \DateTime($deliveryAt, new \DateTimeZone('Asia/Kolkata'));
+                $deliveryAtSql   = $sel->format('Y-m-d H:i:s');
+                $deliveryMinutes = max(0, (int) round(($sel->getTimestamp() - time()) / 60));
+            } catch (\Throwable $e) {
+                $deliveryAtSql = null;
+            }
         }
-        $deliveryFee = (float) (new DeliveryChargeService())->quote((int) $auth->id, (int) ($deliveryMinutes ?? 0))['amount'];
+        $deliveryFee = (float) (new DeliveryChargeService())->quote((int) $auth->id, $deliveryAt)['amount'];
         $grandTotal  = $total + $deliveryFee;
 
         // Wallet check (only when paying from wallet; COD is collected on delivery)
@@ -129,6 +137,7 @@ class OrderController extends BaseApiController
             'total'          => $grandTotal,
             'delivery_fee'   => $deliveryFee,
             'delivery_minutes' => $deliveryMinutes,
+            'delivery_at'    => $deliveryAtSql,
             'payment_method' => $paymentMethod,
             // Wallet orders are paid up-front; COD stays 'pending' until delivered.
             'status'         => $paymentMethod === 'cod' ? 'pending' : 'paid',

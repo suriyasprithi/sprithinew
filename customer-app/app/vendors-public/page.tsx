@@ -77,7 +77,7 @@ export default function PublicVendorsPage() {
           <form onSubmit={(e) => { e.preventDefault(); void load(); }} className="flex gap-2">
             <div className="relative flex-1">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input value={pincode} onChange={(e) => setPincode(e.target.value)} placeholder="Filter by pincode…" className="h-10 rounded-xl bg-surface-2/60 pl-9" />
+              <Input value={pincode} inputMode="numeric" maxLength={6} onChange={(e) => setPincode(e.target.value.replace(/\D/g, "").slice(0, 6))} placeholder="Filter by pincode…" className="h-10 rounded-xl bg-surface-2/60 pl-9" />
             </div>
             <GradientButton type="submit"><Search className="h-4 w-4" /> Search</GradientButton>
           </form>

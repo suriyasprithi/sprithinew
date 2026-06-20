@@ -28,7 +28,7 @@ import { EmptyState } from "@/components/data-table/empty-state";
 import { TableSkeleton } from "@/components/data-table/table-skeleton";
 import { MobileHeader } from "@/components/layout/mobile-nav";
 import { PageHeader } from "@/components/layout/page-header";
-import { ImportCsvDialog } from "@/components/products/import-csv-dialog";
+import { CatalogImportDialog } from "@/components/products/catalog-import-dialog";
 import { api, apiErrorMessage } from "@/lib/api";
 import {
   mock,
@@ -57,25 +57,57 @@ type Draft = {
   name: string;
   description: string;
   price: string;
-  offer_price: string;
+  mrp: string;                     // MRP (was "offer_price"); stored in products.mrp
   stock: string;
-  sku: string;
+  sku: string;                     // stored in products.code (catalog SKU / upsert key)
   delivery_time: string;
   status: "active" | "inactive";
   vendor_category_id: number | null;
-  category_id: number | null;      // selected product category
+  category_id: number | null;      // selected product category (parent)
   image: string | null;            // dataURL or absolute URL — stored in products.image (TEXT)
   attributes: ProductAttributes;
   variant_types: VType[];
   combos: ComboRow[];              // Cartesian product, vendor-edited per row
   variant_images: VariantImages;   // per-axis-per-option image arrays
+  // Comprehensive catalog details (string-bound inputs; backend normalizes/computes).
+  sub_category: string;            // child category under the picked category (auto-created)
+  brand: string;
+  hsn_code: string;
+  barcode: string;
+  tax_type: string;                // "" | "exclusive" | "inclusive"
+  tax_percentage: string;
+  discount_type: string;           // "" | "percentage" | "fixed"
+  discount_value: string;
+  min_stock_alert: string;
+  max_order_qty: string;
+  weight: string;
+  length: string;
+  width: string;
+  height: string;
+  unit: string;
+  delivery_charge: string;
+  return_days: string;
+  warranty_days: string;
+  short_description: string;
+  tags: string;
+  gallery_images: string;          // one URL per line / comma-separated
+  featured: boolean;
 };
 
 type ProductCategory = { id: number; name: string; commission_pct: number; vendor_category_id: number | null; status: "active" | "inactive" };
 
+// The catalog-detail fields, all blank.
+const blankCatalog = () => ({
+  sub_category: "", brand: "", hsn_code: "", barcode: "",
+  tax_type: "", tax_percentage: "", discount_type: "", discount_value: "",
+  min_stock_alert: "", max_order_qty: "", weight: "", length: "", width: "", height: "",
+  unit: "", delivery_charge: "", return_days: "", warranty_days: "",
+  short_description: "", tags: "", gallery_images: "", featured: false,
+});
+
 function blankDraft(defaultCategoryId: number | null): Draft {
   return {
-    name: "", description: "", price: "", offer_price: "", stock: "",
+    name: "", description: "", price: "", mrp: "", stock: "",
     sku: "", delivery_time: "", status: "active",
     vendor_category_id: defaultCategoryId,
     category_id: null,
@@ -84,7 +116,40 @@ function blankDraft(defaultCategoryId: number | null): Draft {
     variant_types: [],
     combos: [],
     variant_images: {},
+    ...blankCatalog(),
   };
+}
+
+// Map a product row's catalog columns into Draft string/bool fields (edit + clone).
+// Sub Category is handled by the caller via category_parent_id (reverse-populate).
+function catalogDraftFrom(p: VendorProduct): Omit<ReturnType<typeof blankCatalog>, "sub_category"> {
+  const s = (v: unknown) => (v == null ? "" : String(v));
+  let gallery = "";
+  try {
+    const g = p.gallery_images ? JSON.parse(p.gallery_images) : null;
+    gallery = Array.isArray(g) ? g.join("\n") : (typeof p.gallery_images === "string" ? p.gallery_images : "");
+  } catch { gallery = typeof p.gallery_images === "string" ? p.gallery_images : ""; }
+  return {
+    brand: s(p.brand), hsn_code: s(p.hsn_code), barcode: s(p.barcode),
+    tax_type: s(p.tax_type).toLowerCase(), tax_percentage: s(p.tax_percentage),
+    discount_type: s(p.discount_type).toLowerCase(), discount_value: s(p.discount_value),
+    min_stock_alert: s(p.min_stock_alert), max_order_qty: s(p.max_order_qty),
+    weight: s(p.weight), length: s(p.length), width: s(p.width), height: s(p.height),
+    unit: s(p.unit), delivery_charge: s(p.delivery_charge),
+    return_days: s(p.return_days), warranty_days: s(p.warranty_days),
+    short_description: s(p.short_description), tags: s(p.tags),
+    gallery_images: gallery,
+    featured: Number(p.featured) === 1, // API returns "1"/"0" (string) for TINYINT
+  };
+}
+
+// Resolve the Category picker value + Sub Category text from a product: when the
+// product's category is a sub-category, the picker shows its parent.
+function categorySplit(p: VendorProduct): { category_id: number | null; sub_category: string } {
+  if (p.category_parent_id != null) {
+    return { category_id: p.category_parent_id, sub_category: p.category_name ?? "" };
+  }
+  return { category_id: p.category_id ?? null, sub_category: "" };
 }
 
 function code(s: string, max: number): string {
@@ -294,18 +359,19 @@ export default function VendorProductsPage() {
   }
 
   function startEdit(p: VendorProduct) {
+    const cs = categorySplit(p);
     setEditing({
       id: p.id,
       name: p.name,
       description: p.description ?? "",
       price: String(p.price),
-      offer_price: p.offer_price != null ? String(p.offer_price) : "",
+      mrp: p.mrp != null ? String(p.mrp) : "",
       stock: String(p.stock),
-      sku: p.sku ?? "",
+      sku: p.code ?? p.sku ?? "",
       delivery_time: p.delivery_time ?? "",
       status: p.status,
       vendor_category_id: p.vendor_category_id ?? vendorCategory?.id ?? null,
-      category_id: (p as VendorProduct & { category_id?: number | null }).category_id ?? null,
+      category_id: cs.category_id,
       image: (p as VendorProduct & { image?: string | null }).image ?? null,
       attributes: { ...(p.attributes ?? {}) },
       variant_types: (p.variant_types ?? []).map((t) => ({ name: t.name, options: [...t.options] })),
@@ -318,23 +384,26 @@ export default function VendorProductsPage() {
         stock: String(v.stock),
       })),
       variant_images: cloneVariantImages(p.variant_images ?? {}),
+      ...catalogDraftFrom(p),
+      sub_category: cs.sub_category,
     });
   }
 
   /** Import all fields from an existing product into a new draft (no id, stock reset to 0). */
   function importFromProduct(p: VendorProduct) {
+    const cs = categorySplit(p);
     setEditing({
       // no `id` — creates a new product on save
       name: p.name,
       description: p.description ?? "",
       price: String(p.price),
-      offer_price: p.offer_price != null ? String(p.offer_price) : "",
+      mrp: p.mrp != null ? String(p.mrp) : "",
       stock: "0", // reset
-      sku: p.sku ?? "",
+      sku: "", // a clone is a new product — don't copy the SKU/code (would collide on upsert)
       delivery_time: p.delivery_time ?? "",
       status: "active",
       vendor_category_id: p.vendor_category_id ?? vendorCategory?.id ?? null,
-      category_id: (p as VendorProduct & { category_id?: number | null }).category_id ?? null,
+      category_id: cs.category_id,
       image: (p as VendorProduct & { image?: string | null }).image ?? null,
       attributes: { ...(p.attributes ?? {}) },
       variant_types: (p.variant_types ?? []).map((t) => ({ name: t.name, options: [...t.options] })),
@@ -347,6 +416,8 @@ export default function VendorProductsPage() {
         stock: "0", // reset per-variant stock
       })),
       variant_images: cloneVariantImages(p.variant_images ?? {}),
+      ...catalogDraftFrom(p),
+      sub_category: cs.sub_category,
     });
     setImportOpen(false);
     setImportSearch("");
@@ -413,9 +484,36 @@ export default function VendorProductsPage() {
       variants: variantsPayload,
       variant_images: variantImagesPayload,
     };
-    if (editing.offer_price)   payload.offer_price = Number(editing.offer_price);
-    if (editing.sku)           payload.sku = editing.sku;
     if (editing.delivery_time) payload.delivery_time = editing.delivery_time;
+
+    // Reconciled price/code + comprehensive catalog details. Sent on every save so
+    // a full edit is the source of truth; the backend normalizes and computes the
+    // tax/discount amounts. (A blank field clears that column on save.)
+    const num = (v: string) => (v.trim() !== "" && !Number.isNaN(Number(v)) ? Number(v) : null);
+    payload.mrp             = num(editing.mrp);
+    payload.code            = editing.sku.trim() || null;             // SKU → products.code (upsert key)
+    payload.sub_category    = editing.sub_category.trim();            // resolved to a child category server-side
+    payload.brand           = editing.brand.trim() || null;
+    payload.hsn_code        = editing.hsn_code.trim() || null;
+    payload.barcode         = editing.barcode.trim() || null;
+    payload.unit            = editing.unit.trim() || null;
+    payload.short_description = editing.short_description.trim() || null;
+    payload.tags            = editing.tags.trim() || null;
+    payload.gallery_images  = editing.gallery_images;                // string of URLs; backend → JSON array
+    payload.tax_type        = editing.tax_type;                      // "" | exclusive | inclusive
+    payload.tax_percentage  = num(editing.tax_percentage);
+    payload.discount_type   = editing.discount_type;                 // "" | percentage | fixed
+    payload.discount_value  = num(editing.discount_value);
+    payload.min_stock_alert = num(editing.min_stock_alert);
+    payload.max_order_qty   = num(editing.max_order_qty);
+    payload.weight          = num(editing.weight);
+    payload.length          = num(editing.length);
+    payload.width           = num(editing.width);
+    payload.height          = num(editing.height);
+    payload.delivery_charge = num(editing.delivery_charge);
+    payload.return_days     = num(editing.return_days);
+    payload.warranty_days   = num(editing.warranty_days);
+    payload.featured        = editing.featured ? 1 : 0;
 
     try {
       if (editing.id) {
@@ -447,15 +545,7 @@ export default function VendorProductsPage() {
           description={vendorCategory ? `You're listing under the ${vendorCategory.name} vendor category. Pick a product category per product.` : "Manage your storefront listings, stock and prices."}
           action={
             <div className="flex items-center gap-2">
-              <ImportCsvDialog
-                productCategories={productCategories}
-                existingProducts={items.map((p) => ({
-                  id: p.id,
-                  name: p.name,
-                  stock: p.stock,
-                  variants: (p.variants ?? []).map((v) => ({ sku: v.sku ?? null, options: v.options ?? {}, stock: v.stock ?? 0 })),
-                }))}
-                vendorCategoryId={vendorCategory?.id ?? null}
+              <CatalogImportDialog
                 onImported={async () => {
                   try {
                     const res = await api.get("/vendor/products");
@@ -745,6 +835,13 @@ export default function VendorProductsPage() {
               </div>
             </div>
 
+            {/* SUB CATEGORY — optional; auto-created under the chosen category */}
+            <div className="space-y-1.5">
+              <Label>Sub category</Label>
+              <Input value={editing?.sub_category ?? ""} onChange={(e) => setEditing((p) => p && ({ ...p, sub_category: e.target.value }))} placeholder="Optional — e.g. Rice, Cookies" className="h-11 rounded-xl bg-surface-2/60" />
+              <p className="text-[11px] text-muted-foreground">Created automatically under the chosen category if it doesn&apos;t exist.</p>
+            </div>
+
             {/* COMMON FIELDS — image left, details right on md+ */}
             <div className="grid gap-5 md:grid-cols-[280px_1fr]">
               {/* LEFT: Product image */}
@@ -769,8 +866,8 @@ export default function VendorProductsPage() {
                   <Input type="number" value={editing?.price ?? ""} onChange={(e) => setEditing((p) => p && ({ ...p, price: e.target.value }))} className="h-11 rounded-xl bg-surface-2/60" />
                 </div>
                 <div className="space-y-1.5">
-                  <Label>Offer price (₹)</Label>
-                  <Input type="number" value={editing?.offer_price ?? ""} onChange={(e) => setEditing((p) => p && ({ ...p, offer_price: e.target.value }))} placeholder="Optional" className="h-11 rounded-xl bg-surface-2/60" />
+                  <Label>MRP (₹)</Label>
+                  <Input type="number" value={editing?.mrp ?? ""} onChange={(e) => setEditing((p) => p && ({ ...p, mrp: e.target.value }))} placeholder="Optional — struck-through price" className="h-11 rounded-xl bg-surface-2/60" />
                 </div>
                 <div className="space-y-1.5">
                   <Label>Stock <span className="text-brand">*</span></Label>
@@ -795,6 +892,86 @@ export default function VendorProductsPage() {
                   </Select>
                 </div>
               </div>
+            </div>
+
+            {/* CATALOG DETAILS — comprehensive fields (stored on the product) */}
+            <div className="space-y-3 rounded-xl border border-border bg-surface-2/20 p-4">
+              <div className="flex items-center justify-between">
+                <h4 className="text-sm font-semibold">Catalog details</h4>
+                <label className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={editing?.featured ?? false}
+                    onChange={(e) => setEditing((p) => p && ({ ...p, featured: e.target.checked }))}
+                    className="h-4 w-4 rounded border-input accent-brand"
+                  />
+                  Featured product
+                </label>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-3">
+                {([
+                  ["brand", "Brand", "text"],
+                  ["hsn_code", "HSN code", "text"],
+                  ["barcode", "Barcode", "text"],
+                  ["unit", "Unit (kg, pcs…)", "text"],
+                  ["tax_percentage", "Tax %", "number"],
+                  ["discount_value", "Discount value", "number"],
+                  ["weight", "Weight", "number"],
+                  ["length", "Length", "number"],
+                  ["width", "Width", "number"],
+                  ["height", "Height", "number"],
+                  ["delivery_charge", "Delivery charge (₹)", "number"],
+                  ["min_stock_alert", "Min stock alert", "number"],
+                  ["max_order_qty", "Max order qty", "number"],
+                  ["return_days", "Return days", "number"],
+                  ["warranty_days", "Warranty days", "number"],
+                ] as const).map(([key, label, type]) => (
+                  <div key={key} className="space-y-1.5">
+                    <Label>{label}</Label>
+                    <Input
+                      type={type}
+                      value={editing?.[key] ?? ""}
+                      onChange={(e) => setEditing((p) => p && ({ ...p, [key]: e.target.value }))}
+                      className="h-10 rounded-xl bg-surface-2/60"
+                    />
+                  </div>
+                ))}
+                <div className="space-y-1.5">
+                  <Label>Tax type</Label>
+                  <Select value={editing?.tax_type || "none"} onValueChange={(v) => v && setEditing((p) => p && ({ ...p, tax_type: v === "none" ? "" : v }))}>
+                    <SelectTrigger className="h-10 w-full rounded-xl bg-surface-2/60"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">—</SelectItem>
+                      <SelectItem value="exclusive">Exclusive</SelectItem>
+                      <SelectItem value="inclusive">Inclusive</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Discount type</Label>
+                  <Select value={editing?.discount_type || "none"} onValueChange={(v) => v && setEditing((p) => p && ({ ...p, discount_type: v === "none" ? "" : v }))}>
+                    <SelectTrigger className="h-10 w-full rounded-xl bg-surface-2/60"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">—</SelectItem>
+                      <SelectItem value="percentage">Percentage</SelectItem>
+                      <SelectItem value="fixed">Fixed</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <Label>Short description</Label>
+                <Input value={editing?.short_description ?? ""} onChange={(e) => setEditing((p) => p && ({ ...p, short_description: e.target.value }))} placeholder="One-line summary" className="h-10 rounded-xl bg-surface-2/60" />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Tags</Label>
+                <Input value={editing?.tags ?? ""} onChange={(e) => setEditing((p) => p && ({ ...p, tags: e.target.value }))} placeholder="comma,separated,tags" className="h-10 rounded-xl bg-surface-2/60" />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Gallery image URLs</Label>
+                <Textarea rows={2} value={editing?.gallery_images ?? ""} onChange={(e) => setEditing((p) => p && ({ ...p, gallery_images: e.target.value }))} placeholder="One image URL per line" className="rounded-xl bg-surface-2/60" />
+              </div>
+              <p className="text-[11px] text-muted-foreground">Tax &amp; discount amounts are calculated automatically. These details are stored on the product.</p>
             </div>
 
             {editing && (

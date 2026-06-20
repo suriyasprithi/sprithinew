@@ -16,6 +16,7 @@ import { cn } from "@/lib/utils";
 type AttrValue = string | number | boolean | string[] | null;
 type Product = {
   id: number; name: string; description: string | null; price: number; stock: number;
+  old_price?: number | null;
   image: string | null; vendor_name: string | null; category_name: string | null;
   has_variants: boolean;
   attributes?: Record<string, AttrValue> | null;
@@ -23,6 +24,7 @@ type Product = {
 type Variant = {
   id: number; name: string; price: number; stock: number;
   sku?: string | null;
+  mrp?: number | null;
   options?: Record<string, string>;
 };
 type VType = { name: string; options: string[] };
@@ -103,6 +105,9 @@ function ProductInner() {
   const selectedVariant = variantTypes.length > 0 ? matchVariant(variants, picks) : undefined;
   const price = selectedVariant?.price ?? product?.price ?? 0;
   const stock = selectedVariant?.stock ?? product?.stock ?? 0;
+  // Strikethrough MRP (variant's when selected, else product's) + % OFF.
+  const oldPrice = (selectedVariant ? selectedVariant.mrp : product?.old_price) ?? null;
+  const discountOff = oldPrice && oldPrice > price ? Math.round(((oldPrice - price) / oldPrice) * 100) : 0;
 
   async function add() {
     if (!product) return;
@@ -193,7 +198,15 @@ function ProductInner() {
               {product.vendor_name}{product.vendor_name && product.category_name ? " · " : ""}{product.category_name}
             </p>
           )}
-          <p className="mt-3 text-3xl font-bold text-brand">{fmtINR(price)}</p>
+          <div className="mt-3 flex flex-wrap items-end gap-2">
+            <p className="text-3xl font-bold text-brand">{fmtINR(price)}</p>
+            {oldPrice && oldPrice > price && (
+              <>
+                <p className="pb-1 text-base text-muted-foreground line-through">{fmtINR(oldPrice)}</p>
+                <span className="mb-1 rounded-md bg-emerald-500/15 px-1.5 py-0.5 text-xs font-semibold text-emerald-600">{discountOff}% OFF</span>
+              </>
+            )}
+          </div>
           <p className="mt-1 text-xs text-muted-foreground">Stock: {stock}</p>
         </div>
 

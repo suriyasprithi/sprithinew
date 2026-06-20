@@ -277,6 +277,7 @@ export default function AdminCustomersPage() {
   async function saveEdit() {
     if (!editing) return;
     if (!editing.name.trim()) { toast.error("Name is required"); return; }
+    if (!/^\d{10}$/.test(editing.mobile.trim())) { toast.error("Mobile must be exactly 10 digits"); return; }
     setSaving(true);
     try {
       const body: Record<string, unknown> = {
@@ -597,8 +598,8 @@ export default function AdminCustomersPage() {
           <div className="grid gap-3">
             <div className="space-y-1.5"><Label>Name</Label><Input value={editing?.name ?? ""} onChange={(e) => setEditing((p) => p && ({ ...p, name: e.target.value }))} /></div>
             <div className="space-y-1.5"><Label>Email</Label><Input type="email" value={editing?.email ?? ""} onChange={(e) => setEditing((p) => p && ({ ...p, email: e.target.value }))} placeholder="—" /></div>
-            <div className="space-y-1.5"><Label>Mobile</Label><Input value={editing?.mobile ?? ""} onChange={(e) => setEditing((p) => p && ({ ...p, mobile: e.target.value }))} /></div>
-            <div className="space-y-1.5"><Label>Pincode</Label><Input value={editing?.pincode ?? ""} onChange={(e) => setEditing((p) => p && ({ ...p, pincode: e.target.value }))} /></div>
+            <div className="space-y-1.5"><Label>Mobile</Label><Input inputMode="numeric" maxLength={10} value={editing?.mobile ?? ""} onChange={(e) => setEditing((p) => p && ({ ...p, mobile: e.target.value.replace(/\D/g, "").slice(0, 10) }))} /></div>
+            <div className="space-y-1.5"><Label>Pincode</Label><Input inputMode="numeric" maxLength={6} value={editing?.pincode ?? ""} onChange={(e) => setEditing((p) => p && ({ ...p, pincode: e.target.value.replace(/\D/g, "").slice(0, 6) }))} /></div>
             <div className="space-y-1.5">
               <Label>New password <span className="text-muted-foreground">(leave blank to keep)</span></Label>
               <Input type="password" autoComplete="new-password" value={editing?.password ?? ""} onChange={(e) => setEditing((p) => p && ({ ...p, password: e.target.value }))} />
@@ -660,12 +661,12 @@ export default function AdminCustomersPage() {
           </DialogHeader>
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="space-y-1.5 sm:col-span-2"><Label>Full name *</Label><Input value={creating?.name ?? ""} onChange={(e) => setCreating((p) => p && ({ ...p, name: e.target.value }))} placeholder="Ramesh Kumar" /></div>
-            <div className="space-y-1.5"><Label>Mobile *</Label><Input inputMode="numeric" value={creating?.mobile ?? ""} onChange={(e) => setCreating((p) => p && ({ ...p, mobile: e.target.value.replace(/\D/g, "").slice(0, 10) }))} placeholder="10-digit" /></div>
+            <div className="space-y-1.5"><Label>Mobile *</Label><Input inputMode="numeric" maxLength={10} value={creating?.mobile ?? ""} onChange={(e) => setCreating((p) => p && ({ ...p, mobile: e.target.value.replace(/\D/g, "").slice(0, 10) }))} placeholder="10-digit" /></div>
             <div className="space-y-1.5"><Label>Password *</Label><Input type="password" autoComplete="new-password" value={creating?.password ?? ""} onChange={(e) => setCreating((p) => p && ({ ...p, password: e.target.value }))} placeholder="Min 6 characters" /></div>
             <div className="space-y-1.5"><Label>Email</Label><Input type="email" value={creating?.email ?? ""} onChange={(e) => setCreating((p) => p && ({ ...p, email: e.target.value }))} placeholder="you@example.com" /></div>
-            <div className="space-y-1.5"><Label>Pincode</Label><Input value={creating?.pincode ?? ""} onChange={(e) => setCreating((p) => p && ({ ...p, pincode: e.target.value }))} /></div>
+            <div className="space-y-1.5"><Label>Pincode</Label><Input inputMode="numeric" maxLength={6} value={creating?.pincode ?? ""} onChange={(e) => setCreating((p) => p && ({ ...p, pincode: e.target.value.replace(/\D/g, "").slice(0, 6) }))} /></div>
             <div className="space-y-1.5"><Label>Date of birth</Label><Input type="date" value={creating?.dob ?? ""} onChange={(e) => setCreating((p) => p && ({ ...p, dob: e.target.value }))} /></div>
-            <div className="space-y-1.5"><Label>Referral code</Label><Input inputMode="numeric" value={creating?.referrer_code ?? ""} onChange={(e) => setCreating((p) => p && ({ ...p, referrer_code: e.target.value.replace(/\D/g, "").slice(0, 10) }))} placeholder="Referrer's mobile" /></div>
+            <div className="space-y-1.5"><Label>Referral code</Label><Input inputMode="numeric" maxLength={10} value={creating?.referrer_code ?? ""} onChange={(e) => setCreating((p) => p && ({ ...p, referrer_code: e.target.value.replace(/\D/g, "").slice(0, 10) }))} placeholder="Referrer's mobile" /></div>
             <div className="space-y-1.5">
               <Label>State</Label>
               <select className={selectCls} value={creating?.state_id ?? ""} onChange={(e) => setCreating((p) => p && ({ ...p, state_id: e.target.value, district_id: "", taluk_id: "" }))}>

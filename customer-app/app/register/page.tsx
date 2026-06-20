@@ -197,6 +197,7 @@ function RegisterInner() {
     if (password.length < 6) return toast.error("Password must be at least 6 characters");
     if (password !== confirmPassword) return toast.error("Passwords do not match");
     if (referrerCode && !isMobile(referrerCode)) return toast.error("Referrer mobile must be 10 digits");
+    if (pincode && !/^[0-9]{6}$/.test(pincode)) return toast.error("PIN code must be 6 digits");
     setBusy(true);
     try {
       const res = await api.post("/auth/register", {
@@ -266,13 +267,13 @@ function RegisterInner() {
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="mobile">Mobile</Label>
-                <Input id="mobile" type="tel" inputMode="numeric" autoComplete="tel" placeholder="9999999999" value={mobile} onChange={(e) => { setMobile(cleanMobile(e.target.value)); setOtpSent(false); setOtp(""); }} disabled={busy || isLoading} className={`h-11 rounded-xl bg-surface-2/60 ${mobileTaken ? "border-rose-500" : ""}`} />
+                <Input id="mobile" type="tel" inputMode="numeric" maxLength={10} autoComplete="tel" placeholder="9999999999" value={mobile} onChange={(e) => { setMobile(cleanMobile(e.target.value)); setOtpSent(false); setOtp(""); }} disabled={busy || isLoading} className={`h-11 rounded-xl bg-surface-2/60 ${mobileTaken ? "border-rose-500" : ""}`} />
                 {mobileChecking && <p className="text-[11px] text-muted-foreground">Checking…</p>}
                 {mobileTaken === true && <p className="text-[11px] font-medium text-rose-500">⚠ This number already exists — please log in instead.</p>}
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="pincode">Pincode</Label>
-                <Input id="pincode" inputMode="numeric" placeholder="600001" value={pincode} onChange={(e) => setPincode(e.target.value)} disabled={busy || isLoading} className="h-11 rounded-xl bg-surface-2/60" />
+                <Input id="pincode" inputMode="numeric" maxLength={6} placeholder="600001" value={pincode} onChange={(e) => setPincode(e.target.value.replace(/\D/g, "").slice(0, 6))} disabled={busy || isLoading} className="h-11 rounded-xl bg-surface-2/60" />
               </div>
               <div className="space-y-1.5 sm:col-span-2">
                 <Label htmlFor="dob">Date of birth</Label>
@@ -349,7 +350,7 @@ function RegisterInner() {
                   </div>
                 ) : (
                   <>
-                    <Input id="ref" inputMode="numeric" placeholder="Referrer's mobile" value={referrerCode} onChange={(e) => setReferrerCode(cleanMobile(e.target.value))} disabled={busy || isLoading} className="h-11 rounded-xl bg-surface-2/60" />
+                    <Input id="ref" inputMode="numeric" maxLength={10} placeholder="Referrer's mobile" value={referrerCode} onChange={(e) => setReferrerCode(cleanMobile(e.target.value))} disabled={busy || isLoading} className="h-11 rounded-xl bg-surface-2/60" />
                     {isMobile(referrerCode) && (
                       refChecking
                         ? <p className="text-xs text-muted-foreground">Checking…</p>

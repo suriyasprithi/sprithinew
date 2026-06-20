@@ -40,6 +40,7 @@ export type VendorDashboard = {
     active_products: number;
     token_balance: number;
     wallet: number;
+    bonus: number;
     qr_wallet: number;
   };
   orders_series: { date: string; orders: number; revenue: number }[];
@@ -65,6 +66,7 @@ export type StaffDashboard = {
     tokens_received: number;
     token_balance: number;
     wallet: number;
+    bonus: number;
     team_below: number;
   };
   series: { date: string; count: number; value: number }[];

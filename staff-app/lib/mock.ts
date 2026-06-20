@@ -18,6 +18,7 @@ export type StaffStats = {
   tokens_received?: number;
   active_products?: number;
   wallet?: number;
+  bonus?: number;
   qr_wallet?: number;
   team_below?: number;
   pending_deliveries?: number;
@@ -236,7 +237,9 @@ export type ProductCombo = {
 };
 export type VendorProduct = {
   id: number; name: string; price: number; stock: number;
+  category_id?: number | null;
   category_name: string;
+  category_parent_id?: number | null;
   vendor_category_id: number;
   status: "active" | "inactive";
   has_variants: boolean;
@@ -249,6 +252,30 @@ export type VendorProduct = {
   variant_types?: VType[];
   variants?: ProductCombo[];
   variant_images?: VariantImages;
+  // Comprehensive catalog columns (returned by the API; edited in the manual form).
+  mrp?: number | null;
+  code?: string | null;
+  barcode?: string | null;
+  brand?: string | null;
+  hsn_code?: string | null;
+  tax_type?: string | null;
+  tax_percentage?: number | null;
+  discount_type?: string | null;
+  discount_value?: number | null;
+  min_stock_alert?: number | null;
+  max_order_qty?: number | null;
+  weight?: number | null;
+  length?: number | null;
+  width?: number | null;
+  height?: number | null;
+  unit?: string | null;
+  delivery_charge?: number | null;
+  return_days?: number | null;
+  warranty_days?: number | null;
+  short_description?: string | null;
+  tags?: string | null;
+  gallery_images?: string | null;
+  featured?: number | string | boolean | null;
 };
 const vendorProducts: VendorProduct[] = [
   { id: 1, name: "Sona Masuri Rice 5kg",      price: 380, stock: 24, category_name: "Rice Shop",   vendor_category_id: 2, status: "active", has_variants: true,

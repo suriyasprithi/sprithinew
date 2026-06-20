@@ -38,9 +38,16 @@ const periodLabel = (p: string) => {
 };
 
 export default function StaffWalletPage() {
-  const { user } = useAuth();
+  const { user, hydrate } = useAuth();
   const isAdmin = user?.role === "admin";
   const isVendor = user?.role === "vendor";
+
+  // 1 token = ₹1 — tokens are spendable/withdrawable, so show them folded into
+  // the wallet balance. State/district/taluk/vendor must keep a ₹2,500 floor
+  // (withdrawal only; token distribute/approve ignores it).
+  const combined = (user?.token_balance ?? 0) + (user?.wallet_balance ?? 0);
+  const hasFloor = ["state", "district", "taluk", "vendor"].includes(user?.role ?? "");
+  const withdrawable = Math.max(0, combined - 2500);
 
   const [pool, setPool] = useState<PoolPayload | null>(null);
   const [loadingPool, setLoadingPool] = useState(false);
@@ -48,6 +55,11 @@ export default function StaffWalletPage() {
   // Vendor QR wallet balance. Per-purchase transfers to the main wallet happen
   // on the QR Scanner page (one Transfer button per sale).
   const qrBalance = user?.qr_wallet ?? 0;
+
+  // Refresh balances from /auth/me on mount — the auth store can be stale after
+  // purchases/transfers done on other pages, which made the wallet figures here
+  // disagree with the (always-live) dashboard.
+  useEffect(() => { void hydrate?.(); }, [hydrate]);
 
   useEffect(() => {
     if (!isAdmin) return;
@@ -80,8 +92,13 @@ export default function StaffWalletPage() {
                 <Banknote className="h-4 w-4" /> Wallet balance
               </p>
               <p className="text-4xl font-bold tracking-tight md:text-5xl">
-                <AnimatedCounter value={user?.wallet_balance ?? 0} format={fmtINR} />
+                <AnimatedCounter value={combined} format={fmtINR} />
               </p>
+              {hasFloor && (
+                <p className="text-xs opacity-80">
+                  Keep ₹2,500 minimum · Withdrawable {fmtINR(withdrawable)}
+                </p>
+              )}
             </div>
           </LuxuryCard>
         </motion.div>

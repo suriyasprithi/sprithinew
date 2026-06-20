@@ -584,7 +584,7 @@ export default function ManageVendorsPage() {
               </div>
             )}
             <div className="space-y-1.5"><Label>Owner name</Label><Input value={adding?.name ?? ""} onChange={(e) => setAdding((p) => p && ({ ...p, name: e.target.value }))} /></div>
-            <div className="space-y-1.5"><Label>Mobile</Label><Input inputMode="numeric" value={adding?.mobile ?? ""} onChange={(e) => setAdding((p) => p && ({ ...p, mobile: cleanMobile(e.target.value) }))} /></div>
+            <div className="space-y-1.5"><Label>Mobile</Label><Input inputMode="numeric" maxLength={10} value={adding?.mobile ?? ""} onChange={(e) => setAdding((p) => p && ({ ...p, mobile: cleanMobile(e.target.value) }))} /></div>
             <div className="space-y-1.5"><Label>Shop name</Label><Input value={adding?.shop_name ?? ""} onChange={(e) => setAdding((p) => p && ({ ...p, shop_name: e.target.value }))} /></div>
             <div className="space-y-1.5">
               <Label>Vendor category</Label>

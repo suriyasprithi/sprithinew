@@ -413,7 +413,7 @@ export default function AdminDriversPage() {
           </DialogHeader>
           <div className="grid gap-3 md:grid-cols-2">
             <div className="space-y-1.5 md:col-span-2"><Label>Name</Label><Input value={adding?.name ?? ""} onChange={(e) => setAdding((p) => p && ({ ...p, name: e.target.value }))} /></div>
-            <div className="space-y-1.5"><Label>Mobile</Label><Input inputMode="numeric" value={adding?.mobile ?? ""} onChange={(e) => setAdding((p) => p && ({ ...p, mobile: cleanMobile(e.target.value) }))} /></div>
+            <div className="space-y-1.5"><Label>Mobile</Label><Input inputMode="numeric" maxLength={10} value={adding?.mobile ?? ""} onChange={(e) => setAdding((p) => p && ({ ...p, mobile: cleanMobile(e.target.value) }))} /></div>
             <div className="space-y-1.5"><Label>Password</Label><Input type="password" value={adding?.password ?? ""} onChange={(e) => setAdding((p) => p && ({ ...p, password: e.target.value }))} /></div>
             <div className="space-y-1.5"><Label>Vehicle</Label><Input value={adding?.vehicle ?? ""} onChange={(e) => setAdding((p) => p && ({ ...p, vehicle: e.target.value }))} placeholder="TN-37 AB 1234" /></div>
             <div className="space-y-1.5"><Label>License</Label><Input value={adding?.license ?? ""} onChange={(e) => setAdding((p) => p && ({ ...p, license: e.target.value }))} /></div>

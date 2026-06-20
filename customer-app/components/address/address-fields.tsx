@@ -69,8 +69,9 @@ export function AddressFields({
           <Input
             id={`${idPrefix}_pin`}
             inputMode="numeric"
+            maxLength={6}
             value={form.pincode}
-            onChange={(e) => setForm({ ...form, pincode: e.target.value.replace(/\D/g, "").slice(0, 10) })}
+            onChange={(e) => setForm({ ...form, pincode: e.target.value.replace(/\D/g, "").slice(0, 6) })}
           />
         </div>
       </div>

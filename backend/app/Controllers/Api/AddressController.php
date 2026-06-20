@@ -115,7 +115,7 @@ class AddressController extends BaseApiController
             'address_line' => 'required|string|max_length[255]',
             'landmark'     => 'permit_empty|string|max_length[100]',
             'city'         => 'permit_empty|string|max_length[80]',
-            'pincode'      => 'permit_empty|string|max_length[10]',
+            'pincode'      => 'permit_empty|regex_match[/^[0-9]{6}$/]',
         ];
     }
 
