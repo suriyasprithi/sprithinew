@@ -93,13 +93,22 @@ class PurchaseController extends BaseApiController
 
         $amount = (float) $d['amount'];
 
-        $vendor = $users->find($auth->id);
+        $vendor    = $users->find($auth->id);
+        $poolPct   = CommissionService::poolPctForVendor((int) $auth->id);
+        $poolAmt   = round($amount * $poolPct / 100, 2);
+        $poolLabel = rtrim(rtrim(number_format($poolPct, 2, '.', ''), '0'), '.');
 
-        // Synthetic order record (no items). The customer's wallet is NOT charged
-        // for a vendor-entered in-store purchase — the customer pays in person.
-        // The vendor still receives their sale share and the MLM commission still
-        // runs (business-funded), so the sale generates rewards without touching
-        // the customer's wallet balance.
+        // Vendor-entered in-store purchase: the customer paid the bill in person,
+        // so the customer's wallet is NOT charged and the vendor receives NO sale
+        // credit (they already hold the cash). Instead the platform commission
+        // (the vendor's commission_pct of the sale) is DEBITED from the vendor's
+        // main wallet and distributed to the MLM uplines + admin pools. Require
+        // the vendor can cover the commission before recording the sale.
+        if ($poolAmt > 0 && (float) ($vendor['wallet_balance'] ?? 0) < $poolAmt) {
+            return $this->fail("Insufficient main wallet balance to cover the {$poolLabel}% commission (₹{$poolAmt}).", 402);
+        }
+
+        // Synthetic order record (no items). Customer wallet untouched.
         $orderId = (new OrderModel())->insert([
             'customer_id' => (int) $customer['id'],
             'vendor_id'   => (int) $auth->id,
@@ -108,15 +117,13 @@ class PurchaseController extends BaseApiController
             'notes'       => 'In-store purchase (vendor-entered)',
         ], true);
 
-        // Credit the vendor their share — (100 − the vendor's commission %) — to
-        // the MAIN wallet; only customer-scanned QR sales land in the QR wallet.
-        // The remaining commission % is the pool distributed below.
-        $poolPct     = CommissionService::poolPctForVendor((int) $auth->id);
-        $sharePct    = rtrim(rtrim(number_format(100 - $poolPct, 2, '.', ''), '0'), '.');
-        $vendorShare = round($amount * (1 - $poolPct / 100), 2);
-        (new WalletService())->credit((int) $auth->id, 'wallet', $vendorShare, 'receive', 'order#' . $orderId, "Sale ({$sharePct}% of in-store purchase)");
+        // Deduct the commission from the vendor's main wallet — it funds the MLM
+        // pool distribution below (no sale credit to the vendor).
+        if ($poolAmt > 0) {
+            (new WalletService())->debit((int) $auth->id, 'wallet', $poolAmt, 'commission', 'order#' . $orderId, "Commission ({$poolLabel}% of in-store sale)");
+        }
 
-        // 9-way commission pool distribution
+        // 9-way commission pool distribution (funded by the vendor's debit above)
         (new CommissionService())->distributeForOrder((int) $orderId, (int) $customer['id'], $amount, (int) $auth->id);
 
         $svc = new NotificationService();
