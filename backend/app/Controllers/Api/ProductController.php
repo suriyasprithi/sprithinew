@@ -23,6 +23,13 @@ class ProductController extends BaseApiController
     private const MM_STRINGS = ['manual_rate', 'tax_type', 'agent', 'csquare', 'multi_pricing'];
     private const MM_DATES   = ['created_date', 'modified_date'];
 
+    /** Comprehensive catalog import columns by type — written through catalogColumns(). */
+    private const CAT_DECIMALS = [
+        'tax_percentage', 'discount_value', 'discount_amount', 'weight', 'length', 'width', 'height', 'delivery_charge',
+    ];
+    private const CAT_INTS    = ['min_stock_alert', 'max_order_qty', 'return_days', 'warranty_days'];
+    private const CAT_STRINGS = ['brand', 'hsn_code', 'unit', 'short_description', 'tags'];
+
     /** Customer-facing list — only active products. Staff may pass location filters. */
     public function index(): ResponseInterface
     {
@@ -297,12 +304,16 @@ class ProductController extends BaseApiController
     }
 
     /**
-     * Admin bulk-import a vendor's catalog from the POS "Material Master" sheet.
-     * Body: { vendor_id, items: [{ code, barcode, name, mrp, price, category, image, status }] }.
-     * Categories are matched by name (created if missing). Rows duplicating an
-     * existing product (same vendor + name, or same non-empty code) are skipped;
-     * invalid rows are reported but don't abort the rest. Customer-relevant
-     * columns only — accounting columns in the sheet are ignored.
+     * Admin bulk-import a vendor's catalog (comprehensive structure). Per row:
+     *  - requires Product Name + a valid Selling Price (else counted as failed),
+     *  - auto-creates the Category and (under it) the Sub Category, pointing the
+     *    product at the deepest one,
+     *  - upserts by SKU/Code: an existing code is updated, a new code is created;
+     *    a row with no code falls back to skip-by-name,
+     *  - stores every catalog column and computes discount_amount / tax_amount.
+     * Bad rows are reported but never abort the rest (no all-or-nothing rollback).
+     * The frontend chunks large catalogs into ~250-row calls and aggregates this.
+     * Returns: { created, updated, skipped, failed_count, failed[], total }.
      */
     public function adminImport(): ResponseInterface
     {
@@ -314,78 +325,200 @@ class ProductController extends BaseApiController
         $vendorId = isset($d['vendor_id']) ? (int) $d['vendor_id'] : 0;
         $items    = $d['items'] ?? null;
         if (! is_array($items) || ! $items) return $this->fail('No rows to import', 422);
-        if (count($items) > 2000)           return $this->fail('Too many rows (max 2000 per import)', 422);
+        if (count($items) > 2000)           return $this->fail('Too many rows (max 2000 per request)', 422);
 
         $vendor = (new UserModel())->find($vendorId);
         if (! $vendor || $vendor['role'] !== 'vendor') return $this->fail('Pick a valid vendor', 422);
 
-        // Category name -> id (lowercased), created on demand within the run.
+        $model    = new ProductModel();
         $catModel = new CategoryModel();
-        $catMap   = [];
-        foreach ($catModel->findAll() as $c) $catMap[mb_strtolower(trim((string) $c['name']))] = (int) $c['id'];
 
-        // Existing products for this vendor — to skip duplicates on re-import.
-        $names = [];
-        $codes = [];
-        foreach ((new ProductModel())->where('vendor_id', $vendorId)->findAll() as $p) {
-            $names[mb_strtolower(trim((string) $p['name']))] = true;
-            if (! empty($p['code'])) $codes[mb_strtolower(trim((string) $p['code']))] = true;
+        // Categories keyed by "<parentId|0>|<lower name>" — created on demand so a
+        // sub-category resolves under its own parent (uniqueness per parent+name).
+        $catMap = [];
+        foreach ($catModel->findAll() as $c) {
+            $pid = isset($c['parent_id']) && $c['parent_id'] !== null ? (int) $c['parent_id'] : 0;
+            $catMap[$pid . '|' . mb_strtolower(trim((string) $c['name']))] = (int) $c['id'];
+        }
+        $resolveCat = static function (string $name, int $parentId) use (&$catMap, $catModel): ?int {
+            $name = trim($name);
+            if ($name === '') return null;
+            $key = $parentId . '|' . mb_strtolower($name);
+            if (isset($catMap[$key])) return $catMap[$key];
+            $id = (int) $catModel->insert([
+                'name'      => $name,
+                'parent_id' => $parentId ?: null,
+                'status'    => 'active',
+            ], true);
+            $catMap[$key] = $id;
+            return $id;
+        };
+
+        // Existing products for this vendor — for upsert-by-code / skip-by-name.
+        $byCode = [];
+        $byName = [];
+        foreach ($model->where('vendor_id', $vendorId)->findAll() as $p) {
+            $byName[mb_strtolower(trim((string) $p['name']))] = (int) $p['id'];
+            if (! empty($p['code'])) $byCode[mb_strtolower(trim((string) $p['code']))] = (int) $p['id'];
         }
 
-        $db = \Config\Database::connect();
-        $db->transStart();
+        $created = 0; $updated = 0; $skipped = 0; $failed = [];
 
-        $created = 0; $skipped = 0; $errors = [];
         foreach (array_values($items) as $i => $item) {
             $line = $i + 1;
-            if (! is_array($item)) { $errors[] = ['row' => $line, 'reason' => 'Invalid row']; continue; }
-            $name  = trim((string) ($item['name'] ?? ''));
-            $price = $item['price'] ?? null;
-            if ($name === '')                               { $errors[] = ['row' => $line, 'reason' => 'Name required']; continue; }
-            if (! is_numeric($price) || (float) $price < 0) { $errors[] = ['row' => $line, 'reason' => 'Valid price required']; continue; }
+            try {
+                if (! is_array($item)) { $failed[] = ['row' => $line, 'name' => '', 'reason' => 'Invalid row']; continue; }
 
-            $code = trim((string) ($item['code'] ?? ''));
-            $nKey = mb_strtolower($name);
-            $cKey = $code !== '' ? mb_strtolower($code) : null;
-            if (isset($names[$nKey]) || ($cKey && isset($codes[$cKey]))) { $skipped++; continue; }
+                $name  = trim((string) ($item['name'] ?? ''));
+                $price = $item['price'] ?? null;
+                if ($name === '')                               { $failed[] = ['row' => $line, 'name' => $name, 'reason' => 'Product Name required']; continue; }
+                if (! is_numeric($price) || (float) $price < 0) { $failed[] = ['row' => $line, 'name' => $name, 'reason' => 'Valid Selling Price required']; continue; }
+                $price = (float) $price;
 
-            $catId   = null;
-            $catName = trim((string) ($item['category'] ?? ''));
-            if ($catName !== '') {
-                $key = mb_strtolower($catName);
-                if (! isset($catMap[$key])) {
-                    $catMap[$key] = (int) $catModel->insert(['name' => $catName, 'status' => 'active'], true);
+                // Category → Sub Category (the deepest resolved one wins as category_id).
+                $catId      = null;
+                $parentName = trim((string) ($item['category'] ?? ''));
+                $subName    = trim((string) ($item['sub_category'] ?? ''));
+                if ($parentName !== '') {
+                    $catId = $resolveCat($parentName, 0);
+                    if ($subName !== '' && $catId) {
+                        $sid = $resolveCat($subName, $catId);
+                        if ($sid) $catId = $sid;
+                    }
+                } elseif ($subName !== '') {
+                    $catId = $resolveCat($subName, 0);
                 }
-                $catId = $catMap[$key];
+
+                $code = trim((string) ($item['code'] ?? ''));
+                $cKey = $code !== '' ? mb_strtolower($code) : null;
+                $nKey = mb_strtolower($name);
+
+                // Resolved base fields. null = "leave unchanged" on update.
+                $statusRaw = mb_strtolower(trim((string) ($item['status'] ?? '')));
+                $status    = $statusRaw === '' ? null : (in_array($statusRaw, ['inactive', '0', 'no', 'disabled', 'off'], true) ? 'inactive' : 'active');
+                $stockRaw  = $item['stock'] ?? '';
+                $stock     = is_numeric($stockRaw) ? (int) $stockRaw : null;
+                $base = [
+                    'category_id' => $catId,
+                    'name'        => $name,
+                    'description' => trim((string) ($item['description'] ?? '')) !== '' ? trim((string) $item['description']) : null,
+                    'price'       => $price,
+                    'mrp'         => isset($item['mrp']) && is_numeric($item['mrp']) ? (float) $item['mrp'] : null,
+                    'code'        => $code !== '' ? $code : null,
+                    'barcode'     => trim((string) ($item['barcode'] ?? '')) !== '' ? trim((string) $item['barcode']) : null,
+                    'image'       => ! empty($item['image']) ? trim((string) $item['image']) : null,
+                    'status'      => $status,
+                    'stock'       => $stock,
+                ];
+
+                // UPDATE existing (matched by code). Strip nulls so blank cells in
+                // the sheet don't wipe existing data.
+                if ($cKey !== null && isset($byCode[$cKey])) {
+                    $payload = array_merge($base, $this->catalogColumns($item));
+                    $payload = array_filter($payload, static fn ($v) => $v !== null);
+                    $model->update($byCode[$cKey], $payload);
+                    $updated++;
+                    continue;
+                }
+
+                // No code but the product name already exists → skip (can't upsert safely).
+                if ($cKey === null && isset($byName[$nKey])) { $skipped++; continue; }
+
+                // INSERT — apply create-time defaults for blank status/stock.
+                $id = $this->persistProduct(array_merge($item, $base, [
+                    'status' => $status ?? 'active',
+                    'stock'  => $stock ?? 0,
+                ]), $vendorId);
+                if ($cKey !== null) $byCode[$cKey] = $id;
+                $byName[$nKey] = $id;
+                $created++;
+            } catch (\Throwable $e) {
+                $failed[] = ['row' => $line, 'name' => is_array($item) ? (string) ($item['name'] ?? '') : '', 'reason' => $e->getMessage()];
             }
-
-            $statusRaw = mb_strtolower(trim((string) ($item['status'] ?? '')));
-            $status    = in_array($statusRaw, ['inactive', '0', 'no', 'disabled', 'off'], true) ? 'inactive' : 'active';
-
-            // Merge the raw row (carries all Material Master extra columns) with the
-            // resolved/overridden fields, so persistProduct() stores every column.
-            $this->persistProduct(array_merge($item, [
-                'name'        => $name,
-                'price'       => (float) $price,
-                'mrp'         => $item['mrp'] ?? null,
-                'code'        => $code,
-                'barcode'     => trim((string) ($item['barcode'] ?? '')),
-                'image'       => ! empty($item['image']) ? trim((string) $item['image']) : null,
-                'category_id' => $catId,
-                'status'      => $status,
-                'stock'       => 9999,   // sheet has no stock — default in-stock so the catalog is sellable
-            ]), $vendorId);
-
-            $names[$nKey] = true;
-            if ($cKey) $codes[$cKey] = true;
-            $created++;
         }
 
-        $db->transComplete();
-        if ($db->transStatus() === false) return $this->fail('Import failed', 500);
+        $msg = "Created {$created}, updated {$updated}, skipped {$skipped}" . ($failed ? (', ' . count($failed) . ' failed') : '');
+        return $this->ok([
+            'created'      => $created,
+            'updated'      => $updated,
+            'skipped'      => $skipped,
+            'failed_count' => count($failed),
+            'failed'       => array_slice($failed, 0, 100),
+            'total'        => count($items),
+        ], $msg);
+    }
 
-        $msg = "Imported {$created}, skipped {$skipped}" . ($errors ? (', ' . count($errors) . ' error rows') : '');
-        return $this->ok(['created' => $created, 'skipped' => $skipped, 'errors' => $errors], $msg);
+    /**
+     * Normalize the Material Master + comprehensive-catalog columns from a decoded
+     * import row into a products-table payload fragment. Shared by persistProduct()
+     * (insert) and the admin catalog import's update path so both write an identical
+     * column set. Also computes discount_amount, and tax_amount when the sheet leaves
+     * it blank — both stored-only, they never change the displayed selling price.
+     */
+    private function catalogColumns(array $d): array
+    {
+        $out = [];
+
+        // Material Master columns (decimals / strings / dates).
+        foreach (self::MM_DECIMALS as $f) $out[$f] = (isset($d[$f]) && is_numeric($d[$f])) ? (float) $d[$f] : null;
+        foreach (self::MM_STRINGS as $f)  $out[$f] = (isset($d[$f]) && trim((string) $d[$f]) !== '') ? trim((string) $d[$f]) : null;
+        foreach (self::MM_DATES as $f) {
+            $ts = ! empty($d[$f]) ? strtotime((string) $d[$f]) : false;
+            $out[$f] = $ts ? date('Y-m-d H:i:s', $ts) : null;
+        }
+
+        // Comprehensive catalog columns.
+        foreach (self::CAT_DECIMALS as $f) $out[$f] = (isset($d[$f]) && is_numeric($d[$f])) ? (float) $d[$f] : null;
+        foreach (self::CAT_INTS as $f)     $out[$f] = (isset($d[$f]) && is_numeric($d[$f])) ? (int) $d[$f] : null;
+        foreach (self::CAT_STRINGS as $f)  $out[$f] = (isset($d[$f]) && trim((string) $d[$f]) !== '') ? trim((string) $d[$f]) : null;
+
+        // discount_type → percentage | fixed (or null).
+        $dt = mb_strtolower(trim((string) ($d['discount_type'] ?? '')));
+        if (in_array($dt, ['percentage', 'percent', '%'], true))  $dt = 'percentage';
+        elseif (in_array($dt, ['fixed', 'flat', 'amount'], true)) $dt = 'fixed';
+        else                                                      $dt = null;
+        $out['discount_type'] = $dt;
+
+        // featured: blank → null (left unchanged on update); any explicit value → 0/1.
+        $ff = mb_strtolower(trim((string) ($d['featured'] ?? '')));
+        $out['featured'] = $ff === '' ? null : (in_array($ff, ['1', 'yes', 'true', 'y', 'featured', 'on'], true) ? 1 : 0);
+
+        // gallery_images: array or delimited string of URLs → JSON array.
+        $out['gallery_images'] = $this->normalizeGallery($d['gallery_images'] ?? null);
+
+        // Computed amounts off the selling price (stored only).
+        $price = isset($d['price']) && is_numeric($d['price']) ? (float) $d['price'] : 0.0;
+        $dv    = $out['discount_value'];
+        if ($dt === 'percentage' && $dv !== null)  $out['discount_amount'] = round($price * $dv / 100, 2);
+        elseif ($dt === 'fixed' && $dv !== null)   $out['discount_amount'] = round(min($dv, $price), 2);
+
+        // tax_amount only when the sheet didn't provide one (base = selling price).
+        if ($out['tax_amount'] === null && $out['tax_percentage'] !== null) {
+            $tp   = (float) $out['tax_percentage'];
+            $incl = strpos(mb_strtolower((string) ($out['tax_type'] ?? '')), 'inclus') !== false;
+            if ($incl) {
+                $out['tax_amount'] = ($tp > -100) ? round($price - $price / (1 + $tp / 100), 2) : null;
+            } else {
+                $out['tax_amount'] = round($price * $tp / 100, 2);
+            }
+        }
+
+        return $out;
+    }
+
+    /** Normalize a gallery value (array or `|`/newline/comma-delimited URLs) → JSON array, or null. */
+    private function normalizeGallery($v): ?string
+    {
+        if (is_array($v)) {
+            $parts = $v;
+        } else {
+            $s = trim((string) $v);
+            if ($s === '') return null;
+            $parts = preg_split('/[|\r\n]+/', $s);
+            if (count($parts) === 1 && strpos($s, ',') !== false) $parts = explode(',', $s);
+        }
+        $urls = array_values(array_filter(array_map(static fn ($u) => trim((string) $u), $parts), static fn ($u) => $u !== ''));
+        return $urls ? json_encode($urls, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) : null;
     }
 
     /**
@@ -416,13 +549,10 @@ class ProductController extends BaseApiController
             'attributes'         => $attrs !== null ? json_encode($attrs, JSON_UNESCAPED_UNICODE) : null,
             'status'             => $d['status'] ?? 'active',
         ];
-        // Material Master extra columns — only set when present (normal create → null).
-        foreach (self::MM_DECIMALS as $f) $payload[$f] = (isset($d[$f]) && is_numeric($d[$f])) ? (float) $d[$f] : null;
-        foreach (self::MM_STRINGS as $f)  $payload[$f] = (isset($d[$f]) && trim((string) $d[$f]) !== '') ? trim((string) $d[$f]) : null;
-        foreach (self::MM_DATES as $f) {
-            $ts = ! empty($d[$f]) ? strtotime((string) $d[$f]) : false;
-            $payload[$f] = $ts ? date('Y-m-d H:i:s', $ts) : null;
-        }
+        // Material Master + comprehensive catalog columns — only set when present
+        // (a normal vendor create leaves them null). Single source of truth for
+        // both this insert and the admin catalog import's update path.
+        $payload = array_merge($payload, $this->catalogColumns($d));
 
         $id = (new ProductModel())->insert($payload, true);
         $this->syncVariants((int) $id, $variants);

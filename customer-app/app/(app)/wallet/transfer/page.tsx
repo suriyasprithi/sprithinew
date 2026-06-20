@@ -14,23 +14,13 @@ import { api, apiErrorMessage } from "@/lib/api";
 import type { WalletKey } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
-// Level wallets unlock for transfer once the referral count hits the threshold
-// (the backend enforces it too). Buyback & Global are always transferable.
-const LEVEL_UNLOCK: Record<string, number> = { level_1: 100, level_2: 10000, level_3: 100000 };
-const LEVEL_LABEL: Record<string, string> = { level_1: "Level 1 (L1)", level_2: "Level 2 (L2)", level_3: "Level 3 (L3)" };
-
 function TransferInner() {
   const router = useRouter();
   const search = useSearchParams();
   const { user, hydrate } = useAuth();
 
-  const countFor = (k: WalletKey) =>
-    k === "level_1" ? (user?.level_1_count ?? 0)
-    : k === "level_2" ? (user?.level_2_count ?? 0)
-    : k === "level_3" ? (user?.level_3_count ?? 0)
-    : 0;
-
   const balanceFor = (k: WalletKey) => {
+    if (k === "level")   return (user?.level_1_wallet ?? 0) + (user?.level_2_wallet ?? 0) + (user?.level_3_wallet ?? 0);
     if (k === "level_1") return user?.level_1_wallet ?? 0;
     if (k === "level_2") return user?.level_2_wallet ?? 0;
     if (k === "level_3") return user?.level_3_wallet ?? 0;
@@ -39,17 +29,19 @@ function TransferInner() {
     return 0;
   };
 
-  // Sources: unlocked level wallets (referral count >= threshold) + buyback + global.
+  // Level money is freely transferable to the main wallet (no restriction).
+  // "Level (all)" drains L1+L2+L3; the individual levels are listed too.
   const sources: { key: WalletKey; label: string }[] = [
-    ...(["level_1", "level_2", "level_3"] as WalletKey[])
-      .filter((k) => countFor(k) >= LEVEL_UNLOCK[k])
-      .map((k) => ({ key: k, label: LEVEL_LABEL[k] })),
+    { key: "level",   label: "Level (all)" },
+    { key: "level_1", label: "Level 1 (L1)" },
+    { key: "level_2", label: "Level 2 (L2)" },
+    { key: "level_3", label: "Level 3 (L3)" },
     { key: "buyback", label: "Buyback wallet" },
     { key: "global",  label: "Global wallet" },
   ];
 
-  const fromParam = (search.get("from") as WalletKey) || sources[0]?.key || "buyback";
-  const [from, setFrom] = useState<WalletKey>(sources.find((t) => t.key === fromParam)?.key ?? sources[0]?.key ?? "buyback");
+  const fromParam = (search.get("from") as WalletKey) || "level";
+  const [from, setFrom] = useState<WalletKey>(sources.find((t) => t.key === fromParam)?.key ?? "level");
   const [amount, setAmount] = useState("");
   const [busy, setBusy] = useState(false);
   const available = balanceFor(from);

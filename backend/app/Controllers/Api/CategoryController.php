@@ -16,7 +16,9 @@ class CategoryController extends BaseApiController
      */
     public function index(): ResponseInterface
     {
-        $model = (new CategoryModel())->where('status', 'active');
+        // Top-level categories only — auto-created sub-categories (parent_id set)
+        // are leaves and must not appear in the public/vendor top-level pickers.
+        $model = (new CategoryModel())->where('status', 'active')->where('parent_id', null);
         $vcid  = (int) $this->request->getGet('vendor_category_id');
         if ($vcid > 0) {
             $model->where('vendor_category_id', $vcid);

@@ -51,7 +51,8 @@ class WalletController extends BaseApiController
         // Build OR-list of LIKE patterns for the matching tag set. We match both
         // the modern [+wallet]/[-wallet] note tags AND the un-tagged legacy rows
         // imported from u290807677_epey, so migrated users see their full history.
-        $isMain  = $wallet === 'wallet';
+        $isMain     = $wallet === 'wallet';
+        $isPerLevel = in_array($wallet, ['level_1', 'level_2', 'level_3'], true);
         $conds   = [];
         $params  = [(int) $auth->id];
         foreach ($tagWallets as $tw) {
@@ -83,6 +84,11 @@ class WalletController extends BaseApiController
             $where .= " AND type != 'welcome_bonus'";
         } elseif ($isWelcome) {
             $where .= " AND type = 'welcome_bonus'";
+        } elseif ($isPerLevel) {
+            // The L1/L2/L3 cards are the per-level Welcome Bonus view — exclude
+            // MLM purchase commission (it's shown on the LEVEL card's history).
+            // Welcome signup bonuses + legacy level income stay visible.
+            $where .= " AND (type = 'welcome_bonus' OR notes LIKE '%[legacy income]%')";
         }
 
         // Fetch up to 2000 matching rows: totals are summed over all of them,
@@ -273,28 +279,37 @@ class WalletController extends BaseApiController
     {
         $auth = $this->authUser();
         if (! $auth) return $this->fail('Unauthorized', 401);
-        if (! $this->validate([
-            'from'   => 'required|in_list[wallet,monthly,level,level_1,level_2,level_3,global,buyback,qr]',
-            'to'     => 'required|in_list[wallet,monthly,level,level_1,level_2,level_3,global,buyback,qr]',
-            'amount' => 'required|numeric|greater_than[0]',
-        ])) return $this->fail('Validation failed', 422, $this->validator->getErrors());
-        $d = $this->request->getJSON(true) ?? $this->request->getPost();
-        if ($d['from'] === $d['to']) return $this->fail('Source and destination must differ', 422);
 
-        // Level wallets (L1/L2/L3) are gated: transfer unlocks only once the
-        // user's referral count for that level reaches its threshold.
-        $gatedLevel = ['level_1' => 1, 'level_2' => 2, 'level_3' => 3][$d['from']] ?? null;
-        if ($gatedLevel !== null) {
-            $defaults  = [1 => 100, 2 => 10000, 3 => 100000];
-            $threshold = (int) (new SystemSettingsService())->getFloat("level.unlock_threshold_{$gatedLevel}", $defaults[$gatedLevel]);
-            $u         = (new UserModel())->find((int) $auth->id);
-            $count     = (int) ($u["level_{$gatedLevel}_count"] ?? 0);
-            if ($count < $threshold) {
-                return $this->fail("Level {$gatedLevel} is locked — reach {$threshold} referrals to unlock transfer.", 403);
+        $d   = $this->request->getJSON(true) ?? $this->request->getPost();
+        $svc = new WalletService();
+
+        // "level" = the combined level commission (L1+L2+L3). Freely transferable
+        // to the main wallet, no restriction — drain L1, then L2, then L3 up to
+        // the requested amount.
+        if (($d['from'] ?? '') === 'level') {
+            if (! is_numeric($d['amount'] ?? null) || (float) $d['amount'] <= 0) return $this->fail('Amount required', 422);
+            $amount = round((float) $d['amount'], 2);
+            $bal    = $svc->balances((int) $auth->id);
+            $avail  = round($bal['level_1'] + $bal['level_2'] + $bal['level_3'], 2);
+            if ($amount > $avail + 0.005) return $this->fail('Insufficient level balance', 402);
+            $left = $amount;
+            foreach (['level_1', 'level_2', 'level_3'] as $lk) {
+                if ($left <= 0.005) break;
+                $take = round(min($left, $bal[$lk]), 2);
+                if ($take > 0) { $svc->transfer((int) $auth->id, $lk, 'wallet', $take); $left -= $take; }
             }
+            return $this->ok($svc->balances((int) $auth->id), 'Transferred');
         }
 
-        $svc = new WalletService();
+        if (! $this->validate([
+            'from'   => 'required|in_list[wallet,monthly,level_1,level_2,level_3,global,buyback,qr]',
+            'to'     => 'required|in_list[wallet,monthly,level_1,level_2,level_3,global,buyback,qr]',
+            'amount' => 'required|numeric|greater_than[0]',
+        ])) return $this->fail('Validation failed', 422, $this->validator->getErrors());
+        if ($d['from'] === $d['to']) return $this->fail('Source and destination must differ', 422);
+
+        // Level wallets (L1/L2/L3) are freely transferable to the main wallet —
+        // no referral-threshold gating.
         $ok = $svc->transfer((int) $auth->id, $d['from'], $d['to'], (float) $d['amount']);
         if (! $ok) return $this->fail('Insufficient balance in source wallet', 402);
         return $this->ok($svc->balances((int) $auth->id), 'Transferred');

@@ -45,7 +45,6 @@ export default function ActivityPage() {
 
   // Multi-select / combinable filters.
   const [sources, setSources] = useState<Source[]>([]); // empty = all
-  const [levels, setLevels] = useState<number[]>([]);   // empty = all (referral only)
   const [direction, setDirection] = useState<Direction>("");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
@@ -54,7 +53,8 @@ export default function ActivityPage() {
 
   // Serialized filter params (also used as effect deps so arrays compare by value).
   const sourceParam = sources.length > 0 && sources.length < ALL_SOURCES.length ? sources.join(",") : "";
-  const levelParam = referralInScope && levels.length > 0 && levels.length < 3 ? levels.join(",") : "";
+  // L2/L3 history is hidden everywhere — only L1 referral bonuses are ever shown.
+  const levelParam = referralInScope ? "1" : "";
 
   useEffect(() => {
     let active = true;
@@ -87,17 +87,13 @@ export default function ActivityPage() {
     setSources((cur) => (cur.includes(s) ? cur.filter((x) => x !== s) : [...cur, s]));
     resetPage();
   };
-  const toggleLevel = (l: number) => {
-    setLevels((cur) => (cur.includes(l) ? cur.filter((x) => x !== l) : [...cur, l]));
-    resetPage();
-  };
   const chooseAllSources = () => { setSources([]); resetPage(); };
   const chooseDirection = (d: Direction) => { setDirection(d); resetPage(); };
   const changeFrom = (v: string) => { setFrom(v); resetPage(); };
   const changeTo = (v: string) => { setTo(v); resetPage(); };
 
-  const hasFilters = sources.length > 0 || levels.length > 0 || direction !== "" || from !== "" || to !== "";
-  const clearAll = () => { setSources([]); setLevels([]); setDirection(""); setFrom(""); setTo(""); resetPage(); };
+  const hasFilters = sources.length > 0 || direction !== "" || from !== "" || to !== "";
+  const clearAll = () => { setSources([]); setDirection(""); setFrom(""); setTo(""); resetPage(); };
 
   const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
@@ -122,16 +118,6 @@ export default function ActivityPage() {
               <FilterPill key={s} active={sources.includes(s)} onClick={() => toggleSource(s)} label={SOURCE_META[s].label} />
             ))}
           </div>
-
-          {/* Referral level — multi-select (only when referral is in scope) */}
-          {referralInScope && (
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="text-[11px] uppercase tracking-wider text-muted-foreground">Level</span>
-              {[1, 2, 3].map((l) => (
-                <FilterPill key={l} small active={levels.includes(l)} onClick={() => toggleLevel(l)} label={`L${l}`} />
-              ))}
-            </div>
-          )}
 
           {/* Direction + date range */}
           <div className="flex flex-wrap items-center gap-2">
