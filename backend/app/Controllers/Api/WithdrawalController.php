@@ -10,6 +10,10 @@ use CodeIgniter\HTTP\ResponseInterface;
 
 class WithdrawalController extends BaseApiController
 {
+    /** Minimum wallet balance state/district/taluk/vendor must keep — they may
+     *  only withdraw the amount above this. Token operations ignore it. */
+    private const MIN_WALLET = 2500.0;
+
     public function create(): ResponseInterface
     {
         $auth = $this->authUser();
@@ -29,7 +33,21 @@ class WithdrawalController extends BaseApiController
         if (($u['kyc_status'] ?? 'none') !== 'verified') {
             return $this->fail('Complete and get your KYC verified before withdrawing.', 403);
         }
-        if ((float) ($u['wallet_balance'] ?? 0) < $amount) return $this->fail('Insufficient balance', 402);
+        // State/district/taluk/vendor must keep a ₹2,500 minimum — they can only
+        // withdraw above it. Token balance is spendable as ₹ (1 token = ₹1) so it
+        // counts toward the withdrawable amount. Other roles have no floor.
+        // (Token distribute/approve/accept is NOT limited by this minimum.)
+        $combined = (float) ($u['token_balance'] ?? 0) + (float) ($u['wallet_balance'] ?? 0);
+        $floor    = in_array($u['role'] ?? '', ['state', 'district', 'taluk', 'vendor'], true) ? self::MIN_WALLET : 0.0;
+        $maxWithdrawable = max(0.0, $combined - $floor);
+        if ($amount > $maxWithdrawable) {
+            return $this->fail(
+                $floor > 0
+                    ? 'Keep a minimum balance of ₹' . number_format($floor, 0) . '. You can withdraw up to ₹' . number_format($maxWithdrawable, 2) . '.'
+                    : 'Insufficient balance',
+                402
+            );
+        }
 
         // Bank / UPI come from the verified KYC — snapshot them onto the request
         // so the admin sees exactly where the payout goes.
@@ -105,10 +123,18 @@ class WithdrawalController extends BaseApiController
 
         $users = new UserModel();
         $u = $users->find($row['user_id']);
-        $bal = (float) ($u['wallet_balance'] ?? 0);
-        if ($bal < (float) $row['amount']) return $this->fail('User has insufficient balance', 409);
-
-        $users->update($row['user_id'], ['wallet_balance' => $bal - (float) $row['amount']]);
+        // Pay out of the wallet (₹) first, then the token balance (1 token = ₹1)
+        // for any remainder — mirrors how the withdrawable amount was computed.
+        $wb  = (float) ($u['wallet_balance'] ?? 0);
+        $tb  = (float) ($u['token_balance'] ?? 0);
+        $amt = (float) $row['amount'];
+        if ($wb + $tb < $amt) return $this->fail('User has insufficient balance', 409);
+        $fromWallet = min($wb, $amt);
+        $fromToken  = round($amt - $fromWallet, 2);
+        $users->update($row['user_id'], [
+            'wallet_balance' => round($wb - $fromWallet, 2),
+            'token_balance'  => round($tb - $fromToken, 2),
+        ]);
         (new WalletTransactionModel())->insert([
             'user_id'   => (int) $row['user_id'],
             'amount'    => (float) $row['amount'],
