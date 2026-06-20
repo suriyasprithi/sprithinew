@@ -13,7 +13,7 @@ class PurchaseCommissionModel extends Model
     protected $useSoftDeletes   = false;
     protected $protectFields    = true;
 
-    protected $allowedFields = ['order_id','beneficiary_id','source_user_id','level','percent','amount'];
+    protected $allowedFields = ['order_id','beneficiary_id','source_user_id','level','buyback_cycle_id','percent','amount'];
 
     protected $useTimestamps = true;
     protected $dateFormat    = 'datetime';

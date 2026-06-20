@@ -15,14 +15,15 @@ use App\Models\UserModel;
  * 100% across 9 slots — vendor's 90% is paid separately by the caller.
  *
  *   Global Pool     :  2.5%   → system_pools.global
- *   Buyback        15/10/5/2.5%  → ONE slot per order to the "currently eligible
- *                                  user" (system_settings 'buyback.eligible_user_id').
- *                                  Their personal counter `users.buyback_next_slot`
- *                                  advances 1→2→3→4 and the user exits eligibility
- *                                  when slot 4 has fired. The very next purchase by
- *                                  any non-eligible customer makes that buyer the
- *                                  new eligible user, picking up their pending slot
- *                                  (or starting at 1 if they have none).
+ *   Buyback        15/10/5/2.5%  → OVERLAPPING per-user cycles (buyback_cycles).
+ *                                  Every purchase opens a cycle for the buyer
+ *                                  (unless one is already open). Each open cycle
+ *                                  collects from the next 4 DISTINCT buyers at the
+ *                                  4 slot rates, then completes. One purchase
+ *                                  advances every other open cycle it hasn't filled
+ *                                  (oldest first) up to this order's buyback slice;
+ *                                  buyback never draws from admin — overflow cycles
+ *                                  wait, and any unused slice rolls into admin.
  *   L1 Referral     : 25.0%   → buyer's direct referrer level_1_wallet
  *   L2 Referral     : 10.0%   → grandparent level_2_wallet
  *   L3 Referral     :  1.5%   → great-grandparent level_3_wallet
@@ -93,16 +94,10 @@ class CommissionService
             if ($l2 && ! empty($l2['referrer_id']))     $l3 = $users->find((int) $l2['referrer_id']);
         }
 
-        // Per-eligible-user buyback cycle. The "currently eligible user" is
-        // tracked in system_settings; their personal buyback_next_slot tells
-        // us which slot fires next. When their slot 4 fires, eligibility
-        // clears and the very next purchase by a non-eligible customer
-        // becomes the new eligible user (resuming their own pending slot or
-        // starting at 1 if they have none).
+        // Overlapping buyback cycles — see the buyback section below. We need a
+        // DB handle and the settings model (for admin-tunable slot %s).
         $db            = \Config\Database::connect();
         $settingsModel = new \App\Models\SystemSettingsModel();
-        $eligibleId    = (int) ($settingsModel->get('buyback.eligible_user_id', '') ?: 0);
-        $eligibleSince = (string) ($settingsModel->get('buyback.eligible_since', '') ?: '');
 
         // L1/L2/L3 referral commission percentages — admin-tunable via
         // system_settings (mlm.level_N_pct), defaulting to the SLOT_PCT
@@ -123,29 +118,6 @@ class CommissionService
             3 => max(0.0, (float) $settingsModel->get('buyback.slot_3_pct', (string) self::SLOT_PCT['buyback_3'])),
             4 => max(0.0, (float) $settingsModel->get('buyback.slot_4_pct', (string) self::SLOT_PCT['buyback_4'])),
         ];
-        $buybackRecipient = null;
-        if ($eligibleId && $eligibleId !== (int) $purchaserUserId) {
-            $u = $users->find($eligibleId);
-            if ($u && ($u['status'] ?? 'active') === 'active' && (int) ($u['buyback_next_slot'] ?? 0) > 0) {
-                // Each cycle of 4 slots must be filled by 4 DISTINCT customers.
-                // If this purchaser has already fired a slot for the eligible
-                // user during the current cycle, skip — the cycle waits for a
-                // new face.
-                $alreadyFired = 0;
-                if ($eligibleSince !== '') {
-                    $alreadyFired = (int) ($db->query(
-                        'SELECT COUNT(*) c FROM purchase_commissions
-                         WHERE beneficiary_id = ? AND source_user_id = ?
-                           AND level < 0 AND created_at >= ?',
-                        [(int) $u['id'], (int) $purchaserUserId, $eligibleSince]
-                    )->getRow()->c ?? 0);
-                }
-                if ($alreadyFired === 0) {
-                    $buybackRecipient = $u;
-                }
-            }
-        }
-
         $applied   = [];
         $adminPool = 0.0;
 
@@ -169,64 +141,81 @@ class CommissionService
         $awardUser($l2, 'level_2', 2, round($pool * $levelPct[2] / 100, 2));
         $awardUser($l3, 'level_3', 3, round($pool * $levelPct[3] / 100, 2));
 
-        // Buyback — single slot per purchase to the currently eligible user.
-        // Unused 3 slots' percentage falls to admin pool this order.
+        // ===== Buyback: overlapping per-user cycles =====
+        // Every purchase opens a cycle for the buyer (unless they already have
+        // one open). Each open cycle collects from the next 4 DISTINCT buyers at
+        // slot rates 15/10/5/2.5% of each of those buyers' pools. A single
+        // purchase advances every OTHER open cycle it hasn't already filled,
+        // oldest first, until the order's buyback slice is spent. Buyback never
+        // draws from admin; any unused slice rolls into the admin pool (as
+        // before). Overflow cycles simply wait for the next purchase.
+        $cycles        = new \App\Models\BuybackCycleModel();
         $allBuybackPct = $buybackPct[1] + $buybackPct[2] + $buybackPct[3] + $buybackPct[4];
+        $buybackBudget = round($pool * $allBuybackPct / 100, 2);  // hard cap for this order
+        $buybackSpent  = 0.0;
 
-        if ($buybackRecipient) {
-            $currentSlot = (int) $buybackRecipient['buyback_next_slot'];
-            $slotPct     = $buybackPct[$currentSlot] ?? self::SLOT_PCT["buyback_{$currentSlot}"];
-            $amt         = round($pool * $slotPct / 100, 2);
-            $wallet->credit(
-                (int) $buybackRecipient['id'], 'buyback', $amt, 'commission',
-                'order#' . $orderId, "Buyback slot {$currentSlot}"
-            );
+        // Open cycles owned by someone else, oldest first, that THIS buyer has
+        // not already filled. The NOT EXISTS keeps the distinct-buyer rule
+        // scoped per-cycle: a buyer who paid an earlier (closed) cycle is free
+        // to pay the collector's current cycle, since cycle ids differ.
+        $openCycles = $db->query(
+            'SELECT c.* FROM buyback_cycles c
+             WHERE c.status = ? AND c.user_id <> ?
+               AND NOT EXISTS (
+                 SELECT 1 FROM purchase_commissions pc
+                 WHERE pc.buyback_cycle_id = c.id AND pc.source_user_id = ?
+               )
+             ORDER BY c.opened_at ASC, c.id ASC',
+            ['open', (int) $purchaserUserId, (int) $purchaserUserId]
+        )->getResultArray();
+
+        foreach ($openCycles as $cyc) {
+            $slot    = (int) $cyc['next_slot'];
+            $slotPct = $buybackPct[$slot] ?? self::SLOT_PCT["buyback_{$slot}"];
+            $amt     = round($pool * $slotPct / 100, 2);
+            if ($amt <= 0) continue;
+            // Cap: never spend more than this order's buyback slice. Overflow
+            // cycles wait for the next purchase; admin is never touched.
+            if (round($buybackSpent + $amt, 2) > $buybackBudget) break;
+
+            $collectorId = (int) $cyc['user_id'];
+            $wallet->credit($collectorId, 'buyback', $amt, 'commission', 'order#' . $orderId, "Buyback slot {$slot}");
             $log->insert([
-                'order_id'       => $orderId,
-                'beneficiary_id' => (int) $buybackRecipient['id'],
-                'source_user_id' => $purchaserUserId,
-                'level'          => -$currentSlot,
-                'percent'        => $slotPct,
-                'amount'         => $amt,
+                'order_id'         => $orderId,
+                'beneficiary_id'   => $collectorId,
+                'source_user_id'   => $purchaserUserId,
+                'level'            => -$slot,
+                'buyback_cycle_id' => (int) $cyc['id'],
+                'percent'          => $slotPct,
+                'amount'           => $amt,
             ]);
             try {
-                $notif->sendToUser((int) $buybackRecipient['id'], 'Buyback bonus',
-                    "₹{$amt} (slot {$currentSlot}) from order #{$orderId}");
+                $notif->sendToUser($collectorId, 'Buyback bonus', "₹{$amt} (slot {$slot}) from order #{$orderId}");
             } catch (\Throwable $e) { /* non-fatal */ }
-            $applied[] = [
-                'slot'           => "buyback_{$currentSlot}",
-                'beneficiary_id' => (int) $buybackRecipient['id'],
-                'amount'         => $amt,
-            ];
+            $applied[]    = ['slot' => "buyback_{$slot}", 'beneficiary_id' => $collectorId, 'amount' => $amt];
+            $buybackSpent = round($buybackSpent + $amt, 2);
 
-            $adminPool += round($pool * ($allBuybackPct - $slotPct) / 100, 2);
-
-            // Advance the eligible user's personal counter. Slot 4 → cycle
-            // ends; clear eligibility so the next purchaser can take over.
-            $nextSlot = $currentSlot + 1;
-            if ($nextSlot > 4) {
-                $users->update((int) $buybackRecipient['id'], ['buyback_next_slot' => 0]);
-                $settingsModel->put('buyback.eligible_user_id', '');
-                $settingsModel->put('buyback.eligible_since',    '');
+            // Advance the cycle. Filling slot 4 completes it.
+            if ($slot >= 4) {
+                $cycles->update((int) $cyc['id'], ['next_slot' => 4, 'status' => 'completed', 'completed_at' => date('Y-m-d H:i:s')]);
             } else {
-                $users->update((int) $buybackRecipient['id'], ['buyback_next_slot' => $nextSlot]);
+                $cycles->update((int) $cyc['id'], ['next_slot' => $slot + 1]);
             }
-        } else {
-            // No active eligible user (or eligible user is the buyer, or this
-            // buyer has already counted this cycle). The buyer takes the
-            // eligible spot if none is set — preserving any pending slot they
-            // already have, or starting at slot 1 if they were inactive.
-            $adminPool += round($pool * $allBuybackPct / 100, 2);
+        }
 
-            if (! $eligibleId) {
-                $buyerRow = $users->find($purchaserUserId);
-                if ($buyerRow && ($buyerRow['status'] ?? 'active') === 'active') {
-                    if ((int) ($buyerRow['buyback_next_slot'] ?? 0) === 0) {
-                        $users->update($purchaserUserId, ['buyback_next_slot' => 1]);
-                    }
-                    $settingsModel->put('buyback.eligible_user_id', (string) $purchaserUserId);
-                    $settingsModel->put('buyback.eligible_since',    date('Y-m-d H:i:s'));
-                }
+        // Whatever of the buyback slice wasn't paid out falls to the admin pool.
+        $adminPool += round($buybackBudget - $buybackSpent, 2);
+
+        // Open a fresh cycle for the buyer if they have none currently open.
+        $buyerRow = $users->find($purchaserUserId);
+        if ($buyerRow && ($buyerRow['status'] ?? 'active') === 'active') {
+            $hasOpen = (int) ($db->query(
+                'SELECT COUNT(*) c FROM buyback_cycles WHERE user_id = ? AND status = ?',
+                [(int) $purchaserUserId, 'open']
+            )->getRow()->c ?? 0);
+            if ($hasOpen === 0) {
+                $now = date('Y-m-d H:i:s');
+                $cycles->insert(['user_id' => (int) $purchaserUserId, 'next_slot' => 1, 'status' => 'open', 'opened_at' => $now]);
             }
         }
 
