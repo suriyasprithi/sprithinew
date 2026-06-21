@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
-import { Loader2, Wallet as WalletIcon, Banknote, MapPin, Home, AlertCircle, Check, Plus, Star } from "lucide-react";
+import { Loader2, Banknote, MapPin, Home, AlertCircle, Check, Plus, Star } from "lucide-react";
 import { toast } from "sonner";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
@@ -30,6 +30,14 @@ type CartRow = {
 
 const fmtINR = (n: number) =>
   new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(n);
+
+/** Format total minutes as "45m" / "2h" / "1h 30m". */
+const fmtHM = (m: number) => {
+  const h = Math.floor(m / 60), mm = m % 60;
+  return h ? (mm ? `${h}h ${mm}m` : `${h}h`) : `${mm}m`;
+};
+
+type DeliveryRate = { id: number; time_min: number; price: number };
 
 /** Format a Date as a datetime-local input value ("YYYY-MM-DDTHH:MM"), local tz. */
 const toLocalInput = (d: Date) => {
@@ -61,7 +69,9 @@ export default function CheckoutPage() {
   const [loading, setLoading] = useState(true);
   const [placing, setPlacing] = useState(false);
   const [notes, setNotes] = useState("");
-  const [payMethod, setPayMethod] = useState<"wallet" | "cod">("wallet");
+  // Wallet payment hidden for now — default to COD. (Restore "wallet" default
+  // when the wallet option below is re-enabled.)
+  const [payMethod, setPayMethod] = useState<"wallet" | "cod">("cod");
 
   // Addresses
   const [addresses, setAddresses] = useState<CustomerAddress[]>([]);
@@ -75,12 +85,30 @@ export default function CheckoutPage() {
   const [deliveryAt, setDeliveryAt] = useState("");
   const [minDateTime, setMinDateTime] = useState("");
   const [quote, setQuote] = useState<DeliveryQuote | null>(null);
+  const [rates, setRates] = useState<DeliveryRate[]>([]);
+  const [rateId, setRateId] = useState<number | null>(null);
 
   // Default the delivery time to ~1h from now; min = now so no past times.
   useEffect(() => {
     const now = new Date();
     setMinDateTime(toLocalInput(now));
     setDeliveryAt(toLocalInput(new Date(now.getTime() + 60 * 60 * 1000)));
+  }, []);
+
+  // Delivery-time rate options (admin-configured per taluk). Cheapest first; the
+  // selected rate's price IS the delivery fee. No rates → fall back to the
+  // rule-based quote + the free-time field.
+  useEffect(() => {
+    void (async () => {
+      try {
+        const res = await api.get("/customer/delivery-rates/time");
+        const items = ((res.data.data?.items ?? []) as Record<string, unknown>[]).map((r) => ({
+          id: Number(r.id), time_min: Number(r.time_min), price: Number(r.price),
+        }));
+        setRates(items);
+        if (items.length) setRateId(items[0].id); // cheapest-first default
+      } catch { /* no rates → rule-based fallback */ }
+    })();
   }, []);
 
   useEffect(() => {
@@ -154,7 +182,9 @@ export default function CheckoutPage() {
   }
 
   const subtotal = items.reduce((s, i) => s + Number(i.price) * i.qty, 0);
-  const deliveryFee = quote ? quote.amount : 0;
+  const selectedRate = rates.find((r) => r.id === rateId) ?? null;
+  const deliveryFee = selectedRate ? selectedRate.price : (quote ? quote.amount : 0);
+  const deliveryFree = selectedRate ? selectedRate.price <= 0 : !!quote?.free;
   const total = subtotal + deliveryFee;
   const balance = user?.wallet_balance ?? 0;
   const selected = addresses.find((a) => a.id === selectedId) ?? null;
@@ -166,7 +196,7 @@ export default function CheckoutPage() {
     if (!selectedId) { toast.error("Select a delivery address"); return; }
     setPlacing(true);
     try {
-      const res = await api.post("/orders/place", { notes, payment_method: payMethod, address_id: selectedId, delivery_at: deliveryAt });
+      const res = await api.post("/orders/place", { notes, payment_method: payMethod, address_id: selectedId, delivery_at: deliveryAt, delivery_rate_id: rateId });
       const orderId = res.data.data?.order_id;
       toast.success(payMethod === "cod" ? `Order #${orderId} placed — pay on delivery` : `Order #${orderId} placed!`);
       try { await hydrate(); } catch { /* non-fatal */ }
@@ -203,23 +233,49 @@ export default function CheckoutPage() {
         <LuxuryCard hoverLift={false} className="space-y-2 p-4 text-sm">
           <div className="flex justify-between"><span className="text-muted-foreground">Subtotal</span><span>{fmtINR(subtotal)}</span></div>
           <div className="flex items-center justify-between gap-2">
-            <span className="text-muted-foreground">Delivery time</span>
+            <span className="text-muted-foreground">Delivery date</span>
             <input
-              type="datetime-local"
-              value={deliveryAt}
-              min={minDateTime}
-              onChange={(e) => setDeliveryAt(e.target.value)}
-              aria-label="Delivery date and time"
+              type="date"
+              value={deliveryAt.split("T")[0] ?? ""}
+              min={minDateTime.split("T")[0]}
+              onChange={(e) => setDeliveryAt(`${e.target.value}T${deliveryAt.split("T")[1] || "12:00"}`)}
+              aria-label="Delivery date"
               className="rounded-lg border border-border bg-surface-2/60 px-2 py-1 text-sm font-medium outline-none focus:border-brand/50"
             />
           </div>
           <div className="flex items-center justify-between gap-2">
+            <span className="text-muted-foreground">Delivery time</span>
+            {rates.length > 0 ? (
+              <select
+                value={rateId ?? ""}
+                onChange={(e) => setRateId(Number(e.target.value))}
+                aria-label="Delivery time"
+                className="rounded-lg border border-border bg-surface-2/60 px-2 py-1 text-sm font-medium outline-none focus:border-brand/50"
+              >
+                {rates.map((r) => (
+                  <option key={r.id} value={r.id}>
+                    Within {fmtHM(r.time_min)} — {r.price > 0 ? fmtINR(r.price) : "Free"}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <input
+                type="time"
+                value={deliveryAt.split("T")[1] ?? ""}
+                min={(deliveryAt.split("T")[0] ?? "") === minDateTime.split("T")[0] ? minDateTime.split("T")[1] : undefined}
+                onChange={(e) => setDeliveryAt(`${deliveryAt.split("T")[0] || minDateTime.split("T")[0]}T${e.target.value}`)}
+                aria-label="Delivery time"
+                className="rounded-lg border border-border bg-surface-2/60 px-2 py-1 text-sm font-medium outline-none focus:border-brand/50"
+              />
+            )}
+          </div>
+          <div className="flex items-center justify-between gap-2">
             <span className="text-muted-foreground">Delivery fee</span>
-            {quote?.free
+            {deliveryFree
               ? <span className="font-semibold text-emerald-500">Free Delivery</span>
               : <span className="font-medium">{fmtINR(deliveryFee)}</span>}
           </div>
-          {quoteHint(quote) && (
+          {!selectedRate && quoteHint(quote) && (
             <p className="text-[11px] text-muted-foreground">{quoteHint(quote)}</p>
           )}
           <div className="mt-2 flex justify-between border-t border-border pt-2 text-base font-bold"><span>Total</span><span className="text-brand">{fmtINR(total)}</span></div>
@@ -339,8 +395,8 @@ export default function CheckoutPage() {
         <LuxuryCard hoverLift={false} className="space-y-2 p-4">
           <p className="text-sm font-semibold">Payment method</p>
 
-          {/* Wallet */}
-          <button
+          {/* Wallet — hidden for now. Re-enable this block to restore wallet payment. */}
+          {/* <button
             type="button"
             onClick={() => setPayMethod("wallet")}
             className={`flex w-full items-center gap-3 rounded-xl border p-3 text-left transition-colors ${
@@ -357,7 +413,7 @@ export default function CheckoutPage() {
             {payMethod === "wallet" && !walletOk && (
               <span className="text-xs font-semibold uppercase tracking-wider text-rose-400">Insufficient</span>
             )}
-          </button>
+          </button> */}
 
           {/* Cash on delivery */}
           <button

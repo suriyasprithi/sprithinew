@@ -15,3 +15,4 @@ foreach ($r in $roles) {
   Write-Output "=== DONE $r ==="
 }
 Write-Output "ALL ROLES BUILT"
+exit 0

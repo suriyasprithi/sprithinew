@@ -25,7 +25,7 @@ type Req = {
 
 const CFG = {
   banner: { icon: ImageIcon, accept: "image/jpeg,image/png,image/webp", maxMB: 5,  hint: "JPG, PNG or WEBP · up to 5 MB",  title: "Ad banner request", desc: "Upload a banner image for an ad and submit it for admin review." },
-  video:  { icon: Video,     accept: "video/mp4,video/webm",            maxMB: 25, hint: "MP4 or WEBM · up to 25 MB",      title: "Ad video request",  desc: "Upload a promo video for an ad and submit it for admin review." },
+  video:  { icon: Video,     accept: "video/mp4,video/webm",            maxMB: 250, hint: "MP4 or WEBM · up to 250 MB",    title: "Ad video request",  desc: "Upload a promo video for an ad and submit it for admin review." },
 } as const;
 
 export function AdRequestForm({ type }: { type: AdType }) {

@@ -83,8 +83,22 @@ class OrderController extends BaseApiController
                 $deliveryAtSql = null;
             }
         }
-        $deliveryFee = (float) (new DeliveryChargeService())->quote((int) $auth->id, $deliveryAt)['amount'];
-        $grandTotal  = $total + $deliveryFee;
+        // Delivery fee: if the customer picked a delivery-time rate, use its STORED
+        // price (server-side, never a client amount) + its duration; else fall back
+        // to the rule-based quote from the chosen datetime.
+        $deliveryFee    = null;
+        $deliveryRateId = isset($body['delivery_rate_id']) ? (int) $body['delivery_rate_id'] : 0;
+        if ($deliveryRateId > 0) {
+            $rate = (new DeliveryTimeRateModel())->find($deliveryRateId);
+            if ($rate) {
+                $deliveryFee     = (float) $rate['price'];
+                $deliveryMinutes = (int) $rate['time_min'];
+            }
+        }
+        if ($deliveryFee === null) {
+            $deliveryFee = (float) (new DeliveryChargeService())->quote((int) $auth->id, $deliveryAt)['amount'];
+        }
+        $grandTotal = $total + $deliveryFee;
 
         // Wallet check (only when paying from wallet; COD is collected on delivery)
         $users = new UserModel();

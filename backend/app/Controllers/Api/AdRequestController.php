@@ -26,7 +26,7 @@ class AdRequestController extends BaseApiController
         if (! $file || ! $file->isValid() || $file->hasMoved()) return $this->fail('No file uploaded', 422);
 
         if ($kind === 'video') {
-            if ($file->getSize() > 25 * 1024 * 1024) return $this->fail('Video must be 25 MB or smaller', 422);
+            if ($file->getSize() > 250 * 1024 * 1024) return $this->fail('Video must be 250 MB or smaller', 422);
             if (! in_array($file->getMimeType(), ['video/mp4', 'video/webm', 'video/quicktime'], true)) {
                 return $this->fail('File must be an MP4 or WEBM video', 422);
             }
