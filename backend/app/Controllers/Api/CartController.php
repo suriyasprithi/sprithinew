@@ -5,6 +5,7 @@ namespace App\Controllers\Api;
 use App\Models\CartItemModel;
 use App\Models\ProductModel;
 use App\Models\ProductVariantModel;
+use App\Services\PrescriptionPolicy;
 use CodeIgniter\HTTP\ResponseInterface;
 
 class CartController extends BaseApiController
@@ -54,7 +55,12 @@ class CartController extends BaseApiController
                 'variation_label' => $label,
             ];
         }
-        return $this->ok(['items' => $items, 'total' => $total]);
+        // Medicine-category items (medicals / siddha / homeopathy) require the
+        // customer to attach a prescription at checkout — flag it so the
+        // checkout page can show the required upload field.
+        $requiresPrescription = PrescriptionPolicy::requiresFor($products);
+
+        return $this->ok(['items' => $items, 'total' => $total, 'requires_prescription' => $requiresPrescription]);
     }
 
     public function add(): ResponseInterface

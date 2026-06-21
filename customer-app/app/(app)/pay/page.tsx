@@ -3,13 +3,14 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
-import { Loader2, Banknote, MapPin, Home, AlertCircle, Check, Plus, Star } from "lucide-react";
+import { Loader2, Banknote, MapPin, Home, AlertCircle, Check, Plus, Star, FileText } from "lucide-react";
 import { toast } from "sonner";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { AppHeader } from "@/components/layout/app-header";
 import { LuxuryCard } from "@/components/ui/custom/luxury-card";
 import { GradientButton } from "@/components/ui/custom/gradient-button";
+import { FileUpload } from "@/components/ui/custom/file-upload";
 import {
   AddressFields,
   emptyAddressForm,
@@ -88,6 +89,12 @@ export default function CheckoutPage() {
   const [rates, setRates] = useState<DeliveryRate[]>([]);
   const [rateId, setRateId] = useState<number | null>(null);
 
+  // Prescription: required when the cart has medicine-category items (the
+  // backend flags this on /cart and re-enforces it on placement).
+  const [requiresPrescription, setRequiresPrescription] = useState(false);
+  const [prescriptionPath, setPrescriptionPath] = useState<string | null>(null);
+  const [prescriptionUrl, setPrescriptionUrl] = useState<string | null>(null);
+
   // Default the delivery time to ~1h from now; min = now so no past times.
   useEffect(() => {
     const now = new Date();
@@ -133,6 +140,7 @@ export default function CheckoutPage() {
         const rows = (res.data.data?.items ?? []) as CartRow[];
         if (rows.length === 0) { router.replace("/cart"); return; }
         setItems(rows);
+        setRequiresPrescription(Boolean(res.data.data?.requires_prescription));
       } catch (e) {
         toast.error(apiErrorMessage(e));
         router.replace("/cart");
@@ -189,14 +197,16 @@ export default function CheckoutPage() {
   const balance = user?.wallet_balance ?? 0;
   const selected = addresses.find((a) => a.id === selectedId) ?? null;
   const walletOk = balance >= total;
+  // A prescription must be attached when the cart has medicine-category items.
+  const prescriptionOk = !requiresPrescription || Boolean(prescriptionPath);
   // COD has no balance requirement — cash is collected on delivery.
-  const canPay = Boolean(selected) && (payMethod === "cod" || walletOk);
+  const canPay = Boolean(selected) && prescriptionOk && (payMethod === "cod" || walletOk);
 
   async function place() {
     if (!selectedId) { toast.error("Select a delivery address"); return; }
     setPlacing(true);
     try {
-      const res = await api.post("/orders/place", { notes, payment_method: payMethod, address_id: selectedId, delivery_at: deliveryAt, delivery_rate_id: rateId });
+      const res = await api.post("/orders/place", { notes, payment_method: payMethod, address_id: selectedId, delivery_at: deliveryAt, delivery_rate_id: rateId, prescription_path: prescriptionPath });
       const orderId = res.data.data?.order_id;
       toast.success(payMethod === "cod" ? `Order #${orderId} placed — pay on delivery` : `Order #${orderId} placed!`);
       try { await hydrate(); } catch { /* non-fatal */ }
@@ -392,6 +402,27 @@ export default function CheckoutPage() {
           <Textarea rows={3} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Landmark / instructions" className="mt-3 rounded-xl bg-surface-2/60 text-sm" />
         </LuxuryCard>
 
+        {requiresPrescription && (
+          <LuxuryCard hoverLift={false} className="space-y-3 p-4">
+            <div className="flex items-center gap-2">
+              <FileText className="h-4 w-4 text-brand" />
+              <p className="text-sm font-semibold">
+                Prescription <span className="text-rose-400">*</span>
+              </p>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Your cart has medicines — attach a doctor&apos;s prescription (photo or PDF) to continue.
+            </p>
+            <FileUpload
+              label="Prescription"
+              path={prescriptionPath}
+              url={prescriptionUrl}
+              onChange={(p, u) => { setPrescriptionPath(p); setPrescriptionUrl(u); }}
+              disabled={placing}
+            />
+          </LuxuryCard>
+        )}
+
         <LuxuryCard hoverLift={false} className="space-y-2 p-4">
           <p className="text-sm font-semibold">Payment method</p>
 
@@ -438,6 +469,8 @@ export default function CheckoutPage() {
             <AlertCircle className="h-3.5 w-3.5 shrink-0" />
             {!selected
               ? "Select your delivery address above to continue."
+              : !prescriptionOk
+              ? "Attach a prescription above to continue."
               : "Insufficient wallet balance — choose Cash on Delivery instead."}
           </p>
         )}

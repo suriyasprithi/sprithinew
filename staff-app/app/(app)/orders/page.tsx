@@ -13,7 +13,7 @@ import { Pagination } from "@/components/data-table/pagination";
 import { MobileHeader } from "@/components/layout/mobile-nav";
 import { PageHeader } from "@/components/layout/page-header";
 import { ProductImage } from "@/components/ui/custom/product-image";
-import { api, apiErrorMessage } from "@/lib/api";
+import { api, apiErrorMessage, fileUrl } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { mock, type VendorOrder } from "@/lib/mock";
 
@@ -62,6 +62,8 @@ export default function StaffOrdersPage() {
   const [openId, setOpenId] = useState<number | null>(null);
   const [loadingId, setLoadingId] = useState<number | null>(null);
   const [itemsById, setItemsById] = useState<Record<number, OrderItem[]>>({});
+  // Prescription file URL per order (medical orders only), loaded with detail.
+  const [prescriptionById, setPrescriptionById] = useState<Record<number, string | null>>({});
 
   async function toggleDetail(id: number) {
     if (openId === id) { setOpenId(null); return; }
@@ -71,9 +73,11 @@ export default function StaffOrdersPage() {
     try {
       const res = await api.get(`/orders/${id}`);
       setItemsById((m) => ({ ...m, [id]: (res.data.data?.items ?? []) as OrderItem[] }));
+      setPrescriptionById((m) => ({ ...m, [id]: fileUrl(res.data.data?.order?.prescription_path ?? null) }));
     } catch (e) {
       toast.error(apiErrorMessage(e));
       setItemsById((m) => ({ ...m, [id]: [] }));
+      setPrescriptionById((m) => ({ ...m, [id]: null }));
     } finally {
       setLoadingId((cur) => (cur === id ? null : cur));
     }
@@ -338,8 +342,10 @@ export default function StaffOrdersPage() {
                         <div className="flex items-center gap-2 text-xs text-muted-foreground">
                           <Loader2 className="h-3 w-3 animate-spin" /> Loading…
                         </div>
-                      ) : (itemsById[o.id]?.length ?? 0) > 0 ? (
-                        <ul className="space-y-3">
+                      ) : (
+                        <>
+                          {(itemsById[o.id]?.length ?? 0) > 0 ? (
+                            <ul className="space-y-3">
                           {itemsById[o.id]!.map((it) => {
                             const name = it.display_name || it.name || "Item";
                             const sub = Number(it.subtotal) || Number(it.price) * Number(it.qty);
@@ -359,9 +365,33 @@ export default function StaffOrdersPage() {
                               </li>
                             );
                           })}
-                        </ul>
-                      ) : (
-                        <p className="text-xs text-muted-foreground">No item details.</p>
+                            </ul>
+                          ) : (
+                            <p className="text-xs text-muted-foreground">No item details.</p>
+                          )}
+                          {prescriptionById[o.id] ? (
+                            <div className="mt-3 border-t border-border/60 pt-3">
+                              <p className="mb-1 text-xs text-muted-foreground">Prescription</p>
+                              {prescriptionById[o.id]!.toLowerCase().endsWith(".pdf") ? (
+                                <a
+                                  href={prescriptionById[o.id]!}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="text-sm font-medium text-brand underline"
+                                >
+                                  View prescription (PDF)
+                                </a>
+                              ) : (
+                                // eslint-disable-next-line @next/next/no-img-element
+                                <img
+                                  src={prescriptionById[o.id]!}
+                                  alt="Prescription"
+                                  className="max-h-80 w-full rounded-xl border border-border object-contain"
+                                />
+                              )}
+                            </div>
+                          ) : null}
+                        </>
                       )}
                     </div>
                   )}

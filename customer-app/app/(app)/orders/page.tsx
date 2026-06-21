@@ -7,7 +7,7 @@ import { toast } from "sonner";
 import { AppHeader } from "@/components/layout/app-header";
 import { LuxuryCard } from "@/components/ui/custom/luxury-card";
 import { ProductImage } from "@/components/ui/custom/product-image";
-import { api, apiErrorMessage } from "@/lib/api";
+import { api, apiErrorMessage, fileUrl } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 const fmtINR = (n: number) =>
@@ -55,7 +55,7 @@ type OrderItem = {
   subtotal: number | string;
   variation_label?: string | null;
 };
-type OrderDetail = { items: OrderItem[]; driver: DriverInfo | null };
+type OrderDetail = { items: OrderItem[]; driver: DriverInfo | null; prescriptionUrl: string | null };
 
 const STATUS_STYLE: Record<OrderStatus, string> = {
   pending:   "bg-amber-500/10 text-amber-400 border-amber-500/30",
@@ -85,10 +85,14 @@ export default function OrdersPage() {
     try {
       const res = await api.get(`/orders/${id}`);
       const d = res.data.data ?? {};
-      setDetailById((m) => ({ ...m, [id]: { items: (d.items ?? []) as OrderItem[], driver: (d.driver ?? null) as DriverInfo | null } }));
+      setDetailById((m) => ({ ...m, [id]: {
+        items: (d.items ?? []) as OrderItem[],
+        driver: (d.driver ?? null) as DriverInfo | null,
+        prescriptionUrl: fileUrl(d.order?.prescription_path ?? null),
+      } }));
     } catch (e) {
       toast.error(apiErrorMessage(e));
-      setDetailById((m) => ({ ...m, [id]: { items: [], driver: null } }));
+      setDetailById((m) => ({ ...m, [id]: { items: [], driver: null, prescriptionUrl: null } }));
     } finally {
       setLoadingId((cur) => (cur === id ? null : cur));
     }
@@ -304,6 +308,28 @@ export default function OrdersPage() {
                             ) : (
                               <p className="text-xs text-muted-foreground">No item details.</p>
                             )}
+                            {detailById[o.id]?.prescriptionUrl ? (
+                              <div className="border-t border-border/60 pt-3">
+                                <p className="mb-1 text-xs text-muted-foreground">Prescription</p>
+                                {detailById[o.id]!.prescriptionUrl!.toLowerCase().endsWith(".pdf") ? (
+                                  <a
+                                    href={detailById[o.id]!.prescriptionUrl!}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="text-sm font-medium text-brand underline"
+                                  >
+                                    View prescription (PDF)
+                                  </a>
+                                ) : (
+                                  // eslint-disable-next-line @next/next/no-img-element
+                                  <img
+                                    src={detailById[o.id]!.prescriptionUrl!}
+                                    alt="Prescription"
+                                    className="w-full rounded-xl border border-border object-contain"
+                                  />
+                                )}
+                              </div>
+                            ) : null}
                             {detailById[o.id]?.driver?.id_card_url ? (
                               <div className="border-t border-border/60 pt-3">
                                 <p className="mb-1 text-xs text-muted-foreground">Driver ID card</p>

@@ -16,9 +16,11 @@ use App\Models\WalletTransactionModel;
 use App\Services\CommissionService;
 use App\Services\DeliveryChargeService;
 use App\Services\NotificationService;
+use App\Services\PrescriptionPolicy;
 use App\Services\SystemSettingsService;
 use App\Services\TokenService;
 use App\Services\WalletService;
+use CodeIgniter\HTTP\Files\UploadedFile;
 use CodeIgniter\HTTP\ResponseInterface;
 
 class OrderController extends BaseApiController
@@ -41,6 +43,21 @@ class OrderController extends BaseApiController
         $variants = $vids ? (new ProductVariantModel())->whereIn('id', $vids)->findAll() : [];
         $byId = [];  foreach ($products as $p) $byId[(int) $p['id']]  = $p;
         $vById = []; foreach ($variants as $v) $vById[(int) $v['id']] = $v;
+
+        // Medicine-category items (medicals / siddha / homeopathy) require a
+        // prescription file. This is the authoritative gate — the checkout
+        // page also blocks placement, but never trust the client. The path
+        // must be one we issued from uploadPrescription() and still on disk.
+        $prescriptionPath = trim((string) ($body['prescription_path'] ?? ''));
+        if (PrescriptionPolicy::requiresFor($products)) {
+            if ($prescriptionPath === ''
+                || ! str_starts_with($prescriptionPath, 'uploads/prescriptions/')
+                || ! is_file(FCPATH . $prescriptionPath)) {
+                return $this->fail('A prescription is required for medical items in your cart', 422);
+            }
+        } else {
+            $prescriptionPath = '';  // ignore any stray value for non-medical carts
+        }
 
         $total = 0;
         $vendorIds = [];
@@ -157,6 +174,7 @@ class OrderController extends BaseApiController
             'status'         => $paymentMethod === 'cod' ? 'pending' : 'paid',
             'notes'          => $notes ?: null,
             'delivery_address' => $deliveryAddress,
+            'prescription_path' => $prescriptionPath ?: null,
         ], true);
 
         foreach ($cart as $r) {
@@ -246,6 +264,34 @@ class OrderController extends BaseApiController
         }
 
         return $response;
+    }
+
+    /**
+     * Customer: upload a prescription file (image or PDF) for medical-category
+     * items, ahead of placing the order. Returns the stored relative path +
+     * URL; the path is sent back with /orders/place. Mirrors the KYC upload
+     * but allows PDF and stores under public/uploads/prescriptions/.
+     */
+    public function uploadPrescription(): ResponseInterface
+    {
+        $auth = $this->authUser();
+        if (! $auth) return $this->fail('Unauthorized', 401);
+
+        /** @var UploadedFile|null $file */
+        $file = $this->request->getFile('file');
+        if (! $file || ! $file->isValid() || $file->hasMoved()) return $this->fail('No file uploaded', 422);
+        if ($file->getSize() > 5 * 1024 * 1024) return $this->fail('File must be 5 MB or smaller', 422);
+        if (! in_array($file->getMimeType(), ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'], true)) {
+            return $this->fail('Prescription must be a JPG, PNG, WEBP or PDF', 422);
+        }
+
+        $dir = FCPATH . 'uploads/prescriptions/';
+        if (! is_dir($dir)) @mkdir($dir, 0775, true);
+        $name = $file->getRandomName();
+        $file->move($dir, $name);
+        $path = 'uploads/prescriptions/' . $name;
+
+        return $this->ok(['path' => $path, 'url' => base_url($path)], 'Uploaded');
     }
 
     /**
@@ -439,7 +485,12 @@ class OrderController extends BaseApiController
             $order,
             $this->returnInfo($order, $days, $hasReq),
             $this->cancelInfo($order, (int) $svc->get('cancel.window_hours', '24')),
-            ['return_status' => $retStatus]
+            [
+                'return_status'    => $retStatus,
+                // Prescription attached at checkout for medical orders (raw path
+                // kept too; the frontend builds the display URL from it).
+                'prescription_url' => ! empty($order['prescription_path']) ? base_url($order['prescription_path']) : null,
+            ]
         );
 
         return $this->ok(['order' => $order, 'items' => $items, 'driver' => $driver]);
