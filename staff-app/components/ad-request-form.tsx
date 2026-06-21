@@ -65,7 +65,13 @@ export function AdRequestForm({ type }: { type: AdType }) {
       const fd = new FormData();
       fd.append("file", file);
       fd.append("kind", type);
-      const up = await api.post("/ads/requests/upload", fd);
+      // Video/banner uploads can be large (up to 250 MB) and slow on mobile —
+      // the api default 15s timeout aborts them. Disable the cap for this upload
+      // and force multipart so the browser sets the boundary.
+      const up = await api.post("/ads/requests/upload", fd, {
+        headers: { "Content-Type": "multipart/form-data" },
+        timeout: 0,
+      });
       const path = up.data.data?.path as string;
       await api.post("/ads/requests", { type, attachment: path, notes: notes.trim() || undefined });
       toast.success("Request submitted");
