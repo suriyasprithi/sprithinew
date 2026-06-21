@@ -73,6 +73,17 @@ class CommissionService
 
     public function distributeForOrder(int $orderId, int $purchaserUserId, float $orderTotal, ?int $vendorId = null): array
     {
+        // Idempotency: an order's commission/buyback is distributed exactly once.
+        // The wallet-at-placement, paid, and COD-on-delivery triggers all flow
+        // through here; the stamp makes any extra call a no-op. QR purchases have
+        // no `orders` row (find() = null) and just proceed (one-shot anyway).
+        $ordersModel = new \App\Models\OrderModel();
+        $orderRow    = $ordersModel->find($orderId);
+        if ($orderRow) {
+            if (! empty($orderRow['commission_distributed_at'])) return [];
+            $ordersModel->update($orderId, ['commission_distributed_at' => date('Y-m-d H:i:s')]);
+        }
+
         $wallet = new WalletService();
         $users  = new UserModel();
         $log    = new PurchaseCommissionModel();

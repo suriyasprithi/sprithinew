@@ -224,8 +224,10 @@ class OrderController extends BaseApiController
             log_message('error', 'Order push failed: ' . $e->getMessage());
         }
 
-        // MLM commission cascade — wallet only; COD runs this on delivery.
-        if ($paymentMethod === 'wallet') {
+        // Commission/buyback cascade — fires for any NON-COD order (placed as
+        // 'paid': wallet + online/null). COD stays 'pending' and settles on
+        // delivery (setStatus). distributeForOrder is idempotent.
+        if ($paymentMethod !== 'cod') {
             (new CommissionService())->distributeForOrder((int) $orderId, (int) $auth->id, (float) $total, $vendorId);
         }
 
@@ -700,6 +702,21 @@ class OrderController extends BaseApiController
             $patch['delivered_at'] = date('Y-m-d H:i:s');
         }
         $model->update($id, $patch);
+
+        // Non-COD orders settle commission/buyback the moment they reach 'paid'
+        // (covers orders that become paid after placement). COD settles on
+        // delivery (below). Idempotent via commission_distributed_at; legacy skipped.
+        if ($status === 'paid'
+            && ($order['status'] ?? '') !== 'paid'
+            && ($order['payment_method'] ?? '') !== 'cod'
+            && ! $this->isLegacyOrder($id)) {
+            (new CommissionService())->distributeForOrder(
+                $id,
+                (int) $order['customer_id'],
+                (float) $order['total'],
+                ! empty($order['vendor_id']) ? (int) $order['vendor_id'] : null,
+            );
+        }
 
         // COD settles on delivery: the cash is now collected, so credit the vendor
         // 90% and run the commission cascade — exactly what a wallet order does at

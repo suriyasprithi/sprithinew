@@ -210,8 +210,12 @@ class AdminStatsController extends BaseApiController
         // the immediately-above role's approvals. Pass-throughs to lower
         // levels don't reduce this displayed value — that's the "from-above
         // approval ledger" view the dashboard surfaces.
-        $balRow = $db->query('SELECT wallet_balance, bonus_balance FROM users WHERE id = ?', [$uid])->getRow();
-        $wallet = (float) ($balRow->wallet_balance ?? 0);
+        // Spendable balance = wallet_balance + any legacy token_balance (tokens
+        // are folded into the wallet, 1 token = ₹1). This is the REAL balance the
+        // approve/distribute flow spends — NOT the gross "tokens received from
+        // above" figure (which never subtracts what was distributed downstream).
+        $balRow = $db->query('SELECT wallet_balance, bonus_balance, token_balance FROM users WHERE id = ?', [$uid])->getRow();
+        $wallet = (float) ($balRow->wallet_balance ?? 0) + (float) ($balRow->token_balance ?? 0);
         $bonus  = (float) ($balRow->bonus_balance ?? 0);
 
         $aboveRole = match ($auth->role) {
@@ -358,8 +362,8 @@ class AdminStatsController extends BaseApiController
         // computed: Σ tokens received from taluk users − Σ consumption from
         // customer orders. (Direct admin distributions or chain transfers
         // from non-taluk senders don't count toward the displayed balance.)
-        $walletRow = $db->query('SELECT wallet_balance, qr_wallet, bonus_balance FROM users WHERE id = ?', [$vid])->getRow();
-        $wallet    = (float) ($walletRow->wallet_balance ?? 0);
+        $walletRow = $db->query('SELECT wallet_balance, qr_wallet, bonus_balance, token_balance FROM users WHERE id = ?', [$vid])->getRow();
+        $wallet    = (float) ($walletRow->wallet_balance ?? 0) + (float) ($walletRow->token_balance ?? 0);
         $qrWallet  = (float) ($walletRow->qr_wallet ?? 0);
         $bonus     = (float) ($walletRow->bonus_balance ?? 0);
 
