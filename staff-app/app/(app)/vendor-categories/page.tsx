@@ -69,6 +69,9 @@ export default function VendorCategoriesPage() {
       name,
       image: editing.image,
       status: editing.status ?? "active",
+      free_delivery_min: editing.free_delivery_min ?? 0,
+      delivery_charge: editing.delivery_charge ?? 0,
+      gst_rate: editing.gst_rate ?? 0,
     };
 
     setBusy(true);
@@ -98,8 +101,8 @@ export default function VendorCategoriesPage() {
     } finally { setDeleteId(null); }
   }
 
-  function startNew() { setEditing({ name: "", image: null, status: "active" }); }
-  function startEdit(c: VendorCategoryFull) { setEditing({ id: c.id, name: c.name, image: c.image, status: c.status }); }
+  function startNew() { setEditing({ name: "", image: null, status: "active", free_delivery_min: 0, delivery_charge: 0, gst_rate: 0 }); }
+  function startEdit(c: VendorCategoryFull) { setEditing({ id: c.id, name: c.name, image: c.image, status: c.status, free_delivery_min: Number(c.free_delivery_min ?? 0), delivery_charge: Number(c.delivery_charge ?? 0), gst_rate: Number(c.gst_rate ?? 0) }); }
 
   // Drag-reorder: optimistic local update + POST full id list to backend.
   // Only enabled when there's no search filter — reordering a filtered view
@@ -178,6 +181,7 @@ export default function VendorCategoriesPage() {
                   <p className="truncate text-sm font-semibold">{c.name}</p>
                   <p className="text-xs text-muted-foreground">{c.image ? "Image set" : "No image"}</p>
                 </div>
+                <DeliveryTag threshold={c.free_delivery_min} charge={c.delivery_charge} />
                 <StatusBadge status={c.status} />
                 <DropdownMenu>
                   <DropdownMenuTrigger
@@ -228,6 +232,52 @@ export default function VendorCategoriesPage() {
                     <SelectItem value="inactive">Inactive</SelectItem>
                   </SelectContent>
                 </Select>
+              </div>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-1.5">
+                <Label>Free delivery above (₹)</Label>
+                <Input
+                  type="number"
+                  min="0"
+                  step="1"
+                  value={editing?.free_delivery_min || ""}
+                  onChange={(e) => setEditing((p) => p && ({ ...p, free_delivery_min: e.target.value === "" ? 0 : Number(e.target.value) }))}
+                  placeholder="0"
+                  className="h-11 rounded-xl bg-surface-2/60"
+                />
+                <p className="text-[11px] text-muted-foreground">Order subtotal in this vendor category must reach this for free delivery. 0 = always free.</p>
+              </div>
+              <div className="space-y-1.5">
+                <Label>Delivery charge (₹)</Label>
+                <Input
+                  type="number"
+                  min="0"
+                  step="1"
+                  value={editing?.delivery_charge || ""}
+                  onChange={(e) => setEditing((p) => p && ({ ...p, delivery_charge: e.target.value === "" ? 0 : Number(e.target.value) }))}
+                  placeholder="0"
+                  className="h-11 rounded-xl bg-surface-2/60"
+                />
+                <p className="text-[11px] text-muted-foreground">Charged per shop when this category is below the threshold (added to evening + slot fees).</p>
+              </div>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-1.5">
+                <Label>GST rate (%)</Label>
+                <Input
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="0.01"
+                  value={editing?.gst_rate || ""}
+                  onChange={(e) => setEditing((p) => p && ({ ...p, gst_rate: e.target.value === "" ? 0 : Number(e.target.value) }))}
+                  placeholder="0"
+                  className="h-11 rounded-xl bg-surface-2/60"
+                />
+                <p className="text-[11px] text-muted-foreground">GST % applied to each item in this category, shown as a tax line at checkout. 0 = no GST.</p>
               </div>
             </div>
 
@@ -291,6 +341,7 @@ function CategoryRow({ cat, onEdit, onDelete }: {
         <p className="truncate text-sm font-semibold">{cat.name}</p>
         <p className="text-xs text-muted-foreground">{cat.image ? "Image set" : "No image"}</p>
       </div>
+      <DeliveryTag threshold={cat.free_delivery_min} charge={cat.delivery_charge} />
       <StatusBadge status={cat.status} />
       <DropdownMenu>
         <DropdownMenuTrigger
@@ -309,6 +360,18 @@ function CategoryRow({ cat, onEdit, onDelete }: {
         </DropdownMenuContent>
       </DropdownMenu>
     </Reorder.Item>
+  );
+}
+
+/** Free-delivery threshold + below-threshold charge shown in the list. */
+function DeliveryTag({ threshold, charge }: { threshold?: number; charge?: number }) {
+  const t = Number(threshold ?? 0);
+  const c = Number(charge ?? 0);
+  return (
+    <span className="hidden shrink-0 text-xs text-muted-foreground sm:inline">
+      {t > 0 ? <>Free ≥ <span className="font-medium text-foreground">₹{t}</span></> : "Always free"}
+      {c > 0 ? <> · ₹{c} below</> : null}
+    </span>
   );
 }
 

@@ -1,10 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { LogOut, User as UserIcon, Settings, ChevronDown } from "lucide-react";
 import { useAuth } from "@/stores/auth";
-import { loginUrl } from "@/lib/login-redirect";
+import { useLogoutConfirm } from "@/components/use-logout-confirm";
 import { ROLE_LABEL } from "@/lib/role-menu";
 import type { StaffRole } from "@/lib/api";
 import {
@@ -16,17 +15,13 @@ import {
 } from "@/components/ui/dropdown-menu";
 
 export function UserMenu() {
-  const { user, logout } = useAuth();
-  const router = useRouter();
+  const { user } = useAuth();
+  const { requestLogout, logoutDialog } = useLogoutConfirm();
   const roleLabel = user && user.role !== "customer" ? ROLE_LABEL[user.role as StaffRole] : "";
   const initial = (user?.name || "?").trim().charAt(0).toUpperCase();
 
-  const onLogout = async () => {
-    await logout();
-    window.location.href = loginUrl();
-  };
-
   return (
+    <>
     <DropdownMenu>
       <DropdownMenuTrigger
         render={
@@ -63,10 +58,12 @@ export function UserMenu() {
           }
         />
         <DropdownMenuSeparator />
-        <DropdownMenuItem onClick={onLogout} className="text-brand focus:text-brand">
+        <DropdownMenuItem onClick={requestLogout} className="text-brand focus:text-brand">
           <LogOut className="h-4 w-4" /> Log out
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
+    {logoutDialog}
+    </>
   );
 }

@@ -45,6 +45,10 @@ const LABELS: Record<string, string> = {
   level_1: "Level 1 wallet",
   level_2: "Level 2 wallet",
   level_3: "Level 3 wallet",
+  welcome:   "Referral bonus",
+  welcome_1: "Referral L1 bonus",
+  welcome_2: "Referral L2 bonus",
+  welcome_3: "Referral L3 bonus",
   global:  "Global wallet",
   buyback: "Buyback wallet",
 };

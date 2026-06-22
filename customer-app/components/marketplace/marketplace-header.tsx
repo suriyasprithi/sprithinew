@@ -2,12 +2,16 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
-import { Search, MapPin, ShoppingCart, Heart, Bell, User, ChevronDown } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Search, MapPin, ShoppingCart, Heart, Bell, User, ChevronDown, Loader2 } from "lucide-react";
 import { LocationPicker, readSavedLocation } from "./location-picker";
 import { useAuth } from "@/stores/auth";
+import { api, fileUrl } from "@/lib/api";
 import { wishlist } from "@/lib/wishlist";
 import { cartBadge } from "@/lib/cart";
+
+type Suggestion = { id: number; name: string; price: number; image: string | null };
+const fmtINR = (n: number) => new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(n);
 
 export function MarketplaceHeader({ cartCount = 0, wishlistCount = 0, unreadCount = 0 }: {
   cartCount?: number;
@@ -17,6 +21,10 @@ export function MarketplaceHeader({ cartCount = 0, wishlistCount = 0, unreadCoun
   const router = useRouter();
   const { user, isHydrated } = useAuth();
   const [q, setQ] = useState("");
+  const [sugs, setSugs] = useState<Suggestion[]>([]);
+  const [sugOpen, setSugOpen] = useState(false);
+  const [sugLoading, setSugLoading] = useState(false);
+  const searchRef = useRef<HTMLDivElement>(null);
   const [locOpen, setLocOpen] = useState(false);
   const [locLabel, setLocLabel] = useState<string>("Coimbatore South, Coimbatore");
   // Wishlist count is client-side (localStorage) — derive it here and keep it
@@ -54,6 +62,58 @@ export function MarketplaceHeader({ cartCount = 0, wishlistCount = 0, unreadCoun
     };
   }, []);
 
+  // Debounced auto-suggest: fetch matching products from the public catalog as
+  // the customer types, scoped to their saved delivery location. Guests can use
+  // it too (public endpoint, no auth).
+  useEffect(() => {
+    const term = q.trim();
+    if (term.length < 2) { setSugs([]); setSugOpen(false); setSugLoading(false); return; }
+    let cancelled = false;
+    setSugLoading(true);
+    const t = setTimeout(() => {
+      void (async () => {
+        try {
+          const loc = readSavedLocation();
+          const params: Record<string, string> = { q: term };
+          if (loc?.taluk_id)         params.taluk_id    = String(loc.taluk_id);
+          else if (loc?.district_id) params.district_id = String(loc.district_id);
+          else if (loc?.state_id)    params.state_id    = String(loc.state_id);
+          const r = await api.get("/public/products", { params });
+          if (cancelled) return;
+          const items = ((r.data.data?.items ?? []) as Array<{ id: number; name: string; price: number | string; image: string | null }>)
+            .slice(0, 6)
+            .map((p) => ({ id: Number(p.id), name: p.name, price: Number(p.price), image: p.image }));
+          setSugs(items);
+          setSugOpen(true);
+        } catch { if (!cancelled) setSugs([]); }
+        finally { if (!cancelled) setSugLoading(false); }
+      })();
+    }, 300);
+    return () => { cancelled = true; clearTimeout(t); };
+  }, [q]);
+
+  // Close the suggestions dropdown when clicking/tapping outside the search box.
+  useEffect(() => {
+    const onDown = (e: MouseEvent | TouchEvent) => {
+      if (searchRef.current && !searchRef.current.contains(e.target as Node)) setSugOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("touchstart", onDown);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("touchstart", onDown);
+    };
+  }, []);
+
+  const runSearch = (term: string) => {
+    setSugOpen(false);
+    router.push(`/shop-public${term ? `?q=${encodeURIComponent(term)}` : ""}`);
+  };
+  const openProduct = (id: number) => {
+    setSugOpen(false);
+    router.push(`/product-public?id=${id}`);
+  };
+
   return (
     <header className="sticky top-0 z-30 bg-[var(--mk-surface)]/95 backdrop-blur supports-[backdrop-filter]:bg-[var(--mk-surface)]/85 border-b border-[var(--mk-border)]">
       <div className="flex w-full items-center gap-3 px-4 py-3 md:gap-5">
@@ -79,21 +139,61 @@ export function MarketplaceHeader({ cartCount = 0, wishlistCount = 0, unreadCoun
         <LocationPicker open={locOpen} onClose={() => setLocOpen(false)} />
 
         {/* Search */}
-        <form
-          onSubmit={(e) => { e.preventDefault(); router.push(`/shop-public${q ? `?q=${encodeURIComponent(q)}` : ""}`); }}
-          className="flex flex-1 items-center rounded-xl border border-[var(--mk-border)] bg-[var(--mk-surface-2)] px-3 py-2 transition-colors focus-within:border-[var(--mk-brand)]"
-        >
-          <Search className="mr-2 h-4 w-4 shrink-0 text-[var(--mk-text-muted)]" />
-          <input
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            placeholder='Search "rice", "milk", "salon near me"…'
-            className="w-full bg-transparent text-sm outline-none placeholder:text-[var(--mk-text-muted)]"
-          />
-          <button type="submit" className="ml-2 hidden rounded-lg bg-[var(--mk-brand)] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[var(--mk-brand-deep)] md:inline">
-            Search
-          </button>
-        </form>
+        <div ref={searchRef} className="relative flex-1">
+          <form
+            onSubmit={(e) => { e.preventDefault(); runSearch(q.trim()); }}
+            className="flex w-full items-center rounded-xl border border-[var(--mk-border)] bg-[var(--mk-surface-2)] px-3 py-2 transition-colors focus-within:border-[var(--mk-brand)]"
+          >
+            <Search className="mr-2 h-4 w-4 shrink-0 text-[var(--mk-text-muted)]" />
+            <input
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              onFocus={() => { if (sugs.length) setSugOpen(true); }}
+              placeholder='Search "rice", "milk", "salon near me"…'
+              className="w-full bg-transparent text-sm outline-none placeholder:text-[var(--mk-text-muted)]"
+            />
+            {sugLoading && <Loader2 className="ml-2 h-4 w-4 shrink-0 animate-spin text-[var(--mk-text-muted)]" />}
+            <button type="submit" className="ml-2 hidden rounded-lg bg-[var(--mk-brand)] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[var(--mk-brand-deep)] md:inline">
+              Search
+            </button>
+          </form>
+
+          {/* Auto-suggestions */}
+          {sugOpen && q.trim().length >= 2 && (
+            <div className="absolute left-0 right-0 top-full z-40 mt-1 overflow-hidden rounded-xl border border-[var(--mk-border)] bg-[var(--mk-surface)] shadow-lg">
+              {sugs.length > 0 ? (
+                <ul className="max-h-[60vh] overflow-auto py-1">
+                  {sugs.map((s) => (
+                    <li key={s.id}>
+                      <button
+                        type="button"
+                        onClick={() => openProduct(s.id)}
+                        className="flex w-full items-center gap-3 px-3 py-2 text-left hover:bg-[var(--mk-surface-2)]"
+                      >
+                        <span className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-[var(--mk-surface-2)]">
+                          {fileUrl(s.image)
+                            ? <img src={fileUrl(s.image)!} alt="" className="h-full w-full object-cover" />
+                            : <Search className="h-4 w-4 text-[var(--mk-text-muted)]" />}
+                        </span>
+                        <span className="min-w-0 flex-1 truncate text-sm text-[var(--mk-text)]">{s.name}</span>
+                        <span className="shrink-0 text-xs font-semibold text-[var(--mk-text)]">{fmtINR(s.price)}</span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                !sugLoading && <p className="px-3 py-3 text-sm text-[var(--mk-text-muted)]">No products found</p>
+              )}
+              <button
+                type="button"
+                onClick={() => runSearch(q.trim())}
+                className="flex w-full items-center gap-2 border-t border-[var(--mk-border)] px-3 py-2.5 text-left text-sm font-medium text-[var(--mk-brand-deep)] hover:bg-[var(--mk-surface-2)]"
+              >
+                <Search className="h-4 w-4" /> Search for &ldquo;{q.trim()}&rdquo;
+              </button>
+            </div>
+          )}
+        </div>
 
         {/* Actions */}
         <div className="flex shrink-0 items-center gap-1 md:gap-2">

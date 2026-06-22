@@ -1,10 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { motion } from "framer-motion";
 import { Home, QrCode, Wallet, LogOut, ShoppingBag, ShoppingCart, Activity, Sparkles, Package } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useLogoutConfirm } from "@/components/use-logout-confirm";
 import { useAuth } from "@/stores/auth";
 
 const ITEMS = [
@@ -20,13 +21,8 @@ const ITEMS = [
 
 export function SideNav() {
   const pathname = usePathname() || "";
-  const router = useRouter();
-  const { user, logout } = useAuth();
-
-  const onLogout = async () => {
-    await logout();
-    router.replace("/login");
-  };
+  const { user } = useAuth();
+  const { requestLogout, logoutDialog } = useLogoutConfirm();
 
   const initial = (user?.name || "?").trim().charAt(0).toUpperCase();
 
@@ -92,7 +88,7 @@ export function SideNav() {
             </div>
           </Link>
           <button
-            onClick={onLogout}
+            onClick={requestLogout}
             aria-label="Log out"
             className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground hover:bg-accent hover:text-brand"
           >
@@ -100,6 +96,7 @@ export function SideNav() {
           </button>
         </div>
       </div>
+      {logoutDialog}
     </aside>
   );
 }

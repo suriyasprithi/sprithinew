@@ -73,7 +73,7 @@ class CustomerVideoController extends BaseApiController
 
         $file = $this->request->getFile('file');
         if (! $file || ! $file->isValid() || $file->hasMoved()) return $this->fail('No file uploaded', 422);
-        if ($file->getSize() > 25 * 1024 * 1024) return $this->fail('Video must be 25 MB or smaller', 422);
+        if ($file->getSize() > 100 * 1024 * 1024) return $this->fail('Video must be 100 MB or smaller', 422);
         if (! in_array($file->getMimeType(), ['video/mp4', 'video/webm', 'video/quicktime'], true)) {
             return $this->fail('File must be an MP4 or WEBM video', 422);
         }
@@ -142,7 +142,7 @@ class CustomerVideoController extends BaseApiController
 
         $file = $this->request->getFile('file');
         if (! $file || ! $file->isValid() || $file->hasMoved()) return $this->fail('No file uploaded', 422);
-        if ($file->getSize() > 25 * 1024 * 1024) return $this->fail('Video must be 25 MB or smaller', 422);
+        if ($file->getSize() > 100 * 1024 * 1024) return $this->fail('Video must be 100 MB or smaller', 422);
         if (! in_array($file->getMimeType(), ['video/mp4', 'video/webm', 'video/quicktime'], true)) {
             return $this->fail('File must be an MP4 or WEBM video', 422);
         }

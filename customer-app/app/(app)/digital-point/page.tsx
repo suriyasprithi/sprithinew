@@ -9,6 +9,12 @@ import { AnimatedCounter } from "@/components/ui/custom/animated-counter";
 import { api, apiErrorMessage } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
+type Meta = {
+  shop: string | null;
+  taluk: string | null;
+  customer_name: string | null;
+  customer_mobile: string | null;
+};
 type Item = {
   id: number;
   amount: number;
@@ -18,6 +24,7 @@ type Item = {
   notes: string;
   source: string | null;
   created_at: string;
+  meta?: Meta | null;
 };
 
 type Payload = {
@@ -28,10 +35,11 @@ type Payload = {
   items: Item[];
 };
 
-// Welcome = per-level signup bonuses (API alias `welcome`); Commission = L1/L2/L3
-// purchase commissions (API alias `referral`). Both span the level_1/2/3 wallets.
+// Welcome = per-level signup bonuses (API alias `welcome` → welcome_1/2/3 wallets,
+// gated by referral count); Commission = L1/L2/L3 purchase commissions
+// (API alias `referral` → level_1/2/3 wallets, freely transferable).
 const SECTIONS = [
-  { key: "welcome",  short: "Welcome",    title: "Welcome Bonus Digital Point", icon: Gift,          tone: "sky"    as const, desc: "Per-level referral signup bonus (L1 / L2 / L3)" },
+  { key: "welcome",  short: "Referral",   title: "Referral Bonus Digital Point", icon: Gift,         tone: "sky"    as const, desc: "Per-level referral signup bonus (L1 / L2 / L3) — gated by referral count" },
   { key: "referral", short: "Commission", title: "MLM Commission Digital Point", icon: Users,         tone: "violet" as const, desc: "Multi-level commission split (L1 / L2 / L3)" },
   { key: "buyback",  short: "Buyback",    title: "Buyback Digital Point",       icon: ArrowDownLeft, tone: "rose"   as const, desc: "Loyalty buyback cycle credits" },
   { key: "global",   short: "Global",     title: "Global Digital Point",        icon: Sparkles,      tone: "amber"  as const, desc: "Monthly global pool credits" },
@@ -207,6 +215,14 @@ export default function DigitalPointPage() {
                         <td className="px-3 py-2.5">
                           <p className="text-sm font-medium text-[#111827]">{it.created_at.slice(0, 10)}</p>
                           <p className="text-[11px] text-[#6b7280]">{it.created_at.slice(11, 16)}</p>
+                          {it.meta?.customer_name && (
+                            <p className="mt-0.5 text-[11px] font-semibold text-[#111827]">{it.meta.customer_name}</p>
+                          )}
+                          {(it.meta?.customer_mobile || it.meta?.taluk) && (
+                            <p className="text-[10px] text-[#6b7280]">
+                              {[it.meta?.customer_mobile, it.meta?.taluk].filter(Boolean).join(" · ")}
+                            </p>
+                          )}
                         </td>
                         <td className="hidden px-3 py-2.5 sm:table-cell">
                           <p className="text-sm">{it.notes || it.type}</p>
@@ -234,21 +250,22 @@ export default function DigitalPointPage() {
 }
 
 function labelForSource(src: string): string {
-  if (src === "level_1") return "L1 referral";
-  if (src === "level_2") return "L2 referral";
-  if (src === "level_3") return "L3 referral";
+  if (src === "level_1" || src === "welcome_1") return "L1 referral";
+  if (src === "level_2" || src === "welcome_2") return "L2 referral";
+  if (src === "level_3" || src === "welcome_3") return "L3 referral";
   return src;
 }
 
-/** Which referral level a credit belongs to — from its source, else its notes. */
+/** Which referral level a credit belongs to — from its source, else its notes.
+ *  Source is the matched wallet tag: level_N (commission) or welcome_N (signup). */
 function levelOf(it: Item): 1 | 2 | 3 | null {
   const s = (it.source ?? "").toLowerCase();
-  if (s === "level_1") return 1;
-  if (s === "level_2") return 2;
-  if (s === "level_3") return 3;
+  if (s === "level_1" || s === "welcome_1") return 1;
+  if (s === "level_2" || s === "welcome_2") return 2;
+  if (s === "level_3" || s === "welcome_3") return 3;
   const n = (it.notes ?? "").toLowerCase();
-  if (n.includes("level 1")) return 1;
-  if (n.includes("level 2")) return 2;
-  if (n.includes("level 3")) return 3;
+  if (n.includes("level 1") || /\bl1\b/.test(n)) return 1;
+  if (n.includes("level 2") || /\bl2\b/.test(n)) return 2;
+  if (n.includes("level 3") || /\bl3\b/.test(n)) return 3;
   return null;
 }

@@ -23,7 +23,25 @@ class WalletController extends BaseApiController
     {
         $auth = $this->authUser();
         if (! $auth) return $this->fail('Unauthorized', 401);
-        return $this->ok((new WalletService())->balances((int) $auth->id));
+
+        $balances = (new WalletService())->balances((int) $auth->id);
+
+        // Welcome-wallet unlock status per depth, so the wallet UI can show a
+        // lock badge + progress and enable/disable the transfer action. Read the
+        // user row once; the depth counts are denormalized columns on it.
+        $u = (new UserModel())->find((int) $auth->id);
+        $welcomeStatus = [];
+        foreach ([1, 2, 3] as $level) {
+            $count     = (int) ($u["level_{$level}_count"] ?? 0);
+            $threshold = $this->welcomeThreshold($level);
+            $welcomeStatus[$level] = [
+                'count'     => $count,
+                'threshold' => $threshold,
+                'unlocked'  => $count >= $threshold,
+            ];
+        }
+
+        return $this->ok(array_merge($balances, ['welcome_status' => $welcomeStatus]));
     }
 
     /**
@@ -39,11 +57,18 @@ class WalletController extends BaseApiController
         $wallet = (string) $this->request->getGet('wallet');
 
         // Virtual aliases spanning the L1/L2/L3 wallets:
-        //   referral = purchase commissions (excludes signup bonuses)
-        //   welcome  = per-level referral signup bonuses only
+        //   referral = purchase commissions (level_N wallets, excludes signup bonuses)
+        //   welcome  = signup referral bonuses (welcome_N wallets + pre-separation
+        //              ones that still sit in level_N — both tagged welcome_bonus)
         $isReferral = $wallet === 'referral';
         $isWelcome  = $wallet === 'welcome';
-        $tagWallets = ($isReferral || $isWelcome) ? ['level_1', 'level_2', 'level_3'] : [$wallet];
+        if ($isReferral) {
+            $tagWallets = ['level_1', 'level_2', 'level_3'];
+        } elseif ($isWelcome) {
+            $tagWallets = ['welcome_1', 'welcome_2', 'welcome_3', 'level_1', 'level_2', 'level_3'];
+        } else {
+            $tagWallets = [$wallet];
+        }
         if (! $isReferral && ! $isWelcome && ! in_array($wallet, \App\Services\WalletService::WALLETS, true)) {
             return $this->fail('Invalid wallet', 422);
         }
@@ -51,8 +76,9 @@ class WalletController extends BaseApiController
         // Build OR-list of LIKE patterns for the matching tag set. We match both
         // the modern [+wallet]/[-wallet] note tags AND the un-tagged legacy rows
         // imported from u290807677_epey, so migrated users see their full history.
-        $isMain     = $wallet === 'wallet';
-        $isPerLevel = in_array($wallet, ['level_1', 'level_2', 'level_3'], true);
+        $isMain         = $wallet === 'wallet';
+        $isCommissionLv = in_array($wallet, ['level_1', 'level_2', 'level_3'], true);
+        $isWelcomeLv    = in_array($wallet, ['welcome_1', 'welcome_2', 'welcome_3'], true);
         $conds   = [];
         $params  = [(int) $auth->id];
         foreach ($tagWallets as $tw) {
@@ -77,17 +103,14 @@ class WalletController extends BaseApiController
             $params[] = '%[legacy purchase]%';
         }
         $where = 'user_id = ? AND (' . implode(' OR ', $conds) . ')';
-        // The referral view is commission-only: drop the signup referral bonuses
-        // (they live in the same level_N wallets but are shown on their own tab).
-        // The welcome view is the inverse — signup bonuses only.
-        if ($isReferral) {
-            $where .= " AND type != 'welcome_bonus'";
-        } elseif ($isWelcome) {
-            $where .= " AND type = 'welcome_bonus'";
-        } elseif ($isPerLevel) {
-            // The L1/L2/L3 cards are the per-level Welcome Bonus view — exclude
-            // MLM purchase commission (it's shown on the LEVEL card's history).
-            // Welcome signup bonuses + legacy level income stay visible.
+        // Commission views (referral / direct level_N): the NEW per-order purchase
+        // commission only — exclude both signup bonuses and old legacy income.
+        // Referral-bonus views (welcome alias / direct welcome_N): signup welcome
+        // bonus PLUS the OLD legacy referral income — but NOT the new per-order
+        // purchase commission.
+        if ($isReferral || $isCommissionLv) {
+            $where .= " AND type != 'welcome_bonus' AND notes NOT LIKE '%[legacy income]%'";
+        } elseif ($isWelcome || $isWelcomeLv) {
             $where .= " AND (type = 'welcome_bonus' OR notes LIKE '%[legacy income]%')";
         }
 
@@ -153,15 +176,28 @@ class WalletController extends BaseApiController
 
         $items = array_slice($all, 0, 100);
 
-        // Enrich order-linked rows (buyback / commission credits reference an
-        // order#/qr# id) with the shop, taluk, buyer name and MASKED buyer mobile
-        // (e.g. 98******76), so the customer can see which sale earned the credit.
-        $orderIds = [];
+        // Enrich rows so the user can see WHO each credit came from:
+        //   - order#/qr# (buyback / purchase commission) → the buyer (shop, taluk,
+        //     name, MASKED mobile e.g. 98******76).
+        //   - signup#    (welcome referral bonus)        → the new customer who
+        //     signed up under them (name, taluk via their pincode, MASKED mobile).
+        $mask = static function (?string $mob): ?string {
+            $d = preg_replace('/\D/', '', (string) $mob);
+            if ($d === '') return null;
+            return strlen($d) <= 4 ? $d : substr($d, 0, 2) . str_repeat('*', strlen($d) - 4) . substr($d, -2);
+        };
+
+        $orderIds  = [];
+        $signupIds = [];
         foreach ($items as $r) {
             if (preg_match('/(?:order|qr)#(\d+)/', (string) $r['reference'], $m)) {
                 $orderIds[(int) $m[1]] = true;
+            } elseif (preg_match('/signup#(\d+)/', (string) $r['reference'], $m)) {
+                $signupIds[(int) $m[1]] = true;
             }
         }
+
+        $byId = [];
         if ($orderIds) {
             $ids  = array_keys($orderIds);
             $ph   = implode(',', array_fill(0, count($ids), '?'));
@@ -179,24 +215,46 @@ class WalletController extends BaseApiController
                  WHERE o.id IN ($ph)",
                 $ids
             )->getResultArray();
-
-            $mask = static function (?string $mob): ?string {
-                $d = preg_replace('/\D/', '', (string) $mob);
-                if ($d === '') return null;
-                return strlen($d) <= 4 ? $d : substr($d, 0, 2) . str_repeat('*', strlen($d) - 4) . substr($d, -2);
-            };
-            $byId = [];
             foreach ($meta as $mrow) {
-                $byId[(int) $mrow['id']] = [
+                $byId['order#' . (int) $mrow['id']] = [
                     'shop'            => $mrow['shop'] ?: null,
                     'taluk'           => $mrow['taluk'] ?: null,
                     'customer_name'   => $mrow['customer_name'] ?: null,
                     'customer_mobile' => $mask($mrow['customer_mobile'] ?? null),
                 ];
             }
+        }
+
+        // Signup rows: the referred customer's name + taluk (resolved from their
+        // pincode) + masked mobile.
+        if ($signupIds) {
+            $ids  = array_keys($signupIds);
+            $ph   = implode(',', array_fill(0, count($ids), '?'));
+            $meta = $db->query(
+                "SELECT su.id,
+                        su.name AS customer_name,
+                        su.mobile_number AS customer_mobile,
+                        st.name AS taluk
+                 FROM users su
+                 LEFT JOIN pincodes pc ON pc.code = su.pincode
+                 LEFT JOIN taluks st   ON st.id = pc.taluk_id
+                 WHERE su.id IN ($ph)",
+                $ids
+            )->getResultArray();
+            foreach ($meta as $mrow) {
+                $byId['signup#' . (int) $mrow['id']] = [
+                    'shop'            => null,
+                    'taluk'           => $mrow['taluk'] ?: null,
+                    'customer_name'   => $mrow['customer_name'] ?: null,
+                    'customer_mobile' => $mask($mrow['customer_mobile'] ?? null),
+                ];
+            }
+        }
+
+        if ($byId) {
             foreach ($items as &$r) {
-                $r['meta'] = preg_match('/(?:order|qr)#(\d+)/', (string) $r['reference'], $m)
-                    ? ($byId[(int) $m[1]] ?? null)
+                $r['meta'] = preg_match('/((?:order|qr|signup)#\d+)/', (string) $r['reference'], $m)
+                    ? ($byId[str_replace('qr#', 'order#', $m[1])] ?? $byId[$m[1]] ?? null)
                     : null;
             }
             unset($r);
@@ -204,11 +262,12 @@ class WalletController extends BaseApiController
 
         // Current balance (for the header card).
         $bal = (new \App\Services\WalletService())->balances((int) $auth->id);
-        if ($isReferral || $isWelcome) {
-            // Signup bonuses sit in the same level_N wallets as commissions, so
-            // split the wallet total: commission = total − bonus, welcome = bonus.
-            // The wallet balance (not the txn sum) is authoritative — they differ
-            // slightly for legacy-imported users.
+        if ($isWelcome) {
+            // Welcome (gated) balance = the dedicated welcome_N wallets.
+            $balance = round(($bal['welcome_1'] ?? 0) + ($bal['welcome_2'] ?? 0) + ($bal['welcome_3'] ?? 0), 2);
+        } elseif ($isReferral) {
+            // Commission balance = level_N total, minus any pre-separation signup
+            // bonus that still sits in level_N (tagged [+level_N] welcome_bonus).
             $refBonus = (float) ($db->query(
                 "SELECT COALESCE(SUM(amount),0) AS s FROM wallet_transactions
                  WHERE user_id = ? AND type = 'welcome_bonus'
@@ -216,8 +275,7 @@ class WalletController extends BaseApiController
                 [(int) $auth->id]
             )->getRow()->s ?? 0);
             $levelTotal = ($bal['level_1'] ?? 0) + ($bal['level_2'] ?? 0) + ($bal['level_3'] ?? 0);
-            // referral = dashboard LEVEL card (commission only); welcome = bonus only.
-            $balance = $isWelcome ? round($refBonus, 2) : round($levelTotal - $refBonus, 2);
+            $balance = round($levelTotal - $refBonus, 2);
         } else {
             $balance = (float) ($bal[$wallet] ?? 0);
         }
@@ -332,17 +390,26 @@ class WalletController extends BaseApiController
         $d   = $this->request->getJSON(true) ?? $this->request->getPost();
         $svc = new WalletService();
 
-        // "level" = the combined level commission (L1+L2+L3). Freely transferable
-        // to the main wallet, no restriction — drain L1, then L2, then L3 up to
+        // "level" = the combined level (L1+L2+L3). Each level unlocks only when
+        // its depth-tier referral count reaches the threshold (L1 ≥ 100, L2 ≥ 10k,
+        // L3 ≥ 10 lakh) — so this drains the UNLOCKED levels only, L1→L2→L3, up to
         // the requested amount.
         if (($d['from'] ?? '') === 'level') {
             if (! is_numeric($d['amount'] ?? null) || (float) $d['amount'] <= 0) return $this->fail('Amount required', 422);
-            $amount = round((float) $d['amount'], 2);
-            $bal    = $svc->balances((int) $auth->id);
-            $avail  = round($bal['level_1'] + $bal['level_2'] + $bal['level_3'], 2);
-            if ($amount > $avail + 0.005) return $this->fail('Insufficient level balance', 402);
+            $amount   = round((float) $d['amount'], 2);
+            $bal      = $svc->balances((int) $auth->id);
+            $unlocked = [];
+            foreach ([1, 2, 3] as $lvl) {
+                if ($this->referralDepthCount((int) $auth->id, $lvl) >= $this->welcomeThreshold($lvl)) {
+                    $unlocked[] = "level_{$lvl}";
+                }
+            }
+            if (! $unlocked) return $this->fail('No level unlocked yet — reach the referral threshold first.', 403);
+            $avail = 0.0;
+            foreach ($unlocked as $lk) $avail = round($avail + $bal[$lk], 2);
+            if ($amount > $avail + 0.005) return $this->fail('Insufficient unlocked level balance', 402);
             $left = $amount;
-            foreach (['level_1', 'level_2', 'level_3'] as $lk) {
+            foreach ($unlocked as $lk) {
                 if ($left <= 0.005) break;
                 $take = round(min($left, $bal[$lk]), 2);
                 if ($take > 0) { $svc->transfer((int) $auth->id, $lk, 'wallet', $take); $left -= $take; }
@@ -351,17 +418,55 @@ class WalletController extends BaseApiController
         }
 
         if (! $this->validate([
-            'from'   => 'required|in_list[wallet,monthly,level_1,level_2,level_3,global,buyback,qr]',
-            'to'     => 'required|in_list[wallet,monthly,level_1,level_2,level_3,global,buyback,qr]',
+            'from'   => 'required|in_list[wallet,monthly,level_1,level_2,level_3,welcome_1,welcome_2,welcome_3,global,buyback,qr]',
+            'to'     => 'required|in_list[wallet,monthly,level_1,level_2,level_3,welcome_1,welcome_2,welcome_3,global,buyback,qr]',
             'amount' => 'required|numeric|greater_than[0]',
         ])) return $this->fail('Validation failed', 422, $this->validator->getErrors());
         if ($d['from'] === $d['to']) return $this->fail('Source and destination must differ', 422);
 
-        // Level wallets (L1/L2/L3) are freely transferable to the main wallet —
-        // no referral-threshold gating.
+        // Level AND welcome/referral-bonus wallets unlock only when the user's
+        // downline at that depth reaches the configured threshold (depth-1 ≥ 100,
+        // depth-2 ≥ 10k, depth-3 ≥ 10 lakh). Gating the SOURCE blocks any outbound
+        // hop, so there's no bypass via an intermediate wallet.
+        if (preg_match('/^(?:welcome|level)_([123])$/', $d['from'], $m)) {
+            $level     = (int) $m[1];
+            $have      = $this->referralDepthCount((int) $auth->id, $level);
+            $threshold = $this->welcomeThreshold($level);
+            if ($have < $threshold) {
+                return $this->fail(
+                    "L{$level} unlocks at " . number_format($threshold)
+                    . " level-{$level} referrals — you have " . number_format($have) . '.',
+                    403
+                );
+            }
+        }
+
         $ok = $svc->transfer((int) $auth->id, $d['from'], $d['to'], (float) $d['amount']);
         if (! $ok) return $this->fail('Insufficient balance in source wallet', 402);
         return $this->ok($svc->balances((int) $auth->id), 'Transferred');
+    }
+
+    /**
+     * Admin-tunable welcome-wallet unlock threshold for a depth level
+     * (system_settings level.unlock_threshold_N). Defaults to the 100-per-person
+     * depth tree: 100 → 10,000 → 10,00,000.
+     */
+    private function welcomeThreshold(int $level): int
+    {
+        $defaults = [1 => '100', 2 => '10000', 3 => '1000000'];
+        return (int) (new SystemSettingsService())
+            ->get("level.unlock_threshold_{$level}", $defaults[$level] ?? '0');
+    }
+
+    /**
+     * The user's downline count at an exact depth (1/2/3). These are maintained
+     * as denormalized columns (users.level_N_count), incremented up the chain on
+     * every referred signup, so this is a single cheap read — no tree walk.
+     */
+    private function referralDepthCount(int $userId, int $depth): int
+    {
+        $u = (new UserModel())->find($userId);
+        return (int) ($u["level_{$depth}_count"] ?? 0);
     }
 
     public function transactions(): ResponseInterface

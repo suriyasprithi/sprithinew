@@ -360,9 +360,21 @@ class AuthController extends BaseApiController
         }
         $d = $this->request->getJSON(true) ?? $this->request->getPost();
         $email = trim((string) $d['email']);
+        // This endpoint is customer-facing, so it only resets CUSTOMER accounts —
+        // a shared email/mobile must never reset a staff (taluk/district/state/
+        // driver/admin) account from the customer URL. A future staff flow can
+        // pass its own role to scope differently.
+        $role = (string) ($d['role'] ?? 'customer');
+        if (! in_array($role, self::ALLOWED_ROLES, true)) $role = 'customer';
 
         $users = new UserModel();
-        $user  = $users->where('email', $email)->where('status', 'active')->first();
+        // An email can sit on several legacy-imported accounts of this role; reset
+        // the NEWEST (highest id) so the most recent account is the one recovered.
+        $user  = $users->where('email', $email)
+            ->where('role', $role)
+            ->where('status', 'active')
+            ->orderBy('id', 'DESC')
+            ->first();
 
         // Generic response either way — don't reveal whether the email exists.
         $genericMessage = 'If an account with that email exists, a reset link has been sent.';
@@ -609,6 +621,9 @@ class AuthController extends BaseApiController
             'level_1_wallet' => (float) ($user['level_1_wallet'] ?? 0),
             'level_2_wallet' => (float) ($user['level_2_wallet'] ?? 0),
             'level_3_wallet' => (float) ($user['level_3_wallet'] ?? 0),
+            'welcome_1_wallet' => (float) ($user['welcome_1_wallet'] ?? 0),
+            'welcome_2_wallet' => (float) ($user['welcome_2_wallet'] ?? 0),
+            'welcome_3_wallet' => (float) ($user['welcome_3_wallet'] ?? 0),
             'buyback_wallet' => (float) ($user['buyback_wallet'] ?? 0),
             'global_wallet'  => (float) ($user['global_wallet'] ?? 0),
             'monthly_wallet' => (float) ($user['monthly_wallet'] ?? 0),

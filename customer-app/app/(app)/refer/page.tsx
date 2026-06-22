@@ -2,14 +2,14 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
-import { Copy, Gift, Loader2, Users, Link2, Share2 } from "lucide-react";
+import { Copy, Gift, Loader2, Users, Link2, Share2, QrCode } from "lucide-react";
 import { toast } from "sonner";
 import { AppHeader } from "@/components/layout/app-header";
 import { LuxuryCard } from "@/components/ui/custom/luxury-card";
 import { AnimatedCounter } from "@/components/ui/custom/animated-counter";
 import { useAuth } from "@/stores/auth";
 import { api } from "@/lib/api";
-import { mock, type MockReferral } from "@/lib/mock";
+import { mock } from "@/lib/mock";
 
 type ApiReferral = {
   id: number;
@@ -21,16 +21,36 @@ type ApiReferral = {
   referred?: { name: string; mobile_number: string } | null;
 };
 
-function adapt(raw: ApiReferral): MockReferral {
+type ReferralRow = {
+  id: number;
+  name: string;
+  mobile_number: string;
+  created_at: string; // raw datetime; "" when unknown
+  bonus_amount: number;
+  level: 1 | 2 | 3;
+};
+
+function adapt(raw: ApiReferral): ReferralRow {
   const lvl = Number(raw.level ?? 1);
   return {
     id: raw.id,
     name: raw.referred?.name ?? "—",
     mobile_number: raw.referred?.mobile_number ?? "",
-    joined_at: (raw.created_at ?? "").slice(0, 10),
+    created_at: raw.created_at ?? "",
     bonus_amount: Number(raw.bonus_amount ?? 0),
     level: (lvl === 2 || lvl === 3 ? lvl : 1) as 1 | 2 | 3,
   };
+}
+
+// "12 Jun 2026, 04:35 PM" — full date AND time for each referral credit.
+function fmtDateTime(s: string): string {
+  if (!s) return "—";
+  const d = new Date(s.replace(" ", "T"));
+  if (Number.isNaN(d.getTime())) return s;
+  return d.toLocaleString("en-IN", {
+    day: "2-digit", month: "short", year: "numeric",
+    hour: "2-digit", minute: "2-digit", hour12: true,
+  });
 }
 
 const LEVEL_BADGE: Record<1 | 2 | 3, string> = {
@@ -39,11 +59,21 @@ const LEVEL_BADGE: Record<1 | 2 | 3, string> = {
   3: "bg-sky-500/15 text-sky-500 ring-sky-500/30",
 };
 
+type Tab = "all" | 1 | 2 | 3;
+const TABS: { key: Tab; label: string }[] = [
+  { key: "all", label: "All" },
+  { key: 1, label: "Level 1" },
+  { key: 2, label: "Level 2" },
+  { key: 3, label: "Level 3" },
+];
+
 export default function ReferPage() {
   const { user } = useAuth();
-  const [refs, setRefs] = useState<MockReferral[]>([]);
+  const [refs, setRefs] = useState<ReferralRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [shareUrl, setShareUrl] = useState<string>("");
+  const [showQr, setShowQr] = useState(false);
+  const [tab, setTab] = useState<Tab>("all");
 
   useEffect(() => {
     void (async () => {
@@ -53,7 +83,11 @@ export default function ReferPage() {
         setRefs(items.map(adapt));
       } catch {
         // Backend down — show offline mock so the page is still useful.
-        setRefs(await mock.getReferrals());
+        const m = await mock.getReferrals();
+        setRefs(m.map((r) => ({
+          id: r.id, name: r.name, mobile_number: r.mobile_number,
+          created_at: r.joined_at, bonus_amount: r.bonus_amount, level: r.level,
+        })));
         toast.message("Showing offline sample referrals (backend unreachable)");
       } finally {
         setLoading(false);
@@ -73,11 +107,24 @@ export default function ReferPage() {
   }, [user?.mobile_number]);
 
   const code = user?.mobile_number ?? "";
-  const total = refs.reduce((s, r) => s + r.bonus_amount, 0);
+  const lifetimeTotal = refs.reduce((s, r) => s + r.bonus_amount, 0);
+  const levelTotals = useMemo(() => {
+    const t: Record<1 | 2 | 3, number> = { 1: 0, 2: 0, 3: 0 };
+    for (const r of refs) t[r.level] += r.bonus_amount;
+    return t;
+  }, [refs]);
+  const filtered = useMemo(
+    () => (tab === "all" ? refs : refs.filter((r) => r.level === tab)),
+    [refs, tab],
+  );
   const shareMessage = useMemo(
     () => `Hey! Join me on SPRITHI Digital Mart — use my referral code ${code} and we both get rewards.\n${shareUrl}`,
     [code, shareUrl],
   );
+  // Free, no-dependency QR image of the referral link (goQR API).
+  const qrSrc = shareUrl
+    ? `https://api.qrserver.com/v1/create-qr-code/?size=220x220&margin=12&data=${encodeURIComponent(shareUrl)}`
+    : "";
 
   function copyCode() {
     if (!code) return;
@@ -133,7 +180,7 @@ export default function ReferPage() {
                 </div>
               )}
 
-              <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
                 <button
                   onClick={copyCode}
                   className="flex items-center justify-center gap-2 rounded-xl bg-white/15 px-3 py-2.5 text-sm font-semibold text-white backdrop-blur hover:bg-white/25"
@@ -148,6 +195,13 @@ export default function ReferPage() {
                   <Link2 className="h-4 w-4" /> Copy link
                 </button>
                 <button
+                  onClick={() => setShowQr((v) => !v)}
+                  disabled={!shareUrl}
+                  className="flex items-center justify-center gap-2 rounded-xl bg-white/15 px-3 py-2.5 text-sm font-semibold text-white backdrop-blur hover:bg-white/25 disabled:opacity-50"
+                >
+                  <QrCode className="h-4 w-4" /> {showQr ? "Hide QR" : "QR code"}
+                </button>
+                <button
                   onClick={() => void share()}
                   disabled={!shareUrl}
                   className="flex items-center justify-center gap-2 rounded-xl bg-white py-2.5 text-sm font-semibold text-brand hover:bg-white/90 disabled:opacity-50"
@@ -156,22 +210,46 @@ export default function ReferPage() {
                 </button>
               </div>
 
+              {/* QR code — scan to open the referral link. */}
+              {showQr && qrSrc && (
+                <div className="flex flex-col items-center gap-2 rounded-xl bg-white/10 p-4 backdrop-blur">
+                  <img
+                    src={qrSrc}
+                    alt="Referral QR code"
+                    width={180}
+                    height={180}
+                    className="rounded-lg bg-white p-2"
+                  />
+                  <p className="text-xs opacity-90">Scan to open my referral link</p>
+                </div>
+              )}
+
               <p className="text-xs opacity-80">
-                Send your friend the link above. They tap it → register page opens with your code pre-filled. When they sign up, you earn ₹15 in your level wallet.
+                Send your friend the link or QR above. They tap it → register page opens with your code pre-filled. When they sign up, you earn ₹15 in your level wallet.
               </p>
             </div>
           </LuxuryCard>
         </motion.div>
 
+        {/* Lifetime Referral Bonus — total earned across all levels. */}
+        <LuxuryCard glow hoverLift={false} className="p-5 text-center">
+          <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Lifetime Referral Bonus</p>
+          <p className="mt-1 text-3xl font-bold tracking-tight text-brand">
+            ₹<AnimatedCounter value={Math.round(lifetimeTotal)} />
+          </p>
+          <p className="mt-1 text-[11px] text-muted-foreground">Total earned from all your referrals</p>
+        </LuxuryCard>
+
         <LuxuryCard hoverLift={false} className="grid grid-cols-3 gap-2 p-4 text-center">
           {([
-            { label: "Level 1", count: user?.level_1_count ?? 0 },
-            { label: "Level 2", count: user?.level_2_count ?? 0 },
-            { label: "Level 3", count: user?.level_3_count ?? 0 },
+            { label: "Level 1", count: user?.level_1_count ?? 0, total: levelTotals[1] },
+            { label: "Level 2", count: user?.level_2_count ?? 0, total: levelTotals[2] },
+            { label: "Level 3", count: user?.level_3_count ?? 0, total: levelTotals[3] },
           ]).map((lv) => (
             <div key={lv.label}>
               <p className="text-2xl font-bold tracking-tight"><AnimatedCounter value={lv.count} /></p>
               <p className="text-[10px] uppercase tracking-wider text-muted-foreground">{lv.label}</p>
+              <p className="mt-0.5 text-[11px] font-medium text-brand">₹{Math.round(lv.total)}</p>
             </div>
           ))}
         </LuxuryCard>
@@ -179,17 +257,37 @@ export default function ReferPage() {
         <div>
           <div className="mb-3 flex items-center justify-between">
             <h3 className="flex items-center gap-1.5 text-xs uppercase tracking-wider text-muted-foreground">
-              <Users className="h-3.5 w-3.5" /> My referrals
+              <Users className="h-3.5 w-3.5" /> Referral history
             </h3>
-            <span className="text-xs"><span className="text-muted-foreground">Total earned:</span> <span className="font-semibold text-brand">₹{total}</span></span>
           </div>
+
+          {/* Level tabs — view referrals categorised by referral level. */}
+          <div className="mb-3 flex gap-1.5 overflow-x-auto rounded-xl bg-surface-2/60 p-1">
+            {TABS.map((t) => {
+              const active = tab === t.key;
+              return (
+                <button
+                  key={String(t.key)}
+                  onClick={() => setTab(t.key)}
+                  className={`flex-1 whitespace-nowrap rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
+                    active ? "bg-brand text-brand-foreground shadow" : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  {t.label}
+                </button>
+              );
+            })}
+          </div>
+
           {loading ? (
             <div className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> Loading…</div>
-          ) : refs.length === 0 ? (
-            <LuxuryCard hoverLift={false} className="p-6 text-center text-sm text-muted-foreground">No referrals yet — share your link!</LuxuryCard>
+          ) : filtered.length === 0 ? (
+            <LuxuryCard hoverLift={false} className="p-6 text-center text-sm text-muted-foreground">
+              {tab === "all" ? "No referrals yet — share your link!" : `No Level ${tab} referrals yet.`}
+            </LuxuryCard>
           ) : (
             <div className="space-y-2">
-              {refs.map((r, i) => (
+              {filtered.map((r, i) => (
                 <motion.div key={r.id} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.03 }}>
                   <LuxuryCard className="flex items-center justify-between p-3 text-sm">
                     <div className="flex items-center gap-3">
@@ -198,12 +296,16 @@ export default function ReferPage() {
                       </span>
                       <div>
                         <div className="flex items-center gap-2">
-                          <p className="font-medium">{r.name}</p>
+                          {/* Level 1 shows the referred user's name + mobile; L2/L3 are
+                              amount-only (the referred member's details aren't required). */}
+                          <p className="font-medium">{r.level === 1 ? r.name : `Level ${r.level} referral`}</p>
                           <span className={`rounded-md px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider ring-1 ${LEVEL_BADGE[r.level]}`}>
                             L{r.level}
                           </span>
                         </div>
-                        <p className="text-xs text-muted-foreground">{r.mobile_number} · {r.joined_at}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {r.level === 1 && r.mobile_number ? `${r.mobile_number} · ` : ""}{fmtDateTime(r.created_at)}
+                        </p>
                       </div>
                     </div>
                     <span className="font-semibold text-emerald-400">+₹{r.bonus_amount}</span>

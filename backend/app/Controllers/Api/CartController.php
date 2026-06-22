@@ -5,6 +5,7 @@ namespace App\Controllers\Api;
 use App\Models\CartItemModel;
 use App\Models\ProductModel;
 use App\Models\ProductVariantModel;
+use App\Services\GstService;
 use App\Services\PrescriptionPolicy;
 use CodeIgniter\HTTP\ResponseInterface;
 
@@ -26,8 +27,25 @@ class CartController extends BaseApiController
         $pById = []; foreach ($products as $p) $pById[(int) $p['id']] = $p;
         $vById = []; foreach ($variants as $v) $vById[(int) $v['id']] = $v;
 
-        $items = [];
-        $total = 0;
+        // Resolve each product's vendor shop name (shop_name, else the vendor's
+        // user name) so the cart can show who sells each item.
+        $vendorIds    = array_values(array_unique(array_filter(array_map(static fn ($p) => (int) ($p['vendor_id'] ?? 0), $products))));
+        $shopByVendor = [];
+        if ($vendorIds) {
+            $vrows = \Config\Database::connect()->query(
+                'SELECT u.id, COALESCE(NULLIF(vp.shop_name, \'\'), u.name) AS shop
+                 FROM users u LEFT JOIN vendor_profiles vp ON vp.user_id = u.id
+                 WHERE u.id IN (' . implode(',', array_map('intval', $vendorIds)) . ')'
+            )->getResultArray();
+            foreach ($vrows as $rv) $shopByVendor[(int) $rv['id']] = $rv['shop'];
+        }
+
+        // Per-product GST rate from each product's vendor category (default 0).
+        $gstRates = GstService::ratesForProducts($products);
+
+        $items    = [];
+        $total    = 0;
+        $gstTotal = 0;
         foreach ($rows as $r) {
             $p = $pById[(int) $r['product_id']] ?? null;
             if (! $p) continue;
@@ -42,6 +60,9 @@ class CartController extends BaseApiController
             }
             $sub = $price * (int) $r['qty'];
             $total += $sub;
+            $gstRate = $gstRates[(int) $p['id']] ?? 0.0;
+            $gstAmt  = GstService::lineGst($sub, $gstRate);
+            $gstTotal += $gstAmt;
             $items[] = [
                 'cart_id'         => (int) $r['id'],
                 'product_id'      => (int) $p['id'],
@@ -50,7 +71,10 @@ class CartController extends BaseApiController
                 'image'           => ($variation && ! empty($variation['image'])) ? $variation['image'] : $p['image'],
                 'qty'             => (int) $r['qty'],
                 'subtotal'        => $sub,
+                'gst_rate'        => $gstRate,
+                'gst_amount'      => $gstAmt,
                 'vendor_id'       => (int) $p['vendor_id'],
+                'vendor_shop'     => $shopByVendor[(int) $p['vendor_id']] ?? null,
                 'variation_id'    => $vid ?: null,
                 'variation_label' => $label,
             ];
@@ -60,7 +84,12 @@ class CartController extends BaseApiController
         // checkout page can show the required upload field.
         $requiresPrescription = PrescriptionPolicy::requiresFor($products);
 
-        return $this->ok(['items' => $items, 'total' => $total, 'requires_prescription' => $requiresPrescription]);
+        return $this->ok([
+            'items'                 => $items,
+            'total'                 => $total,
+            'gst_total'             => round($gstTotal, 2),
+            'requires_prescription' => $requiresPrescription,
+        ]);
     }
 
     public function add(): ResponseInterface

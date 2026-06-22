@@ -13,7 +13,7 @@ class VendorCategoryModel extends Model
     protected $useSoftDeletes   = false;
     protected $protectFields    = true;
 
-    protected $allowedFields = ['name', 'image', 'status'];
+    protected $allowedFields = ['name', 'image', 'status', 'free_delivery_min', 'delivery_charge', 'gst_rate'];
 
     protected $useTimestamps = true;
     protected $dateFormat    = 'datetime';

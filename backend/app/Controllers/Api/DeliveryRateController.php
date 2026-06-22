@@ -110,7 +110,15 @@ class DeliveryRateController extends BaseApiController
         if (! $auth) return $this->fail('Unauthorized', 401);
 
         $deliveryAt = $this->request->getGet('delivery_at') ?: null;
-        return $this->ok((new DeliveryChargeService())->quote((int) $auth->id, $deliveryAt));
+        // The chosen delivery-time slot's price (C) is part of the summed fee.
+        $rateId    = (int) ($this->request->getGet('delivery_rate_id') ?? 0);
+        $slotPrice = 0.0;
+        if ($rateId > 0) {
+            $rate = (new \App\Models\DeliveryTimeRateModel())->find($rateId);
+            if ($rate) $slotPrice = (float) $rate['price'];
+        }
+        // Per-shop summed quote so the checkout total matches what placement charges.
+        return $this->ok((new DeliveryChargeService())->quoteCart((int) $auth->id, $deliveryAt, $slotPrice));
     }
 
     /** Resolve the taluk of the (first) vendor in the customer's cart, or 0. */

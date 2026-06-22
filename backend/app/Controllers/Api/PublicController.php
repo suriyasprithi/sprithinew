@@ -4,6 +4,7 @@ namespace App\Controllers\Api;
 
 use App\Models\CategoryModel;
 use App\Models\DistrictModel;
+use App\Models\PincodeModel;
 use App\Models\ProductModel;
 use App\Models\ProductVariantModel;
 use App\Models\StateModel;
@@ -18,6 +19,49 @@ use CodeIgniter\HTTP\ResponseInterface;
  */
 class PublicController extends BaseApiController
 {
+    /**
+     * Resolve the vendor user-ids that serve a requested geo scope. Returns
+     * null when no geo filter was supplied (= no scoping); otherwise a
+     * (possibly empty) de-duplicated list of vendor user-ids.
+     *
+     * Besides the exact column match, this reconciles via the pincodes table:
+     * a vendor whose profile only captured a pincode (taluk_id/district_id left
+     * blank at registration) is still matched when that pincode belongs to the
+     * requested taluk/district. Without this, such a vendor never appears in
+     * its own taluk's results (BUG-012).
+     */
+    private function geoVendorIds(string $pincode, int $talukId, int $districtId, int $stateId): ?array
+    {
+        $clean = static fn (array $ids) => array_values(array_unique(array_map('intval', $ids)));
+
+        if ($pincode !== '') {
+            return $clean((new VendorProfileModel())->where('pincode', $pincode)->findColumn('user_id') ?: []);
+        }
+        if ($talukId > 0) {
+            $ids  = (new VendorProfileModel())->where('taluk_id', $talukId)->findColumn('user_id') ?: [];
+            $pins = (new PincodeModel())->where('taluk_id', $talukId)->findColumn('code') ?: [];
+            if ($pins) {
+                $ids = array_merge($ids, (new VendorProfileModel())->whereIn('pincode', $pins)->findColumn('user_id') ?: []);
+            }
+            return $clean($ids);
+        }
+        if ($districtId > 0) {
+            $ids      = (new VendorProfileModel())->where('district_id', $districtId)->findColumn('user_id') ?: [];
+            $talukIds = (new TalukModel())->where('district_id', $districtId)->findColumn('id') ?: [];
+            if ($talukIds) {
+                $pins = (new PincodeModel())->whereIn('taluk_id', $talukIds)->findColumn('code') ?: [];
+                if ($pins) {
+                    $ids = array_merge($ids, (new VendorProfileModel())->whereIn('pincode', $pins)->findColumn('user_id') ?: []);
+                }
+            }
+            return $clean($ids);
+        }
+        if ($stateId > 0) {
+            return $clean((new VendorProfileModel())->where('state_id', $stateId)->findColumn('user_id') ?: []);
+        }
+        return null;
+    }
+
     public function home(): ResponseInterface
     {
         // Optional location scope (customer's chosen delivery location).
@@ -26,14 +70,7 @@ class PublicController extends BaseApiController
         $districtId = (int) $this->request->getGet('district_id');
         $stateId    = (int) $this->request->getGet('state_id');
 
-        $vendorIds = null;
-        if ($talukId > 0) {
-            $vendorIds = (new VendorProfileModel())->where('taluk_id', $talukId)->findColumn('user_id') ?: [];
-        } elseif ($districtId > 0) {
-            $vendorIds = (new VendorProfileModel())->where('district_id', $districtId)->findColumn('user_id') ?: [];
-        } elseif ($stateId > 0) {
-            $vendorIds = (new VendorProfileModel())->where('state_id', $stateId)->findColumn('user_id') ?: [];
-        }
+        $vendorIds = $this->geoVendorIds('', $talukId, $districtId, $stateId);
 
         $featuredQ = (new ProductModel())->where('status', 'active');
         if (is_array($vendorIds)) {
@@ -95,16 +132,7 @@ class PublicController extends BaseApiController
         }
 
         // Geo scoping: walk pincode → taluk → district → state (most specific wins).
-        $geoVendorIds = null;
-        if ($pincode) {
-            $geoVendorIds = (new VendorProfileModel())->where('pincode', $pincode)->findColumn('user_id') ?: [];
-        } elseif ($talukId > 0) {
-            $geoVendorIds = (new VendorProfileModel())->where('taluk_id', $talukId)->findColumn('user_id') ?: [];
-        } elseif ($districtId > 0) {
-            $geoVendorIds = (new VendorProfileModel())->where('district_id', $districtId)->findColumn('user_id') ?: [];
-        } elseif ($stateId > 0) {
-            $geoVendorIds = (new VendorProfileModel())->where('state_id', $stateId)->findColumn('user_id') ?: [];
-        }
+        $geoVendorIds = $this->geoVendorIds($pincode, $talukId, $districtId, $stateId);
         if (is_array($geoVendorIds)) {
             if (empty($geoVendorIds)) {
                 return $this->ok(['items' => [], 'categories' => (new CategoryModel())->where('status', 'active')->findAll()]);
@@ -194,20 +222,8 @@ class PublicController extends BaseApiController
         $districtId = (int) $this->request->getGet('district_id');
         $stateId    = (int) $this->request->getGet('state_id');
 
-        $vendorIds = null;
-        if ($pincode) {
-            $vendorIds = (new VendorProfileModel())->where('pincode', $pincode)->findColumn('user_id') ?: [];
-            if (empty($vendorIds)) return $this->ok(['items' => []]);
-        } elseif ($talukId > 0) {
-            $vendorIds = (new VendorProfileModel())->where('taluk_id', $talukId)->findColumn('user_id') ?: [];
-            if (empty($vendorIds)) return $this->ok(['items' => []]);
-        } elseif ($districtId > 0) {
-            $vendorIds = (new VendorProfileModel())->where('district_id', $districtId)->findColumn('user_id') ?: [];
-            if (empty($vendorIds)) return $this->ok(['items' => []]);
-        } elseif ($stateId > 0) {
-            $vendorIds = (new VendorProfileModel())->where('state_id', $stateId)->findColumn('user_id') ?: [];
-            if (empty($vendorIds)) return $this->ok(['items' => []]);
-        }
+        $vendorIds = $this->geoVendorIds($pincode, $talukId, $districtId, $stateId);
+        if (is_array($vendorIds) && empty($vendorIds)) return $this->ok(['items' => []]);
 
         $users = (new UserModel())->where('role', 'vendor')->where('status', 'active');
         if ($vendorIds !== null) $users->whereIn('id', $vendorIds);

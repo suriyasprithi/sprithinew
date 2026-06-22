@@ -3,6 +3,7 @@
 namespace App\Controllers\Api;
 
 use App\Models\CategoryModel;
+use App\Models\VendorCategoryModel;
 use App\Models\VendorProfileModel;
 use CodeIgniter\HTTP\ResponseInterface;
 
@@ -33,6 +34,24 @@ class CategoryController extends BaseApiController
         if ($r = $this->requireAdmin()) return $r;
         $items = (new CategoryModel())->orderBy('id', 'DESC')->findAll();
         $items = array_map([$this, 'decode'], $items);
+
+        // Attach the linked vendor category's name so the admin table can show it
+        // directly — no separate /admin/vendor-categories lookup on the client.
+        $vcIds = array_values(array_unique(array_filter(
+            array_map(static fn ($i) => (int) ($i['vendor_category_id'] ?? 0), $items)
+        )));
+        $vcName = [];
+        if ($vcIds) {
+            foreach ((new VendorCategoryModel())->whereIn('id', $vcIds)->findAll() as $v) {
+                $vcName[(int) $v['id']] = $v['name'];
+            }
+        }
+        foreach ($items as &$it) {
+            $vid = (int) ($it['vendor_category_id'] ?? 0);
+            $it['vendor_category_name'] = $vid ? ($vcName[$vid] ?? null) : null;
+        }
+        unset($it);
+
         return $this->ok(['items' => $items]);
     }
 
@@ -49,9 +68,6 @@ class CategoryController extends BaseApiController
                 ? (int) $data['vendor_category_id']
                 : null,
             'status'             => $data['status'] ?? 'active',
-            'free_delivery_min'  => isset($data['free_delivery_min']) && $data['free_delivery_min'] !== ''
-                ? (float) $data['free_delivery_min']
-                : 0,
         ], true);
         return $this->ok(['id' => (int) $id], 'Created');
     }
@@ -61,11 +77,6 @@ class CategoryController extends BaseApiController
         if ($r = $this->requireAdmin()) return $r;
         $data = $this->request->getJSON(true) ?? $this->request->getPost();
         $payload = array_intersect_key($data, array_flip(['name', 'status']));
-        if (array_key_exists('free_delivery_min', $data)) {
-            $payload['free_delivery_min'] = $data['free_delivery_min'] === '' || $data['free_delivery_min'] === null
-                ? 0
-                : (float) $data['free_delivery_min'];
-        }
         if (array_key_exists('vendor_category_id', $data)) {
             $payload['vendor_category_id'] = $data['vendor_category_id'] === null || $data['vendor_category_id'] === ''
                 ? null
@@ -150,11 +161,10 @@ class CategoryController extends BaseApiController
         return null;
     }
 
-    /** Cast vendor_category_id + free_delivery_min for the frontend. */
+    /** Cast vendor_category_id for the frontend. */
     private function decode(array $row): array
     {
         $row['vendor_category_id'] = isset($row['vendor_category_id']) ? (int) $row['vendor_category_id'] : null;
-        $row['free_delivery_min']  = (float) ($row['free_delivery_min'] ?? 0);
         return $row;
     }
 }

@@ -33,7 +33,7 @@ type ProductCategory = {
   name: string;
   status: "active" | "inactive";
   vendor_category_id?: number | null;
-  free_delivery_min?: number;
+  vendor_category_name?: string | null;
 };
 
 type Draft = {
@@ -41,11 +41,10 @@ type Draft = {
   name: string;
   status: "active" | "inactive";
   vendor_category_id: number | null;
-  free_delivery_min: number;
 };
 
 function blankDraft(): Draft {
-  return { name: "", status: "active", vendor_category_id: null, free_delivery_min: 0 };
+  return { name: "", status: "active", vendor_category_id: null };
 }
 
 export default function ProductCategoriesPage() {
@@ -89,7 +88,6 @@ export default function ProductCategoriesPage() {
       name: c.name,
       status: c.status,
       vendor_category_id: c.vendor_category_id ?? null,
-      free_delivery_min: c.free_delivery_min ?? 0,
     });
   }
 
@@ -102,7 +100,6 @@ export default function ProductCategoriesPage() {
       name,
       vendor_category_id: editing.vendor_category_id,
       status: editing.status,
-      free_delivery_min: editing.free_delivery_min,
     };
 
     setBusy(true);
@@ -175,10 +172,9 @@ export default function ProductCategoriesPage() {
         </div>
 
         <div className="luxe-card overflow-hidden">
-          <div className="hidden grid-cols-[1fr_160px_120px_120px_56px] gap-3 border-b border-border bg-surface-2/40 px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground md:grid">
+          <div className="hidden grid-cols-[1fr_160px_120px_56px] gap-3 border-b border-border bg-surface-2/40 px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground md:grid">
             <span>Name</span>
             <span>Vendor category</span>
-            <span>Free above</span>
             <span>Status</span>
             <span className="text-right">Actions</span>
           </div>
@@ -197,7 +193,7 @@ export default function ProductCategoriesPage() {
                   initial={{ opacity: 0, y: 4 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: i * 0.02 }}
-                  className="grid grid-cols-[1fr_auto] items-center gap-3 px-4 py-3 transition-colors hover:bg-surface-2/40 md:grid-cols-[1fr_160px_120px_120px_56px]"
+                  className="grid grid-cols-[1fr_auto] items-center gap-3 px-4 py-3 transition-colors hover:bg-surface-2/40 md:grid-cols-[1fr_160px_120px_56px]"
                 >
                   <div className="flex items-center gap-3">
                     <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-brand/10 text-brand">
@@ -206,23 +202,18 @@ export default function ProductCategoriesPage() {
                     <div className="min-w-0">
                       <p className="truncate text-sm font-semibold">{c.name}</p>
                       <p className="text-xs text-muted-foreground md:hidden">
-                        {c.vendor_category_id ? vcatName.get(c.vendor_category_id) ?? "—" : "Unlinked"}
+                        {c.vendor_category_id ? (c.vendor_category_name ?? vcatName.get(c.vendor_category_id) ?? "—") : "Unlinked"}
                       </p>
                     </div>
                   </div>
                   <p className="hidden text-xs md:block">
                     {c.vendor_category_id ? (
                       <span className="inline-flex items-center gap-1 rounded-full border border-brand/20 bg-brand/5 px-2 py-0.5 font-medium text-brand">
-                        <Layers className="h-3 w-3" /> {vcatName.get(c.vendor_category_id) ?? "—"}
+                        <Layers className="h-3 w-3" /> {c.vendor_category_name ?? vcatName.get(c.vendor_category_id) ?? "—"}
                       </span>
                     ) : (
                       <span className="text-muted-foreground">— Unlinked</span>
                     )}
-                  </p>
-                  <p className="hidden text-sm md:block">
-                    {c.free_delivery_min && c.free_delivery_min > 0
-                      ? <span className="font-medium">₹{c.free_delivery_min}</span>
-                      : <span className="text-muted-foreground">—</span>}
                   </p>
                   <div className="hidden md:block"><StatusBadge status={c.status} /></div>
                   <div className="flex items-center gap-2 justify-self-end">
@@ -275,11 +266,6 @@ export default function ProductCategoriesPage() {
                 emptyText="No vendor category found."
               />
               <p className="text-[11px] text-muted-foreground">Vendors with this vendor category will see this product category in their product form dropdown.</p>
-            </div>
-            <div className="space-y-1.5">
-              <Label>Free delivery above (₹)</Label>
-              <Input type="number" min="0" step="1" value={editing?.free_delivery_min ?? 0} onChange={(e) => setEditing((p) => p && ({ ...p, free_delivery_min: e.target.value === "" ? 0 : Number(e.target.value) }))} placeholder="0" />
-              <p className="text-[11px] text-muted-foreground">When the estimated delivery time is within the free-hours limit, this category&apos;s order subtotal must reach this amount for free delivery. 0 = always free for this category.</p>
             </div>
             <div className="space-y-1.5">
               <Label>Status</Label>

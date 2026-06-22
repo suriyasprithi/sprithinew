@@ -10,16 +10,19 @@ use App\Models\WalletTransactionModel;
  * - wallet_balance (main, spendable)
  * - monthly_wallet
  * - level_wallet     (aggregate commission wallet; legacy)
- * - level_1_wallet   (L1 referral commissions — gated by threshold)
- * - level_2_wallet   (L2 referral commissions — gated by threshold)
- * - level_3_wallet   (L3 referral commissions — gated by threshold)
+ * - level_1_wallet   (L1 purchase commission — freely transferable)
+ * - level_2_wallet   (L2 purchase commission — freely transferable)
+ * - level_3_wallet   (L3 purchase commission — freely transferable)
+ * - welcome_1_wallet (L1 signup referral bonus — gated: depth-1 ≥ 100)
+ * - welcome_2_wallet (L2 signup referral bonus — gated: depth-2 ≥ 10,000)
+ * - welcome_3_wallet (L3 signup referral bonus — gated: depth-3 ≥ 10,00,000)
  * - global_wallet
  * - buyback_wallet
  * - qr_wallet        (vendor in-store QR sales land here; vendor transfers to main wallet)
  */
 class WalletService
 {
-    public const WALLETS = ['wallet', 'monthly', 'level', 'level_1', 'level_2', 'level_3', 'global', 'buyback', 'qr'];
+    public const WALLETS = ['wallet', 'monthly', 'level', 'level_1', 'level_2', 'level_3', 'welcome_1', 'welcome_2', 'welcome_3', 'global', 'buyback', 'qr'];
 
     public static function column(string $key): string
     {
@@ -37,6 +40,9 @@ class WalletService
             'level_1' => (float) ($u['level_1_wallet']   ?? 0),
             'level_2' => (float) ($u['level_2_wallet']   ?? 0),
             'level_3' => (float) ($u['level_3_wallet']   ?? 0),
+            'welcome_1' => (float) ($u['welcome_1_wallet'] ?? 0),
+            'welcome_2' => (float) ($u['welcome_2_wallet'] ?? 0),
+            'welcome_3' => (float) ($u['welcome_3_wallet'] ?? 0),
             'global'  => (float) ($u['global_wallet']    ?? 0),
             'buyback' => (float) ($u['buyback_wallet']   ?? 0),
             'qr'      => (float) ($u['qr_wallet']        ?? 0),

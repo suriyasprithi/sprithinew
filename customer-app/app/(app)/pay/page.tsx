@@ -50,9 +50,7 @@ type DeliveryQuote = { free: boolean; amount: number; reason: string };
 const quoteHint = (q: DeliveryQuote | null): string => {
   if (!q) return "";
   if (q.free) return q.reason === "eta" ? "Free — scheduled far enough ahead" : "";
-  if (q.reason === "night") return "Night-time delivery charge applies";
-  if (q.reason === "threshold") return "Order doesn't meet the free-delivery amount";
-  return "";
+  return "Schedule 4+ hours ahead for free delivery";
 };
 
 function normalize(items: unknown[]): CustomerAddress[] {
@@ -67,6 +65,7 @@ export default function CheckoutPage() {
   const router = useRouter();
   const { user, hydrate } = useAuth();
   const [items, setItems] = useState<CartRow[]>([]);
+  const [gstTotal, setGstTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [placing, setPlacing] = useState(false);
   const [notes, setNotes] = useState("");
@@ -95,11 +94,10 @@ export default function CheckoutPage() {
   const [prescriptionPath, setPrescriptionPath] = useState<string | null>(null);
   const [prescriptionUrl, setPrescriptionUrl] = useState<string | null>(null);
 
-  // Default the delivery time to ~1h from now; min = now so no past times.
+  // Only set the min (no past dates). Delivery date + time are left BLANK so the
+  // customer must actively pick both before placing the order.
   useEffect(() => {
-    const now = new Date();
-    setMinDateTime(toLocalInput(now));
-    setDeliveryAt(toLocalInput(new Date(now.getTime() + 60 * 60 * 1000)));
+    setMinDateTime(toLocalInput(new Date()));
   }, []);
 
   // Delivery-time rate options (admin-configured per taluk). Cheapest first; the
@@ -113,7 +111,7 @@ export default function CheckoutPage() {
           id: Number(r.id), time_min: Number(r.time_min), price: Number(r.price),
         }));
         setRates(items);
-        if (items.length) setRateId(items[0].id); // cheapest-first default
+        // No default — the customer must pick a delivery time slot themselves.
       } catch { /* no rates → rule-based fallback */ }
     })();
   }, []);
@@ -140,6 +138,7 @@ export default function CheckoutPage() {
         const rows = (res.data.data?.items ?? []) as CartRow[];
         if (rows.length === 0) { router.replace("/cart"); return; }
         setItems(rows);
+        setGstTotal(Number(res.data.data?.gst_total ?? 0));
         setRequiresPrescription(Boolean(res.data.data?.requires_prescription));
       } catch (e) {
         toast.error(apiErrorMessage(e));
@@ -158,14 +157,17 @@ export default function CheckoutPage() {
     if (loading || !deliveryAt) return;
     void (async () => {
       try {
-        const res = await api.get(`/customer/delivery-quote?delivery_at=${encodeURIComponent(deliveryAt)}`);
+        // Include the chosen slot so the quote carries the slot price (C) too.
+        const url = `/customer/delivery-quote?delivery_at=${encodeURIComponent(deliveryAt)}`
+          + (rateId ? `&delivery_rate_id=${rateId}` : "");
+        const res = await api.get(url);
         const d = (res.data.data ?? {}) as Record<string, unknown>;
         setQuote({ free: Boolean(d.free), amount: Number(d.amount ?? 0), reason: String(d.reason ?? "") });
       } catch {
         setQuote(null);
       }
     })();
-  }, [deliveryAt, loading]);
+  }, [deliveryAt, rateId, loading]);
 
   async function addNewAddress() {
     if (!addrForm.address_line.trim()) { toast.error("Full address is required"); return; }
@@ -190,25 +192,33 @@ export default function CheckoutPage() {
   }
 
   const subtotal = items.reduce((s, i) => s + Number(i.price) * i.qty, 0);
-  const selectedRate = rates.find((r) => r.id === rateId) ?? null;
-  const deliveryFee = selectedRate ? selectedRate.price : (quote ? quote.amount : 0);
-  const deliveryFree = selectedRate ? selectedRate.price <= 0 : !!quote?.free;
-  const total = subtotal + deliveryFee;
+  // Delivery fee is always the rule-based quote (vendor-category threshold +
+  // free-hours window), summed per shop. The delivery-time slot only picks
+  // speed, never the fee.
+  const deliveryFee = quote ? quote.amount : 0;
+  const deliveryFree = !!quote?.free;
+  const total = subtotal + deliveryFee + gstTotal;
   const balance = user?.wallet_balance ?? 0;
   const selected = addresses.find((a) => a.id === selectedId) ?? null;
   const walletOk = balance >= total;
   // A prescription must be attached when the cart has medicine-category items.
   const prescriptionOk = !requiresPrescription || Boolean(prescriptionPath);
+  // Only the delivery date must be chosen; the delivery time is optional.
+  const dateChosen = Boolean(deliveryAt.split("T")[0]);
   // COD has no balance requirement — cash is collected on delivery.
-  const canPay = Boolean(selected) && prescriptionOk && (payMethod === "cod" || walletOk);
+  const canPay = Boolean(selected) && prescriptionOk && dateChosen && (payMethod === "cod" || walletOk);
 
   async function place() {
     if (!selectedId) { toast.error("Select a delivery address"); return; }
+    if (!dateChosen) { toast.error("Select a delivery date"); return; }
     setPlacing(true);
     try {
       const res = await api.post("/orders/place", { notes, payment_method: payMethod, address_id: selectedId, delivery_at: deliveryAt, delivery_rate_id: rateId, prescription_path: prescriptionPath });
-      const orderId = res.data.data?.order_id;
-      toast.success(payMethod === "cod" ? `Order #${orderId} placed — pay on delivery` : `Order #${orderId} placed!`);
+      const d = res.data.data ?? {};
+      const count = Number(d.order_count ?? 1);
+      // A multi-shop cart splits into one order per shop.
+      const label = count > 1 ? `${count} orders placed across shops` : `Order #${d.order_id} placed`;
+      toast.success(payMethod === "cod" ? `${label} — pay on delivery` : `${label}!`);
       try { await hydrate(); } catch { /* non-fatal */ }
       router.replace("/orders");
     } catch (e) {
@@ -254,17 +264,18 @@ export default function CheckoutPage() {
             />
           </div>
           <div className="flex items-center justify-between gap-2">
-            <span className="text-muted-foreground">Delivery time</span>
+            <span className="text-muted-foreground">Delivery time <span className="text-[11px]">(optional)</span></span>
             {rates.length > 0 ? (
               <select
                 value={rateId ?? ""}
-                onChange={(e) => setRateId(Number(e.target.value))}
+                onChange={(e) => setRateId(e.target.value ? Number(e.target.value) : null)}
                 aria-label="Delivery time"
                 className="rounded-lg border border-border bg-surface-2/60 px-2 py-1 text-sm font-medium outline-none focus:border-brand/50"
               >
+                <option value="">Any time</option>
                 {rates.map((r) => (
                   <option key={r.id} value={r.id}>
-                    Within {fmtHM(r.time_min)} — {r.price > 0 ? fmtINR(r.price) : "Free"}
+                    Within {fmtHM(r.time_min)}
                   </option>
                 ))}
               </select>
@@ -285,8 +296,11 @@ export default function CheckoutPage() {
               ? <span className="font-semibold text-emerald-500">Free Delivery</span>
               : <span className="font-medium">{fmtINR(deliveryFee)}</span>}
           </div>
-          {!selectedRate && quoteHint(quote) && (
+          {quoteHint(quote) && (
             <p className="text-[11px] text-muted-foreground">{quoteHint(quote)}</p>
+          )}
+          {gstTotal > 0 && (
+            <div className="flex items-center justify-between gap-2"><span className="text-muted-foreground">GST</span><span className="font-medium">₹{gstTotal.toFixed(2)}</span></div>
           )}
           <div className="mt-2 flex justify-between border-t border-border pt-2 text-base font-bold"><span>Total</span><span className="text-brand">{fmtINR(total)}</span></div>
         </LuxuryCard>
@@ -471,6 +485,8 @@ export default function CheckoutPage() {
               ? "Select your delivery address above to continue."
               : !prescriptionOk
               ? "Attach a prescription above to continue."
+              : !dateChosen
+              ? "Choose a delivery date to continue."
               : "Insufficient wallet balance — choose Cash on Delivery instead."}
           </p>
         )}

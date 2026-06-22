@@ -48,6 +48,11 @@ class AdminSettingsController extends BaseApiController
         'cancel.valid_reasons'       => '',
         // Rule-based delivery charge (DeliveryChargeService). Paid window wraps
         // midnight: 18:00 → 09:00 means free 09:00–17:59, paid 18:00–08:59.
+        // Evening surcharge (delivery.charge) is added ONCE per order when the
+        // delivery time falls in the paid window (paid_start→paid_end). The full
+        // fee is: per-shop vendor-category charge + this evening charge + the
+        // chosen delivery-time slot price. Orders scheduled beyond free_above_hours
+        // are free regardless.
         'delivery.paid_start'        => '18:00',
         'delivery.paid_end'          => '09:00',
         'delivery.charge'            => '40',

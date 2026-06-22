@@ -7,6 +7,7 @@ import { motion } from "framer-motion";
 import { Loader2, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/custom/password-input";
 import { Label } from "@/components/ui/label";
 import { LuxuryCard } from "@/components/ui/custom/luxury-card";
 import { GradientButton } from "@/components/ui/custom/gradient-button";
@@ -64,20 +65,20 @@ export default function LoginPage() {
                   inputMode="numeric"
                   maxLength={10}
                   autoComplete="tel"
-                  placeholder="9999999999"
+                  placeholder="Enter Mobile Number"
                   value={mobile}
                   onChange={(e) => setMobile(cleanMobile(e.target.value))}
                   disabled={isLoading}
-                  className="h-11 rounded-xl bg-surface-2/60"
+                  className="h-11 rounded-xl bg-surface-2/60 text-left tracking-wide"
                 />
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="password">Password</Label>
-                <Input
+                <PasswordInput
                   id="password"
-                  type="password"
                   autoComplete="current-password"
                   placeholder="Your password"
+                  maxLength={20}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   disabled={isLoading}

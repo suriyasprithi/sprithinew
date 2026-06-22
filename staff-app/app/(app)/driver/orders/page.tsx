@@ -25,6 +25,7 @@ type DriverOrder = {
   id: number;
   status: Status;
   total: number;
+  delivery_fee: number;
   pickup_address: string;
   drop_address: string;
   customer_name: string;
@@ -49,6 +50,7 @@ function normalize(raw: unknown): DriverOrder {
     id:              Number(r.id ?? 0),
     status:          s,
     total:           Number(r.total ?? 0),
+    delivery_fee:    Number(r.delivery_fee ?? 0),
     pickup_address:  String(r.pickup_address ?? ""),
     drop_address:    String(r.drop_address ?? ""),
     customer_name:   String(r.customer_name ?? ""),
@@ -157,7 +159,12 @@ export default function DriverOrdersPage() {
               <ChevronRight className="h-4 w-4 shrink-0 opacity-60" />
             </a>
           )}
-          <p className="text-base font-bold text-emerald-700">{formatCurrency(o.total)}</p>
+          <div className="flex items-center justify-between">
+            <p className="text-base font-bold text-emerald-700">{formatCurrency(o.total)}</p>
+            <span className="text-xs text-muted-foreground">
+              Delivery: {o.delivery_fee > 0 ? formatCurrency(o.delivery_fee) : "Free"}
+            </span>
+          </div>
 
           {o.status === "shipped" && (
             <Button size="sm" className="w-full" disabled={actingId === o.id} onClick={() => setConfirmId(o.id)}>

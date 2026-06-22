@@ -51,13 +51,14 @@ class WelcomeBonusService
                 }
                 $amount = $amounts[$level] ?? 0.0;
                 if ($amount > 0) {
-                    // Referral bonus → the upline's gated level_N wallet by depth,
-                    // so it shows on their L{n} card (L1 +₹15 on a direct referral).
-                    // Tagged 'welcome_bonus' so the LEVEL commission card / history
-                    // can exclude it and stay commission-only.
+                    // Referral bonus → the upline's dedicated, gated welcome_N
+                    // wallet by depth (separate from the freely-transferable
+                    // purchase-commission level_N wallet). Transfer to main is
+                    // gated by depth-N referral count (100 / 10k / 10 lakh).
+                    // Tagged 'welcome_bonus' for the audit aggregate query.
                     $wallet->credit(
                         (int) $current['id'],
-                        "level_{$level}",
+                        "welcome_{$level}",
                         $amount,
                         'welcome_bonus',
                         'signup#' . $newCustomerId,

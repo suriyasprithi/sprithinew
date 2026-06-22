@@ -60,6 +60,8 @@ function PublicShopInner() {
   const [pincode, setPincode] = useState(sp?.get("pincode") ?? "");
   const [q, setQ] = useState(sp?.get("q") ?? "");
   const [loading, setLoading] = useState(true);
+  // Bumped when the saved delivery location changes, to re-scope the products.
+  const [locVersion, setLocVersion] = useState(0);
 
   // The tab row uses the vendor-category taxonomy (same as "Shop by Category"
   // and Featured Categories), so the tab you arrived from stays highlighted.
@@ -100,10 +102,20 @@ function PublicShopInner() {
       if (vendorCategoryId)  params.vendor_category_id = String(vendorCategoryId);
       if (vendorId)          params.vendor_id          = String(vendorId);
       if (effectiveQ)        params.q = effectiveQ;
-      if (pincode)           params.pincode    = pincode;
-      if (talukId)           params.taluk_id    = String(talukId);
-      if (districtId)        params.district_id = String(districtId);
-      if (stateId)           params.state_id    = String(stateId);
+
+      // Geo scope: URL params win (set when the location picker is applied here);
+      // otherwise fall back to the saved delivery location — same source the
+      // header, shop pills and category tabs use — so products stay scoped to
+      // the chosen area even when arriving without geo query params.
+      const urlHasGeo = !!(talukId || districtId || stateId || pincode);
+      const loc = urlHasGeo ? null : readSavedLocation();
+      const geoTaluk    = talukId    ?? loc?.taluk_id    ?? null;
+      const geoDistrict = districtId ?? loc?.district_id ?? null;
+      const geoState    = stateId    ?? loc?.state_id    ?? null;
+      if (pincode)     params.pincode     = pincode;
+      if (geoTaluk)    params.taluk_id    = String(geoTaluk);
+      if (geoDistrict) params.district_id = String(geoDistrict);
+      if (geoState)    params.state_id    = String(geoState);
       const r = await api.get("/public/products", { params });
       const raws = (r.data.data?.items ?? []) as ApiProduct[];
       setItems(raws.map(adapt));
@@ -115,7 +127,16 @@ function PublicShopInner() {
   // router.push, which updates ?q= without remounting this component).
   const urlQ = sp?.get("q") ?? "";
   useEffect(() => { setQ(urlQ); }, [urlQ]);
-  useEffect(() => { void load(urlQ); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [catId, vendorId, vendorCategoryId, talukId, districtId, stateId, urlQ]);
+  useEffect(() => { void load(urlQ); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [catId, vendorId, vendorCategoryId, talukId, districtId, stateId, urlQ, locVersion]);
+
+  // Re-scope products when the delivery location changes (picker apply/clear),
+  // even if it didn't alter the URL — mirrors the shop pills / category tabs.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const onChange = () => setLocVersion((v) => v + 1);
+    window.addEventListener("epey-location-changed", onChange);
+    return () => window.removeEventListener("epey-location-changed", onChange);
+  }, []);
 
   // Load the vendor-category tabs (location-scoped, same source as the nav bar).
   useEffect(() => {

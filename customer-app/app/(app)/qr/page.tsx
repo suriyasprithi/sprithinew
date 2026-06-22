@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label";
 import { AppHeader } from "@/components/layout/app-header";
 import { LuxuryCard } from "@/components/ui/custom/luxury-card";
 import { GradientButton } from "@/components/ui/custom/gradient-button";
+import jsQR from "jsqr";
 import { api, apiErrorMessage } from "@/lib/api";
 import { cleanMobile, isMobile } from "@/lib/phone";
 
@@ -29,6 +30,7 @@ export default function QrPurchasePage() {
   const videoRef  = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const rafRef    = useRef<number | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
   const stopCamera = () => {
     if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
@@ -43,14 +45,6 @@ export default function QrPurchasePage() {
   async function openScanner() {
     setScannerError(null);
     if (typeof window === "undefined") return;
-
-    // Detect API support
-    const Ctor = (window as unknown as { BarcodeDetector?: BarcodeDetectorCtor }).BarcodeDetector;
-    if (!Ctor) {
-      setScannerError("Your browser doesn't support QR scanning. Enter mobile manually below.");
-      setScannerOpen(false);
-      return;
-    }
 
     if (!navigator.mediaDevices?.getUserMedia) {
       setScannerError("Camera access not available. Enter mobile manually below.");
@@ -70,24 +64,46 @@ export default function QrPurchasePage() {
       video.srcObject = stream;
       await video.play();
 
-      const detector = new Ctor({ formats: ["qr_code"] });
+      // Accept plain mobile digits, or `tel:`/`upi:` URIs — keep the last 10
+      // digits and require a full 10-digit mobile. Returns true once matched.
+      const handle = (raw: string): boolean => {
+        const digits = cleanMobile(raw);
+        if (isMobile(digits)) {
+          setVendorMobile(digits);
+          toast.success(`Vendor: ${digits}`);
+          closeScanner();
+          return true;
+        }
+        return false;
+      };
+
+      // Fast path: native BarcodeDetector (Chrome/web). Fallback: jsQR on canvas
+      // frames — works in the Capacitor WebView (no BarcodeDetector) and Safari/Firefox.
+      const Ctor = (window as unknown as { BarcodeDetector?: BarcodeDetectorCtor }).BarcodeDetector;
+      const detector = Ctor ? new Ctor({ formats: ["qr_code"] }) : null;
 
       const tick = async () => {
-        if (!videoRef.current || !streamRef.current) return;
+        const v = videoRef.current;
+        if (!v || !streamRef.current) return;
         try {
-          const codes = await detector.detect(videoRef.current);
-          if (codes.length > 0) {
-            // Accept plain mobile digits, or `tel:`/`upi:` URIs — keep the last
-            // 10 digits and require a full 10-digit mobile.
-            const digits = cleanMobile(codes[0].rawValue);
-            if (isMobile(digits)) {
-              setVendorMobile(digits);
-              toast.success(`Vendor: ${digits}`);
-              closeScanner();
-              return;
+          if (detector) {
+            const codes = await detector.detect(v);
+            if (codes.length > 0 && handle(codes[0].rawValue)) return;
+          } else if (v.videoWidth > 0) {
+            // Decode a downscaled frame (≤800px) with jsQR — fast enough on phones.
+            const scale = Math.min(1, 800 / Math.max(v.videoWidth, v.videoHeight));
+            const canvas = canvasRef.current ?? (canvasRef.current = document.createElement("canvas"));
+            canvas.width  = Math.max(1, Math.round(v.videoWidth * scale));
+            canvas.height = Math.max(1, Math.round(v.videoHeight * scale));
+            const ctx = canvas.getContext("2d", { willReadFrequently: true });
+            if (ctx) {
+              ctx.drawImage(v, 0, 0, canvas.width, canvas.height);
+              const img  = ctx.getImageData(0, 0, canvas.width, canvas.height);
+              const code = jsQR(img.data, img.width, img.height, { inversionAttempts: "dontInvert" });
+              if (code && handle(code.data)) return;
             }
           }
-        } catch { /* detector throws if frame is bad — keep polling */ }
+        } catch { /* bad frame — keep polling */ }
         rafRef.current = requestAnimationFrame(tick);
       };
       rafRef.current = requestAnimationFrame(tick);

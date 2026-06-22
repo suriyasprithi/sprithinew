@@ -50,9 +50,9 @@ const LABELS: Record<string, string> = {
   "cancel.window_hours":        "Cancel window (hours, 0 = off)",
   "cancel.penalty":             "Cancel penalty (₹)",
   "cancel.valid_reasons":       "Valid reasons (comma-separated)",
-  "delivery.paid_start":        "Paid window start (HH:MM, e.g. 18:00)",
-  "delivery.paid_end":          "Paid window end (HH:MM, e.g. 09:00)",
-  "delivery.charge":            "Paid delivery charge (₹)",
+  "delivery.paid_start":        "Evening window start (HH:MM, e.g. 18:00)",
+  "delivery.paid_end":          "Evening window end (HH:MM, e.g. 09:00)",
+  "delivery.charge":            "Evening delivery charge (₹, added 6pm–9am)",
   "delivery.free_above_hours":  "Free delivery above delivery time (hours)",
 };
 

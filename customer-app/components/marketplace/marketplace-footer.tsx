@@ -44,10 +44,10 @@ export function MarketplaceFooter() {
             <p className="mt-2 text-[11px] text-white/40">Get offers, new products and updates in your inbox.</p>
 
             <div className="mt-5 flex gap-3">
-              <Social href="#" Icon={Globe}         label="Facebook" />
-              <Social href="#" Icon={Camera}        label="Instagram" />
-              <Social href="#" Icon={MessageCircle} label="Twitter" />
-              <Social href="#" Icon={Video}         label="YouTube" />
+              <Social href="/coming-soon" Icon={Globe}         label="Facebook" />
+              <Social href="/coming-soon" Icon={Camera}        label="Instagram" />
+              <Social href="/coming-soon" Icon={MessageCircle} label="Twitter" />
+              <Social href="/coming-soon" Icon={Video}         label="YouTube" />
             </div>
           </div>
 
@@ -63,11 +63,11 @@ export function MarketplaceFooter() {
 
           {/* Partners */}
           <Column title="Partners" items={[
-            { label: "Vendor registration",   href: "/register?role=vendor" },
-            { label: "Delivery partner",      href: "/register?role=driver" },
-            { label: "Affiliate program",     href: "/affiliate" },
-            { label: "Sell on SPRITHI",       href: "/register?role=vendor" },
-            { label: "Vendor login",          href: "/vendor/login" },
+            { label: "Vendor registration",   href: "/coming-soon" },
+            { label: "Delivery partner",      href: "/coming-soon" },
+            { label: "Affiliate program",     href: "/refer" },
+            { label: "Sell on SPRITHI",       href: "/coming-soon" },
+            { label: "Vendor login",          href: "/coming-soon" },
           ]} />
 
           {/* Contact + apps */}
@@ -81,20 +81,20 @@ export function MarketplaceFooter() {
 
             <p className="mt-5 text-sm font-bold text-white">Download the app</p>
             <div className="mt-2 flex flex-col gap-2 sm:flex-row lg:flex-col">
-              <a href="#" className="inline-flex items-center gap-2 rounded-xl border border-white/20 bg-white/5 px-3 py-2 text-xs hover:border-[var(--mk-brand)]">
+              <Link href="/coming-soon" className="inline-flex items-center gap-2 rounded-xl border border-white/20 bg-white/5 px-3 py-2 text-xs hover:border-[var(--mk-brand)]">
                 <Smartphone className="h-4 w-4" />
                 <span>
                   <span className="block text-[9px] uppercase tracking-wider text-white/50">Get it on</span>
                   <span className="block font-semibold">Google Play</span>
                 </span>
-              </a>
-              <a href="#" className="inline-flex items-center gap-2 rounded-xl border border-white/20 bg-white/5 px-3 py-2 text-xs hover:border-[var(--mk-brand)]">
+              </Link>
+              <Link href="/coming-soon" className="inline-flex items-center gap-2 rounded-xl border border-white/20 bg-white/5 px-3 py-2 text-xs hover:border-[var(--mk-brand)]">
                 <Smartphone className="h-4 w-4" />
                 <span>
                   <span className="block text-[9px] uppercase tracking-wider text-white/50">Download on</span>
                   <span className="block font-semibold">App Store</span>
                 </span>
-              </a>
+              </Link>
             </div>
           </div>
         </div>
@@ -127,8 +127,8 @@ function Column({ title, items }: { title: string; items: { label: string; href:
 
 function Social({ href, Icon, label }: { href: string; Icon: React.ComponentType<{ className?: string }>; label: string }) {
   return (
-    <a href={href} aria-label={label} className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-white/20 bg-white/5 transition-colors hover:border-[var(--mk-brand)] hover:bg-[var(--mk-brand)]">
+    <Link href={href} aria-label={label} className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-white/20 bg-white/5 transition-colors hover:border-[var(--mk-brand)] hover:bg-[var(--mk-brand)]">
       <Icon className="h-4 w-4" />
-    </a>
+    </Link>
   );
 }

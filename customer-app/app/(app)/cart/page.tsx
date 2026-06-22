@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
-import { ArrowLeft, Loader2, Minus, Plus, ShoppingBag, Trash2 } from "lucide-react";
+import { ArrowLeft, Loader2, Minus, Plus, ShoppingBag, Store, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { AppHeader } from "@/components/layout/app-header";
 import { LuxuryCard } from "@/components/ui/custom/luxury-card";
@@ -23,13 +23,17 @@ type CartRow = {
   image?: string | null;
   qty: number;
   subtotal: number | string;
+  gst_rate?: number | string;
+  gst_amount?: number | string;
   vendor_id: number;
+  vendor_shop?: string | null;
   variation_id: number | null;
   variation_label: string | null;
 };
 
 export default function CartPage() {
   const [items, setItems] = useState<CartRow[]>([]);
+  const [gstTotal, setGstTotal] = useState(0);
   const [loading, setLoading] = useState(true);
 
   async function refresh() {
@@ -38,10 +42,12 @@ export default function CartPage() {
       const res = await api.get("/cart");
       const rows = (res.data.data?.items ?? []) as CartRow[];
       setItems(rows);
+      setGstTotal(Number(res.data.data?.gst_total ?? 0));
       cartBadge.set(rows.reduce((s, r) => s + (Number(r.qty) || 0), 0));
     } catch (e) {
       toast.error(apiErrorMessage(e));
       setItems([]);
+      setGstTotal(0);
     } finally {
       setLoading(false);
     }
@@ -64,8 +70,9 @@ export default function CartPage() {
   }
 
   const subtotal = items.reduce((s, i) => s + Number(i.price) * i.qty, 0);
-  const deliveryFee = items.length ? 25 : 0;
-  const total = subtotal + deliveryFee;
+  // The real delivery fee depends on the delivery date/slot chosen at checkout,
+  // so the cart preview shows no number — it's computed on the Checkout page.
+  const total = subtotal + gstTotal;
 
   return (
     <>
@@ -93,8 +100,16 @@ export default function CartPage() {
                     </div>
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm font-semibold">{it.name}</p>
+                      {it.vendor_shop && (
+                        <p className="inline-flex items-center gap-1 truncate text-xs text-muted-foreground">
+                          <Store className="h-3 w-3" /> {it.vendor_shop}
+                        </p>
+                      )}
                       {it.variation_label && <p className="text-xs text-muted-foreground">{it.variation_label}</p>}
                       <p className="mt-1 text-sm font-bold text-brand">{fmtINR(Number(it.price))}</p>
+                      {Number(it.gst_amount) > 0 && (
+                        <p className="text-[11px] text-muted-foreground">+ GST {Number(it.gst_rate)}% · ₹{Number(it.gst_amount).toFixed(2)}</p>
+                      )}
                     </div>
                     <div className="flex flex-col items-end justify-between">
                       <button onClick={() => void remove(it.cart_id)} className="text-muted-foreground hover:text-rose-400"><Trash2 className="h-4 w-4" /></button>
@@ -111,7 +126,10 @@ export default function CartPage() {
 
             <LuxuryCard hoverLift={false} className="space-y-2 p-4 text-sm">
               <div className="flex justify-between"><span className="text-muted-foreground">Subtotal</span><span>{fmtINR(subtotal)}</span></div>
-              <div className="flex justify-between"><span className="text-muted-foreground">Delivery fee</span><span>{fmtINR(deliveryFee)}</span></div>
+              {gstTotal > 0 && (
+                <div className="flex justify-between"><span className="text-muted-foreground">GST</span><span>₹{gstTotal.toFixed(2)}</span></div>
+              )}
+              <div className="flex justify-between"><span className="text-muted-foreground">Delivery fee</span><span className="text-xs text-muted-foreground">Calculated at checkout</span></div>
               <div className="mt-2 flex justify-between border-t border-border pt-2 text-base font-bold"><span>Total</span><span className="text-brand">{fmtINR(total)}</span></div>
             </LuxuryCard>
 

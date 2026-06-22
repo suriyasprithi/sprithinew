@@ -162,6 +162,9 @@ export type VendorCategoryFull = {
   name: string;
   image: string | null;
   status: "active" | "inactive";
+  free_delivery_min?: number;
+  delivery_charge?: number;
+  gst_rate?: number;
   attribute_schema: AttributeSchema;
 };
 

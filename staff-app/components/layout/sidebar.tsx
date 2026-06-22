@@ -1,12 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter, usePathname } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
 import { ChevronsLeft, ChevronsRight, LogOut } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/stores/auth";
-import { loginUrl } from "@/lib/login-redirect";
+import { useLogoutConfirm } from "@/components/use-logout-confirm";
 import { useSidebar } from "@/stores/sidebar";
 import { menuFor, ROLE_LABEL } from "@/lib/role-menu";
 import type { StaffRole } from "@/lib/api";
@@ -14,16 +14,11 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 
 export function Sidebar() {
   const pathname = usePathname() || "";
-  const router = useRouter();
-  const { user, logout } = useAuth();
+  const { user } = useAuth();
+  const { requestLogout, logoutDialog } = useLogoutConfirm();
   const { collapsed, toggle } = useSidebar();
   const items = menuFor(user?.role);
   const roleLabel = user && user.role !== "customer" ? ROLE_LABEL[user.role as StaffRole] : "";
-
-  const onLogout = async () => {
-    await logout();
-    window.location.href = loginUrl();
-  };
 
   return (
     <motion.aside
@@ -140,7 +135,7 @@ export function Sidebar() {
             <TooltipTrigger
               render={
                 <button
-                  onClick={onLogout}
+                  onClick={requestLogout}
                   aria-label="Logout"
                   className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground hover:bg-accent hover:text-brand"
                 >
@@ -152,6 +147,7 @@ export function Sidebar() {
           </Tooltip>
         </div>
       </div>
+      {logoutDialog}
     </motion.aside>
   );
 }

@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
-import { LogOut, Mail, MapPin, Phone, Shield, User as UserIcon, Pencil, Settings as SettingsIcon, Home, Landmark, CreditCard, FileText, type LucideIcon } from "lucide-react";
+import { LogOut, Mail, MapPin, Phone, Shield, ShieldCheck, User as UserIcon, Pencil, Settings as SettingsIcon, Home, Landmark, CreditCard, FileText, type LucideIcon } from "lucide-react";
 import { toast } from "sonner";
 import { LuxuryCard } from "@/components/ui/custom/luxury-card";
 import { GradientButton } from "@/components/ui/custom/gradient-button";
@@ -14,8 +14,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { StatusBadge } from "@/components/data-table/status-badge";
 import { MobileHeader } from "@/components/layout/mobile-nav";
 import { PageHeader } from "@/components/layout/page-header";
+import { useLogoutConfirm } from "@/components/use-logout-confirm";
 import { useAuth } from "@/stores/auth";
-import { loginUrl } from "@/lib/login-redirect";
 import { ROLE_LABEL } from "@/lib/role-menu";
 import { api, apiErrorMessage, AuthUser } from "@/lib/api";
 
@@ -37,7 +37,8 @@ type AddressForm = { address_line: string; landmark: string; city: string; pinco
 type BankForm = { account_holder: string; bank_name: string; account_number: string; ifsc_code: string; upi: string; gst: string };
 
 export default function ProfilePage() {
-  const { user, logout, setUser } = useAuth();
+  const { user, setUser } = useAuth();
+  const { requestLogout, logoutDialog } = useLogoutConfirm();
   const router = useRouter();
 
   const [editingAddr, setEditingAddr] = useState(false);
@@ -48,11 +49,6 @@ export default function ProfilePage() {
   const [savingBank, setSavingBank] = useState(false);
   const [bankForm, setBankForm] = useState<BankForm>({ account_holder: "", bank_name: "", account_number: "", ifsc_code: "", upi: "", gst: "" });
   const isVendor = user?.role === "vendor";
-
-  async function onLogout() {
-    await logout();
-    window.location.href = loginUrl();
-  }
 
   function openAddrEdit() {
     setAddrForm({
@@ -307,6 +303,30 @@ export default function ProfilePage() {
             <LuxuryCard className="p-5">
               <p className="mb-3 text-sm font-semibold">Quick actions</p>
               <div className="space-y-2">
+                {isVendor && (
+                  <button
+                    type="button"
+                    onClick={() => router.push("/profile/kyc")}
+                    className="flex w-full items-center gap-3 rounded-xl border border-border bg-surface-2/40 p-3 text-left transition-colors hover:border-brand/40 hover:bg-surface-2"
+                  >
+                    <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand/10 text-brand">
+                      <ShieldCheck className="h-4 w-4" />
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium">KYC verification</p>
+                      <p className="truncate text-[11px] text-muted-foreground">
+                        {user?.kyc_status === "verified"
+                          ? "Verified"
+                          : user?.kyc_status === "pending"
+                          ? "Under review"
+                          : user?.kyc_status === "rejected"
+                          ? "Rejected — re-submit"
+                          : "Required to withdraw"}
+                      </p>
+                    </div>
+                  </button>
+                )}
+
                 <button
                   type="button"
                   onClick={() => router.push("/settings")}
@@ -340,7 +360,7 @@ export default function ProfilePage() {
                 <GradientButton
                   size="md"
                   className="w-full"
-                  onClick={() => void onLogout()}
+                  onClick={requestLogout}
                   style={{
                     backgroundImage: "linear-gradient(135deg, var(--brand-deep) 0%, #4a0606 100%)",
                   }}
@@ -352,6 +372,7 @@ export default function ProfilePage() {
           </motion.div>
         </div>
       </section>
+      {logoutDialog}
     </>
   );
 }

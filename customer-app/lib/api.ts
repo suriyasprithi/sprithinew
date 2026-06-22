@@ -117,6 +117,9 @@ export type AuthUser = {
   level_1_wallet: number;
   level_2_wallet: number;
   level_3_wallet: number;
+  welcome_1_wallet: number;
+  welcome_2_wallet: number;
+  welcome_3_wallet: number;
   level_commission: number;
   buyback_wallet: number;
   global_wallet: number;
@@ -138,7 +141,15 @@ export type CustomerAddress = {
   is_default: number; // 0 | 1
 };
 
-export type WalletKey = "wallet" | "level" | "level_1" | "level_2" | "level_3" | "buyback" | "global";
+export type WalletKey =
+  | "wallet" | "level" | "level_1" | "level_2" | "level_3"
+  | "welcome_1" | "welcome_2" | "welcome_3"
+  | "buyback" | "global";
+
+// Welcome (signup-bonus) wallets unlock when the user's downline at that depth
+// reaches this many referrals (mirrors backend system_settings
+// level.unlock_threshold_N; the server is authoritative and enforces it).
+export const WELCOME_UNLOCK: Record<1 | 2 | 3, number> = { 1: 100, 2: 10_000, 3: 1_000_000 };
 
 export type AuthTokens = {
   access_token: string;

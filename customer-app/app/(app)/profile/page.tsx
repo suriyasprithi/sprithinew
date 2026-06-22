@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { ArrowLeft, ChevronRight, Home, LogOut, Mail, Phone, Shield, ShieldCheck, Wallet, User as UserIcon, type LucideIcon } from "lucide-react";
 import { AppHeader } from "@/components/layout/app-header";
@@ -10,6 +9,7 @@ import { LuxuryCard } from "@/components/ui/custom/luxury-card";
 import { GradientButton } from "@/components/ui/custom/gradient-button";
 import { AnimatedCounter } from "@/components/ui/custom/animated-counter";
 import { formatAddress } from "@/components/address/address-fields";
+import { useLogoutConfirm } from "@/components/use-logout-confirm";
 import { useAuth } from "@/stores/auth";
 import { api, type CustomerAddress } from "@/lib/api";
 
@@ -37,8 +37,8 @@ function InfoRow({ icon: Icon, label, value, mono }: { icon: LucideIcon; label: 
 }
 
 export default function ProfilePage() {
-  const router = useRouter();
-  const { user, logout } = useAuth();
+  const { user } = useAuth();
+  const { requestLogout, logoutDialog } = useLogoutConfirm();
   const [addresses, setAddresses] = useState<CustomerAddress[]>([]);
 
   useEffect(() => {
@@ -50,11 +50,6 @@ export default function ProfilePage() {
       } catch { /* non-blocking */ }
     })();
   }, []);
-
-  const onLogout = async () => {
-    await logout();
-    router.replace("/login");
-  };
 
   const defaultAddr = addresses.find((a) => Number(a.is_default) === 1) ?? addresses[0] ?? null;
   const initial = (user?.name || "?").trim().charAt(0).toUpperCase();
@@ -157,12 +152,13 @@ export default function ProfilePage() {
         <GradientButton
           size="lg"
           className="w-full"
-          onClick={() => void onLogout()}
+          onClick={requestLogout}
           style={{ backgroundImage: "linear-gradient(135deg, var(--brand-deep) 0%, #4a0606 100%)" }}
         >
           <LogOut className="h-4 w-4" /> Log out
         </GradientButton>
       </section>
+      {logoutDialog}
     </>
   );
 }

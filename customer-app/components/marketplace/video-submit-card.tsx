@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import { LuxuryCard } from "@/components/ui/custom/luxury-card";
 import { api, apiErrorMessage } from "@/lib/api";
 
-const MAX_MB = 25;
+const MAX_MB = 100;
 
 type Status = "pending" | "active" | "inactive" | "rejected";
 
@@ -54,7 +54,7 @@ export function VideoSubmitCard() {
       fd.append("file", file);
       // The api instance defaults to application/json — must force multipart so
       // the browser sets the boundary, else PHP sees no file. Bigger timeout for
-      // the (up to 25 MB) video.
+      // the (up to 100 MB) video.
       const up = await api.post("/customer/videos/upload", fd, {
         headers: { "Content-Type": "multipart/form-data" },
         timeout: 120000,
@@ -100,7 +100,7 @@ export function VideoSubmitCard() {
         className="flex w-full items-center gap-2 truncate rounded-xl border border-[#e5e7eb] bg-[#f9fafb] px-3 py-2.5 text-left text-sm text-[#374151] hover:border-brand/40"
       >
         <Upload className="h-4 w-4 shrink-0 text-[#6b7280]" />
-        <span className="truncate">{file ? file.name : "Choose video (MP4 / WEBM · up to 25 MB)"}</span>
+        <span className="truncate">{file ? file.name : "Choose video (MP4 / WEBM · up to 100 MB)"}</span>
       </button>
       <input
         value={caption}

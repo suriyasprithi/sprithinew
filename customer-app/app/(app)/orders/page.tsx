@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { BadgeCheck, ChevronDown, Loader2, MapPin, RotateCcw, ShoppingBag, Store, XCircle } from "lucide-react";
+import { BadgeCheck, Check, ChevronDown, Loader2, MapPin, RotateCcw, ShoppingBag, Store, XCircle } from "lucide-react";
 import { toast } from "sonner";
 import { AppHeader } from "@/components/layout/app-header";
 import { LuxuryCard } from "@/components/ui/custom/luxury-card";
@@ -50,6 +50,7 @@ type OrderItem = {
   display_name?: string | null;
   variant_name?: string | null;
   product_image?: string | null;
+  vendor_shop?: string | null;
   qty: number;
   price: number | string;
   subtotal: number | string;
@@ -64,6 +65,50 @@ const STATUS_STYLE: Record<OrderStatus, string> = {
   delivered: "bg-emerald-500/10 text-emerald-400 border-emerald-500/30",
   cancelled: "bg-rose-500/10 text-rose-400 border-rose-500/30",
 };
+
+// Customer-facing delivery progress. The backend only has 5 statuses, so the
+// intermediate stages are derived (display-only — no backend change):
+//   pending → Placed · paid → Confirmed · shipped → Out for Delivery · delivered → Delivered.
+const STAGES = ["Order Placed", "Confirmed", "Packed", "Out for Delivery", "Delivered"] as const;
+const STATUS_STAGE: Record<OrderStatus, number> = {
+  pending: 0, paid: 1, shipped: 3, delivered: 4, cancelled: -1,
+};
+
+function StatusStepper({ status }: { status: OrderStatus }) {
+  if (status === "cancelled") {
+    return (
+      <div className="mt-3 flex items-center gap-2 rounded-xl bg-rose-500/10 px-3 py-2 text-xs font-medium text-rose-500">
+        <XCircle className="h-4 w-4" /> Order cancelled
+      </div>
+    );
+  }
+  const reached = STATUS_STAGE[status] ?? 0;
+  return (
+    <div className="mt-3 flex items-start">
+      {STAGES.map((label, i) => {
+        const done   = i <= reached;
+        const isLast = i === STAGES.length - 1;
+        return (
+          <div key={label} className="flex flex-1 flex-col items-center">
+            <div className="flex w-full items-center">
+              <span className={cn("h-0.5 flex-1", i === 0 ? "bg-transparent" : (i <= reached ? "bg-brand" : "bg-border"))} />
+              <span className={cn(
+                "flex h-5 w-5 shrink-0 items-center justify-center rounded-full border text-[9px] font-bold",
+                done ? "border-brand bg-brand text-brand-foreground" : "border-border bg-surface-2 text-muted-foreground",
+              )}>
+                {done ? <Check className="h-3 w-3" /> : i + 1}
+              </span>
+              <span className={cn("h-0.5 flex-1", isLast ? "bg-transparent" : (i < reached ? "bg-brand" : "bg-border"))} />
+            </div>
+            <span className={cn("mt-1 text-center text-[8.5px] leading-tight", done ? "font-medium text-foreground" : "text-muted-foreground")}>
+              {label}
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
 
 export default function OrdersPage() {
   const [items, setItems] = useState<OrderRow[]>([]);
@@ -155,7 +200,9 @@ export default function OrdersPage() {
           </LuxuryCard>
         ) : (
           items.map((o, i) => {
-            const vendorLabel = o.shop_name || o.vendor_name || "—";
+            // A multi-vendor order has no single vendor_id, so no shop name —
+            // the per-item shop names below show who sells what.
+            const vendorLabel = o.shop_name || o.vendor_name || "Multiple shops";
             const areaParts = [o.area, o.taluk_name, o.pincode].filter(Boolean) as string[];
             return (
               <motion.div key={o.id} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.03 }}>
@@ -182,6 +229,9 @@ export default function OrdersPage() {
                   {o.product_names && (
                     <p className="mt-2 truncate text-xs text-muted-foreground">{o.product_names}</p>
                   )}
+
+                  {/* Delivery progress (BUG-033) */}
+                  <StatusStepper status={o.status} />
 
                   <div className="mt-3 flex items-end justify-between gap-2">
                     <p className="text-[11px] text-muted-foreground">{(o.created_at ?? "").replace("T", " ").slice(0, 16)}</p>
@@ -295,6 +345,11 @@ export default function OrdersPage() {
                                       </div>
                                       <div className="min-w-0 flex-1">
                                         <p className="truncate text-sm font-medium">{name}</p>
+                                        {it.vendor_shop ? (
+                                          <p className="inline-flex items-center gap-1 truncate text-xs text-muted-foreground">
+                                            <Store className="h-3 w-3" /> {it.vendor_shop}
+                                          </p>
+                                        ) : null}
                                         {it.variant_name && it.variant_name !== name ? (
                                           <p className="truncate text-xs text-muted-foreground">{it.variant_name}</p>
                                         ) : null}

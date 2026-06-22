@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { useRouter, usePathname } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { Menu, LogOut, Bell } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -17,16 +17,16 @@ import {
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
 import { useAuth } from "@/stores/auth";
-import { loginUrl } from "@/lib/login-redirect";
+import { useLogoutConfirm } from "@/components/use-logout-confirm";
 import { menuFor, ROLE_LABEL } from "@/lib/role-menu";
 import type { StaffRole } from "@/lib/api";
 
 export function MobileHeader({ title }: { title?: string }) {
   const pathname = usePathname() || "";
-  const router = useRouter();
   const [open, setOpen] = useState(false);
   const [unread, setUnread] = useState(0);
-  const { user, logout, isHydrated } = useAuth();
+  const { user, isHydrated } = useAuth();
+  const { requestLogout, logoutDialog } = useLogoutConfirm();
   const items = menuFor(user?.role);
   const roleLabel =
     user && user.role !== "customer" ? ROLE_LABEL[user.role as StaffRole] : "";
@@ -45,11 +45,9 @@ export function MobileHeader({ title }: { title?: string }) {
     return () => { active = false; clearInterval(id); };
   }, [isHydrated, user]);
 
-  const onLogout = async () => {
-    setOpen(false);
-    await logout();
-    window.location.href = loginUrl();
-  };
+  // Close the drawer, then open the styled confirm (rendered outside the Sheet
+  // so it survives the drawer closing).
+  const onLogout = () => { setOpen(false); requestLogout(); };
 
   return (
     <header className="sticky top-0 z-30 flex items-center justify-between border-b border-border bg-background/80 px-3 py-3 backdrop-blur-xl md:hidden">
@@ -137,6 +135,7 @@ export function MobileHeader({ title }: { title?: string }) {
           )}
         </Link>
       </div>
+      {logoutDialog}
     </header>
   );
 }

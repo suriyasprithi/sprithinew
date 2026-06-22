@@ -48,8 +48,9 @@ class OrderController extends BaseApiController
         // prescription file. This is the authoritative gate — the checkout
         // page also blocks placement, but never trust the client. The path
         // must be one we issued from uploadPrescription() and still on disk.
-        $prescriptionPath = trim((string) ($body['prescription_path'] ?? ''));
-        if (PrescriptionPolicy::requiresFor($products)) {
+        $prescriptionPath     = trim((string) ($body['prescription_path'] ?? ''));
+        $prescriptionRequired = PrescriptionPolicy::requiresFor($products);
+        if ($prescriptionRequired) {
             if ($prescriptionPath === ''
                 || ! str_starts_with($prescriptionPath, 'uploads/prescriptions/')
                 || ! is_file(FCPATH . $prescriptionPath)) {
@@ -59,25 +60,34 @@ class OrderController extends BaseApiController
             $prescriptionPath = '';  // ignore any stray value for non-medical carts
         }
 
-        $total = 0;
-        $vendorIds = [];
+        // Validate every line and bucket it under its product's vendor. A cart
+        // spanning multiple shops becomes one order PER vendor, so each order has
+        // a single vendor_id and the vendor list / payment / commission / driver
+        // flows all work unchanged. $total stays the items-only grand subtotal.
+        $total  = 0;
+        $groups = [];   // vendorId => ['lines'=>[], 'subtotal'=>float, 'products'=>[]]
         foreach ($cart as $r) {
             $p = $byId[(int) $r['product_id']] ?? null;
             if (! $p || $p['status'] !== 'active') return $this->fail('Some products are unavailable', 409);
-            $vid   = (int) ($r['variation_id'] ?? 0);
-            $price = (float) $p['price'];
+            $vid     = (int) ($r['variation_id'] ?? 0);
+            $price   = (float) $p['price'];
+            $variant = null;
             if ($vid) {
-                $v = $vById[$vid] ?? null;
-                if (! $v || $v['status'] !== 'active') return $this->fail('Some variants are unavailable', 409);
-                if ((int) $v['stock'] < (int) $r['qty']) return $this->fail('Insufficient stock', 409);
-                $price = (float) $v['price'];
+                $variant = $vById[$vid] ?? null;
+                if (! $variant || $variant['status'] !== 'active') return $this->fail('Some variants are unavailable', 409);
+                if ((int) $variant['stock'] < (int) $r['qty']) return $this->fail('Insufficient stock', 409);
+                $price = (float) $variant['price'];
             } else {
                 if ((int) ($p['stock'] ?? 0) < (int) $r['qty']) return $this->fail('Insufficient stock', 409);
             }
-            $total += $price * (int) $r['qty'];
-            $vendorIds[] = (int) $p['vendor_id'];
+            $line   = $price * (int) $r['qty'];
+            $total += $line;
+            $vk = (int) $p['vendor_id'];
+            if (! isset($groups[$vk])) $groups[$vk] = ['lines' => [], 'subtotal' => 0.0, 'products' => []];
+            $groups[$vk]['lines'][]    = ['row' => $r, 'product' => $p, 'variant' => $variant, 'price' => $price];
+            $groups[$vk]['products'][] = $p;
+            $groups[$vk]['subtotal']  += $line;
         }
-        $vendorId = count(array_unique($vendorIds)) === 1 ? $vendorIds[0] : null;
 
         // Customer-chosen delivery date+time (IST). The fee is computed by the
         // rule-based DeliveryChargeService from that datetime — paid window by the
@@ -100,22 +110,47 @@ class OrderController extends BaseApiController
                 $deliveryAtSql = null;
             }
         }
-        // Delivery fee: if the customer picked a delivery-time rate, use its STORED
-        // price (server-side, never a client amount) + its duration; else fall back
-        // to the rule-based quote from the chosen datetime.
-        $deliveryFee    = null;
+        // Per-shop delivery fee — summed model. An order scheduled beyond the
+        // free-above-hours window is wholly free; otherwise each shop pays its own
+        // vendor-category charge (A, per shop), plus a single evening surcharge
+        // (B) and the chosen delivery-time slot price (C) — both attached once to
+        // the first shop order. The slot also sets delivery SPEED (delivery_minutes).
         $deliveryRateId = isset($body['delivery_rate_id']) ? (int) $body['delivery_rate_id'] : 0;
-        if ($deliveryRateId > 0) {
-            $rate = (new DeliveryTimeRateModel())->find($deliveryRateId);
-            if ($rate) {
-                $deliveryFee     = (float) $rate['price'];
-                $deliveryMinutes = (int) $rate['time_min'];
+        $rate           = $deliveryRateId > 0 ? (new DeliveryTimeRateModel())->find($deliveryRateId) : null;
+        if ($rate) $deliveryMinutes = (int) $rate['time_min'];
+        $slotPrice = $rate ? (float) $rate['price'] : 0.0;
+
+        $deliverySvc   = new DeliveryChargeService();
+        $freeByEta     = $deliverySvc->isFreeByEta($deliveryAt);
+        $orderLevelFee = $freeByEta ? 0.0 : round($deliverySvc->eveningCharge($deliveryAt) + $slotPrice, 2); // B + C, once
+        $totalDelivery = 0.0;
+        $firstShop     = true;
+        foreach ($groups as $vk => &$g) {
+            $catCharge = $freeByEta ? 0.0 : $deliverySvc->categoryCharge(array_column($g['lines'], 'row')); // A, per shop
+            $g['delivery_fee'] = round($catCharge + ($firstShop ? $orderLevelFee : 0.0), 2);
+            $totalDelivery += $g['delivery_fee'];
+            $firstShop = false;
+        }
+        unset($g);
+
+        // Per-shop GST from each item's vendor-category gst_rate (BUG-014).
+        // Default rate 0 → no GST until an admin sets a rate, so this is dormant
+        // by default and independent of the delivery-fee math above. Like the
+        // delivery fee, GST is platform-collected and excluded from the vendor's
+        // sale credit / commission (which stay on $g['subtotal']).
+        $gstRates = \App\Services\GstService::ratesForProducts($products);
+        $totalGst = 0.0;
+        foreach ($groups as $vk => &$g) {
+            $gst = 0.0;
+            foreach ($g['lines'] as $ln) {
+                $gst += \App\Services\GstService::lineGst((float) $ln['price'] * (int) $ln['row']['qty'], $gstRates[(int) $ln['product']['id']] ?? 0.0);
             }
+            $g['gst'] = round($gst, 2);
+            $totalGst += $g['gst'];
         }
-        if ($deliveryFee === null) {
-            $deliveryFee = (float) (new DeliveryChargeService())->quote((int) $auth->id, $deliveryAt)['amount'];
-        }
-        $grandTotal = $total + $deliveryFee;
+        unset($g);
+
+        $grandTotal = $total + $totalDelivery + $totalGst;
 
         // Wallet check (only when paying from wallet; COD is collected on delivery)
         $users = new UserModel();
@@ -149,86 +184,90 @@ class OrderController extends BaseApiController
             return $this->fail('Insufficient wallet balance', 402);
         }
 
-        // Vendor inventory tokens: deduct items_subtotal × vendor.commission_pct
-        // (1 token = ₹1). This must never block the customer's order or surface a
-        // vendor-side shortage message — deduct what's available and move on.
-        if ($vendorId) {
-            try {
-                (new TokenService())->consumeForOrder($vendorId, (float) $total);
-            } catch (\Throwable $e) {
-                log_message('error', 'Token consume skipped for order: ' . $e->getMessage());
-            }
-        }
-
+        // Create one order per vendor group. Each gets its own delivery fee and
+        // (for wallet) its own 90% vendor credit. The customer pays once below.
         $orderModel = new OrderModel();
         $itemModel  = new OrderItemModel();
-        $orderId = $orderModel->insert([
-            'customer_id'    => $auth->id,
-            'vendor_id'      => $vendorId,
-            'total'          => $grandTotal,
-            'delivery_fee'   => $deliveryFee,
-            'delivery_minutes' => $deliveryMinutes,
-            'delivery_at'    => $deliveryAtSql,
-            'payment_method' => $paymentMethod,
-            // Wallet orders are paid up-front; COD stays 'pending' until delivered.
-            'status'         => $paymentMethod === 'cod' ? 'pending' : 'paid',
-            'notes'          => $notes ?: null,
-            'delivery_address' => $deliveryAddress,
-            'prescription_path' => $prescriptionPath ?: null,
-        ], true);
+        $tokenSvc   = new TokenService();
+        $wallet     = new WalletService();
+        $orderIds   = [];
 
-        foreach ($cart as $r) {
-            $p = $byId[(int) $r['product_id']];
-            $vid = (int) ($r['variation_id'] ?? 0) ?: null;
-            $variant = $vid ? ($vById[$vid] ?? null) : null;
-            $price = $variant ? (float) $variant['price'] : (float) $p['price'];
-            $sub = $price * (int) $r['qty'];
-            $itemModel->insert([
-                'order_id'        => $orderId,
-                'product_id'      => (int) $p['id'],
-                'variation_id'    => $vid,
-                'variation_label' => $variant['name'] ?? null,
-                'name'            => $p['name'],
-                'qty'             => (int) $r['qty'],
-                'price'           => $price,
-                'subtotal'        => $sub,
-            ]);
-            if ($variant) {
-                (new ProductVariantModel())->update($variant['id'], ['stock' => max(0, (int) $variant['stock'] - (int) $r['qty'])]);
-            } else {
-                (new ProductModel())->update((int) $p['id'], ['stock' => max(0, (int) $p['stock'] - (int) $r['qty'])]);
+        foreach ($groups as $vk => &$g) {
+            // Prescription only on the sub-order(s) that actually carry a medical item.
+            $rxPath = ($prescriptionRequired && PrescriptionPolicy::requiresFor($g['products'])) ? ($prescriptionPath ?: null) : null;
+            $orderId = $orderModel->insert([
+                'customer_id'       => $auth->id,
+                'vendor_id'         => $vk ?: null,
+                'total'             => $g['subtotal'] + $g['delivery_fee'] + ($g['gst'] ?? 0),
+                'delivery_fee'      => $g['delivery_fee'],
+                'delivery_minutes'  => $deliveryMinutes,
+                'delivery_at'       => $deliveryAtSql,
+                'payment_method'    => $paymentMethod,
+                // Wallet orders are paid up-front; COD stays 'pending' until delivered.
+                'status'            => $paymentMethod === 'cod' ? 'pending' : 'paid',
+                'notes'             => $notes ?: null,
+                'delivery_address'  => $deliveryAddress,
+                'prescription_path' => $rxPath,
+            ], true);
+            $g['order_id'] = (int) $orderId;
+            $orderIds[]    = (int) $orderId;
+
+            foreach ($g['lines'] as $ln) {
+                $r = $ln['row']; $p = $ln['product']; $variant = $ln['variant']; $price = (float) $ln['price'];
+                $itemModel->insert([
+                    'order_id'        => $orderId,
+                    'product_id'      => (int) $p['id'],
+                    'variation_id'    => $variant ? (int) $variant['id'] : null,
+                    'variation_label' => $variant['name'] ?? null,
+                    'name'            => $p['name'],
+                    'qty'             => (int) $r['qty'],
+                    'price'           => $price,
+                    'subtotal'        => $price * (int) $r['qty'],
+                ]);
+                if ($variant) {
+                    (new ProductVariantModel())->update($variant['id'], ['stock' => max(0, (int) $variant['stock'] - (int) $r['qty'])]);
+                } else {
+                    (new ProductModel())->update((int) $p['id'], ['stock' => max(0, (int) $p['stock'] - (int) $r['qty'])]);
+                }
+            }
+
+            // Vendor inventory tokens — deduct this shop's subtotal × commission_pct.
+            // Never block the order; deduct what's available and move on.
+            if ($vk) {
+                try { $tokenSvc->consumeForOrder($vk, (float) $g['subtotal']); }
+                catch (\Throwable $e) { log_message('error', 'Token consume skipped for order: ' . $e->getMessage()); }
+            }
+
+            // Wallet orders settle now: credit this vendor 90% of THEIR items
+            // subtotal (delivery excluded; the 10% pool is distributed below).
+            if ($paymentMethod === 'wallet' && $vk) {
+                $poolPct     = CommissionService::poolPctForVendor($vk);
+                $sharePct    = rtrim(rtrim(number_format(100 - $poolPct, 2, '.', ''), '0'), '.');
+                $vendorShare = round((float) $g['subtotal'] * (1 - $poolPct / 100), 2);
+                $wallet->credit($vk, 'wallet', $vendorShare, 'receive', 'order#' . $orderId, "Sale ({$sharePct}% of order)");
             }
         }
+        unset($g);
 
-        // Wallet orders settle immediately: debit the customer, credit the vendor
-        // 90%, and (below) run the commission cascade. COD defers all of this to
-        // delivery — see setStatus().
+        // Customer settlement happens ONCE for the whole checkout.
         if ($paymentMethod === 'wallet') {
             $users->update($auth->id, ['wallet_balance' => (float) $u['wallet_balance'] - $grandTotal]);
             (new WalletTransactionModel())->insert([
                 'user_id'   => $auth->id,
                 'amount'    => $grandTotal,
                 'type'      => 'payment',
-                'reference' => 'order#' . $orderId,
-                'notes'     => 'Order #' . $orderId,
+                'reference' => 'order#' . $orderIds[0],
+                'notes'     => count($orderIds) > 1
+                    ? ('Orders ' . implode(', ', array_map(static fn ($i) => '#' . $i, $orderIds)))
+                    : ('Order #' . $orderIds[0]),
             ]);
-
-            // Credit vendor 90% of the items subtotal — the remaining 10% becomes
-            // the commission pool distributed by CommissionService below. The
-            // vendor never gets a share of the delivery fee.
-            if ($vendorId) {
-                $poolPct     = CommissionService::poolPctForVendor($vendorId);
-                $sharePct    = rtrim(rtrim(number_format(100 - $poolPct, 2, '.', ''), '0'), '.');
-                $vendorShare = round((float) $total * (1 - $poolPct / 100), 2);
-                (new WalletService())->credit($vendorId, 'wallet', $vendorShare, 'receive', 'order#' . $orderId, "Sale ({$sharePct}% of order)");
-            }
-
-            // Delivery fee is the platform's logistics revenue → admin pool, so the
-            // amount debited from the customer is fully accounted for.
-            if ($deliveryFee > 0) {
+            // Delivery fees + GST are platform-collected (logistics revenue / tax
+            // to remit) → admin pool. Neither is vendor sale revenue.
+            $platformCut = round($totalDelivery + $totalGst, 2);
+            if ($platformCut > 0) {
                 \Config\Database::connect()->table('system_pools')
                     ->where('pool_key', 'admin_wallet')
-                    ->set('balance', "balance + {$deliveryFee}", false)
+                    ->set('balance', "balance + {$platformCut}", false)
                     ->update();
             }
         }
@@ -239,28 +278,44 @@ class OrderController extends BaseApiController
         // Build the success response. Push it to the client NOW (before
         // notifications + commission cascade) so the customer doesn't wait
         // for FCM round-trips. The slow work happens after the response.
-        $response = $this->ok(['order_id' => (int) $orderId], 'Order placed');
+        $response = $this->ok([
+            'order_id'    => $orderIds[0],
+            'order_ids'   => $orderIds,
+            'order_count' => count($orderIds),
+        ], 'Order placed');
         $this->sendEarly($response);
 
-        // Notify customer + vendor + all admins (slow — runs after response)
-        $svc = new NotificationService();
+        // Notify the customer once, then each vendor + all admins per sub-order
+        // (slow — runs after the response). Commission/buyback fires per order.
+        $svc        = new NotificationService();
+        $commission = new CommissionService();
         try {
-            $svc->sendTyped((int) $auth->id, 'order_created', (int) $orderId, '/orders', 'Order placed', "Total ₹{$grandTotal}");
-            if ($vendorId) {
-                $svc->sendTyped($vendorId, 'order_created', (int) $orderId, '/orders', 'New order', "Order #{$orderId} — ₹{$grandTotal}");
-                // Driver is assigned later, per-order, by the vendor on the Orders
-                // page — the driver is notified at that point (see setDriver()).
-            }
-            $svc->sendTypedToRole('admin', 'order_created', (int) $orderId, '/orders', 'New order', "Order #{$orderId} — ₹{$grandTotal}");
+            $svc->sendTyped((int) $auth->id, 'order_created', $orderIds[0], '/orders', 'Order placed',
+                count($orderIds) > 1 ? (count($orderIds) . " orders · ₹{$grandTotal}") : "Total ₹{$grandTotal}");
         } catch (\Throwable $e) {
             log_message('error', 'Order push failed: ' . $e->getMessage());
         }
 
-        // Commission/buyback cascade — fires for any NON-COD order (placed as
-        // 'paid': wallet + online/null). COD stays 'pending' and settles on
-        // delivery (setStatus). distributeForOrder is idempotent.
-        if ($paymentMethod !== 'cod') {
-            (new CommissionService())->distributeForOrder((int) $orderId, (int) $auth->id, (float) $total, $vendorId);
+        foreach ($groups as $vk => $g) {
+            $oid   = (int) $g['order_id'];
+            $gross = (float) ($g['subtotal'] + $g['delivery_fee']);
+            try {
+                if ($vk) {
+                    $svc->sendTyped($vk, 'order_created', $oid, '/orders', 'New order', "Order #{$oid} — ₹{$gross}");
+                    // Driver is assigned later, per-order, by the vendor on the
+                    // Orders page — the driver is notified then (see setDriver()).
+                }
+                $svc->sendTypedToRole('admin', 'order_created', $oid, '/orders', 'New order', "Order #{$oid} — ₹{$gross}");
+            } catch (\Throwable $e) {
+                log_message('error', 'Order push failed: ' . $e->getMessage());
+            }
+
+            // Commission/buyback cascade — NON-COD only (placed 'paid'); on this
+            // shop's items subtotal (delivery excluded). distributeForOrder is
+            // idempotent. COD settles on delivery (setStatus).
+            if ($paymentMethod !== 'cod') {
+                $commission->distributeForOrder($oid, (int) $auth->id, (float) $g['subtotal'], $vk ?: null);
+            }
         }
 
         return $response;
@@ -448,14 +503,20 @@ class OrderController extends BaseApiController
         // (legacy rows are stored as name='Item' but still link a product /
         // variant) + the variant label, so the customer sees an e-commerce
         // style item list. Variant images carry a '<->' suffix — strip it.
+        // vendor_shop is resolved per item from the product's own vendor, so a
+        // multi-vendor order (orders.vendor_id is null) still shows each item's
+        // shop. shop_name wins; fall back to the vendor user's name.
         $items = \Config\Database::connect()->query(
             "SELECT oi.*,
                     COALESCE(NULLIF(oi.name, 'Item'), pv.name, p.name, 'Item')              AS display_name,
                     COALESCE(NULLIF(p.image, ''), SUBSTRING_INDEX(NULLIF(pv.image, ''), '<->', 1)) AS product_image,
-                    pv.name AS variant_name
+                    pv.name AS variant_name,
+                    COALESCE(NULLIF(ivp.shop_name, ''), iu.name) AS vendor_shop
              FROM order_items oi
              LEFT JOIN products p          ON p.id  = oi.product_id
              LEFT JOIN product_variants pv ON pv.id = oi.variation_id
+             LEFT JOIN users iu            ON iu.id = p.vendor_id
+             LEFT JOIN vendor_profiles ivp ON ivp.user_id = p.vendor_id
              WHERE oi.order_id = ?
              ORDER BY oi.id",
             [$id]
@@ -712,6 +773,7 @@ class OrderController extends BaseApiController
                 'id'              => (int) $o['id'],
                 'status'          => $o['status'],
                 'total'           => (float) $o['total'],
+                'delivery_fee'    => (float) ($o['delivery_fee'] ?? 0),
                 'pickup_address'  => $pickup ?: ($vendorById[$vid]['name'] ?? 'Vendor'),
                 'drop_address'    => $drop ?: 'Customer',
                 'customer_name'   => $c['name']          ?? '',
@@ -783,27 +845,11 @@ class OrderController extends BaseApiController
             );
         }
 
-        // COD settles on delivery: the cash is now collected, so credit the vendor
-        // 90% and run the commission cascade — exactly what a wallet order does at
-        // placement. Guarded so it only fires on the first transition to delivered,
-        // and never for legacy-imported orders (already settled on the old site —
-        // their commissions came in as historical wallet_transactions).
-        if ($status === 'delivered'
-            && ($order['payment_method'] ?? 'wallet') === 'cod'
-            && ($order['status'] ?? '') !== 'delivered'
-            && ! $this->isLegacyOrder($id)) {
-            $codVendorId = ! empty($order['vendor_id']) ? (int) $order['vendor_id'] : null;
-            // Settle vendor share + commission on the items subtotal only — the
-            // delivery fee (collected in cash) is not the vendor's revenue.
-            $codItems = (float) $order['total'] - (float) ($order['delivery_fee'] ?? 0);
-            if ($codVendorId) {
-                $poolPct     = CommissionService::poolPctForVendor($codVendorId);
-                $sharePct    = rtrim(rtrim(number_format(100 - $poolPct, 2, '.', ''), '0'), '.');
-                $vendorShare = round($codItems * (1 - $poolPct / 100), 2);
-                (new WalletService())->credit($codVendorId, 'wallet', $vendorShare, 'receive', 'order#' . $id, "COD sale ({$sharePct}% of order)");
-            }
-            (new CommissionService())->distributeForOrder($id, (int) $order['customer_id'], $codItems, $codVendorId);
-        }
+        // COD on delivery does NOTHING financial: the cash is collected in person
+        // (driver-collected / reconciled), so the vendor's wallet is NOT credited
+        // and no commission is distributed. The MLM / buyback pool is funded only
+        // by wallet-paid orders (settled at 'paid'). COD delivery just marks the
+        // order delivered (status + delivered_at already set above).
 
         try {
             (new NotificationService())->sendTyped((int) $order['customer_id'], 'order_update', $id, '/orders', "Order #{$id}", "Status updated to {$status}");

@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { motion } from "framer-motion";
-import { Wallet as WalletIcon, Banknote, Clock, Sparkles, Users, Loader2, QrCode } from "lucide-react";
+import { Wallet as WalletIcon, Banknote, Clock, Sparkles, Users, Loader2, QrCode, ArrowDownLeft, ShieldCheck, ShieldAlert } from "lucide-react";
 import { toast } from "sonner";
 import { LuxuryCard } from "@/components/ui/custom/luxury-card";
 import { AnimatedCounter } from "@/components/ui/custom/animated-counter";
@@ -102,6 +103,45 @@ export default function StaffWalletPage() {
             </div>
           </LuxuryCard>
         </motion.div>
+
+        {/* Withdraw / KYC — floor roles (vendor/taluk/district/state) can cash out
+            the amount above the ₹2,500 minimum once their KYC is verified. */}
+        {hasFloor && (
+          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
+            <LuxuryCard hoverLift={false} className="p-5">
+              {user?.kyc_status === "verified" ? (
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-sm font-bold">Withdraw to bank / UPI</p>
+                    <p className="text-xs text-muted-foreground">Withdrawable {fmtINR(withdrawable)} · keep ₹2,500 minimum</p>
+                  </div>
+                  <Link href="/wallet/withdraw" className="inline-flex shrink-0 items-center gap-1.5 rounded-xl brand-gradient px-4 py-2.5 text-sm font-semibold text-brand-foreground brand-glow">
+                    <ArrowDownLeft className="h-4 w-4" /> Withdraw
+                  </Link>
+                </div>
+              ) : (
+                <div className="flex items-center gap-3">
+                  <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-amber-500/10 text-amber-500">
+                    <ShieldAlert className="h-5 w-5" />
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-bold">
+                      {user?.kyc_status === "pending" ? "KYC under review" : "Complete KYC to withdraw"}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {user?.kyc_status === "pending"
+                        ? "Withdrawals unlock once an admin verifies your documents."
+                        : "Submit your Aadhaar, PAN and bank details to enable withdrawals."}
+                    </p>
+                  </div>
+                  <Link href="/profile/kyc" className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-brand/30 bg-brand/10 px-3 py-2 text-sm font-semibold text-brand">
+                    <ShieldCheck className="h-4 w-4" /> {user?.kyc_status === "pending" ? "View" : "KYC"}
+                  </Link>
+                </div>
+              )}
+            </LuxuryCard>
+          </motion.div>
+        )}
 
         {/* Vendor QR wallet — in-store QR sales land here; transfer to main to spend */}
         {isVendor && (

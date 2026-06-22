@@ -138,6 +138,8 @@ export type AuthUser = {
   ifsc_code?: string | null;
   upi?: string | null;
   gst?: string | null;
+  kyc_status?: "none" | "pending" | "verified" | "rejected";
+  kyc_note?: string | null;
   shop_image?: string | null;
   shop_image_pending?: string | null;
   shop_image_status?: "pending" | "approved" | "rejected" | null;

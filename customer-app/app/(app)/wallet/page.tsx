@@ -9,12 +9,13 @@ import { LuxuryCard } from "@/components/ui/custom/luxury-card";
 import { AnimatedCounter } from "@/components/ui/custom/animated-counter";
 import { useAuth } from "@/stores/auth";
 import { mock, type MockTxn } from "@/lib/mock";
-import type { WalletKey } from "@/lib/api";
+import { WELCOME_UNLOCK, type WalletKey } from "@/lib/api";
 
 const fmtINR = (n: number) =>
   new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 2 }).format(n);
+const fmtN = (n: number) => new Intl.NumberFormat("en-IN").format(n);
 
-type Tile = { key: WalletKey; label: string; value: number; transferable: boolean; gated?: string };
+type Tile = { key: WalletKey; label: string; value: number; transferable: boolean; locked?: boolean; progress?: string };
 
 export default function WalletPage() {
   const { user } = useAuth();
@@ -28,14 +29,41 @@ export default function WalletPage() {
     })();
   }, []);
 
+  // Depth-tier referral counts drive the welcome-wallet unlocks.
+  const counts: Record<1 | 2 | 3, number> = {
+    1: user?.level_1_count ?? 0,
+    2: user?.level_2_count ?? 0,
+    3: user?.level_3_count ?? 0,
+  };
+  // Both purchase-commission (level_N) and welcome (welcome_N) wallets unlock
+  // only when the depth-tier referral count reaches the threshold.
+  const gatedTile = (key: WalletKey, label: string, lvl: 1 | 2 | 3, value: number): Tile => {
+    const need = WELCOME_UNLOCK[lvl];
+    const have = counts[lvl];
+    const unlocked = have >= need;
+    return {
+      key,
+      label,
+      value,
+      transferable: unlocked,
+      locked: !unlocked,
+      progress: unlocked ? `Unlocked · ${fmtN(have)} referrals` : `${fmtN(have)} / ${fmtN(need)} referrals`,
+    };
+  };
+
   const tiles: Tile[] = [
     { key: "wallet",  label: "Main wallet",     value: user?.wallet_balance ?? 0, transferable: false },
     { key: "level",   label: "Level wallet",    value: user?.level_wallet   ?? 0, transferable: true  },
+    // Purchase commission — gated by depth-tier referral count.
+    gatedTile("level_1", "Level 1 (purchase)", 1, user?.level_1_wallet ?? 0),
+    gatedTile("level_2", "Level 2 (purchase)", 2, user?.level_2_wallet ?? 0),
+    gatedTile("level_3", "Level 3 (purchase)", 3, user?.level_3_wallet ?? 0),
+    // Referral (signup) bonus — gated by depth-tier referral count.
+    gatedTile("welcome_1", "Referral L1 bonus", 1, user?.welcome_1_wallet ?? 0),
+    gatedTile("welcome_2", "Referral L2 bonus", 2, user?.welcome_2_wallet ?? 0),
+    gatedTile("welcome_3", "Referral L3 bonus", 3, user?.welcome_3_wallet ?? 0),
     { key: "buyback", label: "Buyback wallet",  value: user?.buyback_wallet ?? 0, transferable: true  },
     { key: "global",  label: "Global wallet",   value: user?.global_wallet  ?? 0, transferable: true  },
-    { key: "level_1", label: "Level 1 wallet",  value: user?.level_1_wallet ?? 0, transferable: false, gated: "100 referrals" },
-    { key: "level_2", label: "Level 2 wallet",  value: user?.level_2_wallet ?? 0, transferable: false, gated: "10,000 referrals" },
-    { key: "level_3", label: "Level 3 wallet",  value: user?.level_3_wallet ?? 0, transferable: false, gated: "100,000 referrals" },
   ];
 
   return (
@@ -75,19 +103,30 @@ export default function WalletPage() {
               <LuxuryCard className="flex items-center justify-between p-4">
                 <div className="flex items-center gap-3">
                   <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-brand/10 text-brand">
-                    {t.gated ? <Lock className="h-4 w-4" /> : <WalletIcon className="h-4 w-4" />}
+                    {t.locked ? <Lock className="h-4 w-4" /> : <WalletIcon className="h-4 w-4" />}
                   </span>
                   <div>
                     <p className="text-[10px] uppercase tracking-wider text-muted-foreground">{t.label}</p>
                     <p className="mt-0.5 text-lg font-bold">{fmtINR(t.value)}</p>
-                    {t.gated && <p className="text-[10px] text-muted-foreground">Locked · {t.gated}</p>}
+                    {t.progress && (
+                      <p className={`text-[10px] ${t.locked ? "text-amber-500" : "text-emerald-500"}`}>
+                        {t.locked ? "🔒 " : "✓ "}{t.progress}
+                      </p>
+                    )}
                   </div>
                 </div>
-                {t.transferable && (
-                  <Link href={`/wallet/transfer?from=${t.key}`} className="inline-flex h-8 items-center rounded-lg border border-border bg-surface-2/40 px-3 text-xs font-medium hover:border-brand/40 hover:bg-surface-2 hover:text-brand">
-                    Transfer
-                  </Link>
-                )}
+                <div className="flex items-center gap-2">
+                  {t.key === "buyback" && (
+                    <Link href="/buyback" className="inline-flex h-8 items-center rounded-lg border border-border bg-surface-2/40 px-3 text-xs font-medium hover:border-brand/40 hover:bg-surface-2 hover:text-brand">
+                      View orders
+                    </Link>
+                  )}
+                  {t.transferable && (
+                    <Link href={`/wallet/transfer?from=${t.key}`} className="inline-flex h-8 items-center rounded-lg border border-border bg-surface-2/40 px-3 text-xs font-medium hover:border-brand/40 hover:bg-surface-2 hover:text-brand">
+                      Transfer
+                    </Link>
+                  )}
+                </div>
               </LuxuryCard>
             </motion.div>
           ))}

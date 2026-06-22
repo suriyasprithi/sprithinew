@@ -121,9 +121,18 @@ class VendorCategoryController extends BaseApiController
         }
         $d = $this->request->getJSON(true) ?? $this->request->getPost();
         $id = (new VendorCategoryModel())->insert([
-            'name'   => trim((string) $d['name']),
-            'image'  => \App\Libraries\ImageOptimizer::fromDataUri($d['image'] ?? null, 'categories'),
-            'status' => in_array($d['status'] ?? 'active', ['active', 'inactive'], true) ? $d['status'] : 'active',
+            'name'              => trim((string) $d['name']),
+            'image'             => \App\Libraries\ImageOptimizer::fromDataUri($d['image'] ?? null, 'categories'),
+            'status'            => in_array($d['status'] ?? 'active', ['active', 'inactive'], true) ? $d['status'] : 'active',
+            'free_delivery_min' => isset($d['free_delivery_min']) && $d['free_delivery_min'] !== ''
+                ? (float) $d['free_delivery_min']
+                : 0,
+            'delivery_charge'   => isset($d['delivery_charge']) && $d['delivery_charge'] !== ''
+                ? (float) $d['delivery_charge']
+                : 0,
+            'gst_rate'          => isset($d['gst_rate']) && $d['gst_rate'] !== ''
+                ? (float) $d['gst_rate']
+                : 0,
         ], true);
         return $this->ok(['id' => (int) $id], 'Created');
     }
@@ -143,6 +152,21 @@ class VendorCategoryController extends BaseApiController
         if (array_key_exists('image', $d)) $payload['image'] = \App\Libraries\ImageOptimizer::fromDataUri($d['image'], 'categories');
         if (isset($d['status']) && in_array($d['status'], ['active', 'inactive'], true)) {
             $payload['status'] = $d['status'];
+        }
+        if (array_key_exists('free_delivery_min', $d)) {
+            $payload['free_delivery_min'] = $d['free_delivery_min'] === '' || $d['free_delivery_min'] === null
+                ? 0
+                : (float) $d['free_delivery_min'];
+        }
+        if (array_key_exists('delivery_charge', $d)) {
+            $payload['delivery_charge'] = $d['delivery_charge'] === '' || $d['delivery_charge'] === null
+                ? 0
+                : (float) $d['delivery_charge'];
+        }
+        if (array_key_exists('gst_rate', $d)) {
+            $payload['gst_rate'] = $d['gst_rate'] === '' || $d['gst_rate'] === null
+                ? 0
+                : (float) $d['gst_rate'];
         }
         if (! $payload) return $this->fail('Nothing to update', 422);
         $model->update($id, $payload);

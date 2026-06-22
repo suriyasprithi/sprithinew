@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
-import { MapPin, X } from "lucide-react";
+import { MapPin, X, Search, LocateFixed, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
 
@@ -53,6 +53,9 @@ export function LocationPicker({ open, onClose }: { open: boolean; onClose: () =
   const [districtId, setDistrictId] = useState<number | null>(null);
   const [talukId, setTalukId]       = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
+  const [pincode, setPincode] = useState("");
+  const [pinBusy, setPinBusy] = useState(false);
+  const [geoBusy, setGeoBusy] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -88,6 +91,56 @@ export function LocationPicker({ open, onClose }: { open: boolean; onClose: () =
     () => districtId == null ? [] : taluks.filter((t) => t.district_id === districtId),
     [taluks, districtId],
   );
+
+  // Resolve a 6-digit pincode → district/taluk/state and pre-fill the dropdowns.
+  async function resolvePincode(code: string): Promise<boolean> {
+    if (!/^[0-9]{6}$/.test(code)) { toast.error("Enter a valid 6-digit pincode"); return false; }
+    setPinBusy(true);
+    try {
+      const r = await api.get(`/public/pincodes/${code}`);
+      const row = r.data?.data as { district_id: number | null; taluk_id: number | null; area?: string | null } | null;
+      if (!row || row.district_id == null) { toast.error("We don't deliver to this pincode yet"); return false; }
+      const dist = districts.find((d) => d.id === Number(row.district_id));
+      if (!dist) { toast.error("Pincode area not available"); return false; }
+      setStateId(dist.state_id);
+      setDistrictId(dist.id);
+      setTalukId(row.taluk_id != null ? Number(row.taluk_id) : null);
+      toast.success(`Location set${row.area ? ` — ${row.area}` : ""}`);
+      return true;
+    } catch {
+      toast.error("We don't deliver to this pincode yet");
+      return false;
+    } finally { setPinBusy(false); }
+  }
+
+  // Use the device GPS → reverse-geocode to a pincode (free OSM Nominatim) →
+  // resolve that pincode to our delivery area. Manual selection stays available.
+  function useCurrentLocation() {
+    if (typeof navigator === "undefined" || !navigator.geolocation) {
+      toast.error("Location is not supported on this device"); return;
+    }
+    setGeoBusy(true);
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        try {
+          const { latitude, longitude } = pos.coords;
+          const res = await fetch(
+            `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${latitude}&lon=${longitude}`,
+            { headers: { Accept: "application/json" } },
+          );
+          const j = await res.json();
+          const code = String(j?.address?.postcode ?? "").replace(/\D/g, "").slice(0, 6);
+          if (!/^[0-9]{6}$/.test(code)) { toast.error("Couldn't detect your pincode — please enter it manually"); return; }
+          setPincode(code);
+          await resolvePincode(code);
+        } catch {
+          toast.error("Couldn't detect your location");
+        } finally { setGeoBusy(false); }
+      },
+      () => { toast.error("Location permission denied"); setGeoBusy(false); },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 },
+    );
+  }
 
   function apply() {
     const stName = states.find((s) => s.id === stateId)?.name ?? "";
@@ -149,6 +202,40 @@ export function LocationPicker({ open, onClose }: { open: boolean; onClose: () =
 
           {/* Body — form fields */}
           <div className="space-y-4 px-5 py-5">
+            {/* Quick: pincode search + current-location (manual dropdowns below). */}
+            <div className="space-y-2">
+              <div className="flex gap-2">
+                <input
+                  value={pincode}
+                  onChange={(e) => setPincode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                  onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); void resolvePincode(pincode); } }}
+                  inputMode="numeric"
+                  placeholder="Search by pincode (e.g. 605110)"
+                  className="h-11 flex-1 rounded-xl border border-[var(--mk-border)] bg-white px-3 text-sm outline-none transition-colors focus:border-[var(--mk-brand)] focus:ring-2 focus:ring-[var(--mk-brand)]/20"
+                />
+                <button
+                  type="button"
+                  onClick={() => void resolvePincode(pincode)}
+                  disabled={pinBusy || pincode.length !== 6}
+                  className="flex h-11 shrink-0 items-center gap-1.5 rounded-xl bg-[var(--mk-brand)] px-4 text-sm font-semibold text-white transition-colors hover:bg-[var(--mk-brand-deep)] disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {pinBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />} Go
+                </button>
+              </div>
+              <button
+                type="button"
+                onClick={useCurrentLocation}
+                disabled={geoBusy}
+                className="flex w-full items-center justify-center gap-2 rounded-xl border border-[var(--mk-border)] bg-white px-3 py-2.5 text-sm font-medium text-[var(--mk-brand-deep)] transition-colors hover:border-[var(--mk-brand)]/50 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {geoBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <LocateFixed className="h-4 w-4" />} Use my current location
+              </button>
+            </div>
+
+            <div className="flex items-center gap-3 text-[10px] font-bold uppercase tracking-wider text-[var(--mk-text-muted)]">
+              <span className="h-px flex-1 bg-[var(--mk-border)]" /> or select manually <span className="h-px flex-1 bg-[var(--mk-border)]" />
+            </div>
+
             <Field label="State">
               <select
                 value={stateId ?? ""}

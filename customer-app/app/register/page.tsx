@@ -7,6 +7,7 @@ import { motion } from "framer-motion";
 import { Loader2, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/custom/password-input";
 import { Label } from "@/components/ui/label";
 import { LuxuryCard } from "@/components/ui/custom/luxury-card";
 import { GradientButton } from "@/components/ui/custom/gradient-button";
@@ -36,6 +37,14 @@ function ageFrom(dob: string): number {
 function maxDobForAdult(): string {
   const d = new Date();
   d.setFullYear(d.getFullYear() - 18);
+  return d.toISOString().slice(0, 10);
+}
+
+// Earliest DOB allowed (caps age at 100 — used as the date input's min so the
+// field can't accept an absurd age).
+function minDobForMaxAge(): string {
+  const d = new Date();
+  d.setFullYear(d.getFullYear() - 100);
   return d.toISOString().slice(0, 10);
 }
 
@@ -191,6 +200,7 @@ function RegisterInner() {
     if (!/^[0-9]{6}$/.test(otp)) return toast.error("Enter the 6-digit OTP sent to your mobile");
     if (!dob) return toast.error("Date of birth is required");
     if (ageFrom(dob) < 18) return toast.error("You must be at least 18 to register");
+    if (ageFrom(dob) > 100) return toast.error("Enter a valid date of birth");
     if (stateId == null) return toast.error("Select your state");
     if (districtId == null) return toast.error("Select your district");
     if (!password) return toast.error("Password is required");
@@ -267,7 +277,7 @@ function RegisterInner() {
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="mobile">Mobile</Label>
-                <Input id="mobile" type="tel" inputMode="numeric" maxLength={10} autoComplete="tel" placeholder="9999999999" value={mobile} onChange={(e) => { setMobile(cleanMobile(e.target.value)); setOtpSent(false); setOtp(""); }} disabled={busy || isLoading} className={`h-11 rounded-xl bg-surface-2/60 ${mobileTaken ? "border-rose-500" : ""}`} />
+                <Input id="mobile" type="tel" inputMode="numeric" maxLength={10} autoComplete="tel" placeholder="Enter Mobile Number" value={mobile} onChange={(e) => { setMobile(cleanMobile(e.target.value)); setOtpSent(false); setOtp(""); }} disabled={busy || isLoading} className={`h-11 rounded-xl bg-surface-2/60 ${mobileTaken ? "border-rose-500" : ""}`} />
                 {mobileChecking && <p className="text-[11px] text-muted-foreground">Checking…</p>}
                 {mobileTaken === true && <p className="text-[11px] font-medium text-rose-500">⚠ This number already exists — please log in instead.</p>}
               </div>
@@ -277,7 +287,7 @@ function RegisterInner() {
               </div>
               <div className="space-y-1.5 sm:col-span-2">
                 <Label htmlFor="dob">Date of birth</Label>
-                <Input id="dob" type="date" max={maxDobForAdult()} value={dob} onChange={(e) => setDob(e.target.value)} disabled={busy || isLoading} className="h-11 rounded-xl bg-surface-2/60" />
+                <Input id="dob" type="date" min={minDobForMaxAge()} max={maxDobForAdult()} value={dob} onChange={(e) => setDob(e.target.value)} disabled={busy || isLoading} className="h-11 rounded-xl bg-surface-2/60" />
               </div>
               <div className="space-y-1.5 sm:col-span-2">
                 <Label htmlFor="state">State</Label>
@@ -327,11 +337,11 @@ function RegisterInner() {
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="password">Password</Label>
-                <Input id="password" type="password" autoComplete="new-password" placeholder="Min 6 characters" value={password} onChange={(e) => setPassword(e.target.value)} disabled={busy || isLoading} className="h-11 rounded-xl bg-surface-2/60" />
+                <PasswordInput id="password" autoComplete="new-password" placeholder="6-20 characters" maxLength={20} value={password} onChange={(e) => setPassword(e.target.value)} disabled={busy || isLoading} className="h-11 rounded-xl bg-surface-2/60" />
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="confirmPassword">Confirm password</Label>
-                <Input id="confirmPassword" type="password" autoComplete="new-password" placeholder="Re-enter password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} disabled={busy || isLoading} className="h-11 rounded-xl bg-surface-2/60" />
+                <PasswordInput id="confirmPassword" autoComplete="new-password" placeholder="Re-enter password" maxLength={20} value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} disabled={busy || isLoading} className="h-11 rounded-xl bg-surface-2/60" />
               </div>
               <div className="space-y-1.5 sm:col-span-2">
                 <Label htmlFor="ref">Referral code <span className="text-muted-foreground">(optional)</span></Label>

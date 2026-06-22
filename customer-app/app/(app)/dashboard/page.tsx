@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
-import { ArrowDownLeft, ArrowLeftRight, Bell, Gift, ShoppingBag, Send, Sparkles, Store, Users, Wallet as WalletIcon } from "lucide-react";
+import { ArrowDownLeft, ArrowLeftRight, Bell, Gift, Lock, ShoppingBag, Send, Sparkles, Store, Users, Wallet as WalletIcon } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { AppHeader } from "@/components/layout/app-header";
 import { LuxuryCard } from "@/components/ui/custom/luxury-card";
@@ -11,7 +11,7 @@ import { AnimatedCounter } from "@/components/ui/custom/animated-counter";
 import { ShopCarousel, type ShopBanner } from "@/components/marketplace/shop-carousel";
 import { VideoSubmitCard } from "@/components/marketplace/video-submit-card";
 import { useAuth } from "@/stores/auth";
-import { api, type WalletKey } from "@/lib/api";
+import { api, WELCOME_UNLOCK, type WalletKey } from "@/lib/api";
 
 const QUICK = [
   { href: "/wallet/send",     label: "Send",     icon: Send,          tone: "brand" },
@@ -68,13 +68,15 @@ export default function DashboardPage() {
   ];
 
   // Each level card combines the wallet balance with its referral head-count.
-  // Distinct tones per level, like the wallet cards above. Level money is freely
-  // transferable to the main wallet (no referral-threshold restriction).
-  const levelCards: { key: WalletKey; label: string; value: number; users: number; tone: keyof typeof WALLET_TONE }[] = [
-    { key: "level_1", label: "L1", value: user?.level_1_wallet ?? 0, users: user?.level_1_count ?? 0, tone: "sky"   },
-    { key: "level_2", label: "L2", value: user?.level_2_wallet ?? 0, users: user?.level_2_count ?? 0, tone: "amber" },
-    { key: "level_3", label: "L3", value: user?.level_3_wallet ?? 0, users: user?.level_3_count ?? 0, tone: "rose"  },
-  ];
+  // Transfer unlocks only when the depth-tier referral count reaches the
+  // threshold (L1 ≥ 100, L2 ≥ 10k, L3 ≥ 10 lakh).
+  const levelCards = ([1, 2, 3] as const).map((lvl) => {
+    const value = lvl === 1 ? user?.level_1_wallet : lvl === 2 ? user?.level_2_wallet : user?.level_3_wallet;
+    const users = lvl === 1 ? user?.level_1_count  : lvl === 2 ? user?.level_2_count  : user?.level_3_count;
+    const have  = users ?? 0;
+    const need  = WELCOME_UNLOCK[lvl];
+    return { lvl, key: `level_${lvl}` as WalletKey, label: `L${lvl}`, value: value ?? 0, users: have, need, unlocked: have >= need, tone: (lvl === 1 ? "sky" : lvl === 2 ? "amber" : "rose") as keyof typeof WALLET_TONE };
+  });
 
   return (
     <>
@@ -196,18 +198,24 @@ export default function DashboardPage() {
                   </p>
                   {lc.key === "level_1" && (
                     <Link
-                      href={`/wallet/history?wallet=${lc.key}`}
+                      href="/wallet/history?wallet=welcome"
                       className="mt-2 block rounded-lg border border-black/10 bg-white/70 py-1 text-center text-[11px] font-semibold text-[#374151] hover:border-brand/40 hover:text-brand"
                     >
                       History →
                     </Link>
                   )}
-                  <Link
-                    href={`/wallet/transfer?from=${lc.key}`}
-                    className="mt-1 block rounded-lg border border-brand/30 bg-brand/10 py-1 text-center text-[11px] font-semibold text-brand hover:bg-brand/15"
-                  >
-                    Transfer
-                  </Link>
+                  {lc.unlocked ? (
+                    <Link
+                      href={`/wallet/transfer?from=${lc.key}`}
+                      className="mt-1 block rounded-lg border border-brand/30 bg-brand/10 py-1 text-center text-[11px] font-semibold text-brand hover:bg-brand/15"
+                    >
+                      Transfer
+                    </Link>
+                  ) : (
+                    <p className="mt-1 flex items-center justify-center gap-1 rounded-lg border border-black/10 bg-white/50 py-1 text-center text-[11px] font-semibold text-[#9ca3af]">
+                      <Lock className="h-3 w-3" /> {lc.users.toLocaleString("en-IN")}/{lc.need.toLocaleString("en-IN")}
+                    </p>
+                  )}
                 </div>
               ))}
             </div>

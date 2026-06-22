@@ -2,14 +2,14 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
 import { Bell, LogOut, ShoppingBag, Store } from "lucide-react";
 import { api } from "@/lib/api";
+import { useLogoutConfirm } from "@/components/use-logout-confirm";
 import { useAuth } from "@/stores/auth";
 
 export function AppHeader({ title }: { title?: string }) {
-  const router = useRouter();
-  const { user, logout, isHydrated } = useAuth();
+  const { user, isHydrated } = useAuth();
+  const { requestLogout, logoutDialog } = useLogoutConfirm();
   const [unread, setUnread] = useState(0);
 
   useEffect(() => {
@@ -25,11 +25,6 @@ export function AppHeader({ title }: { title?: string }) {
     const id = setInterval(tick, 60000);
     return () => { active = false; clearInterval(id); };
   }, [isHydrated, user]);
-
-  const onLogout = async () => {
-    await logout();
-    router.replace("/login");
-  };
 
   const initial = (user?.name || "?").trim().charAt(0).toUpperCase();
 
@@ -83,12 +78,13 @@ export function AppHeader({ title }: { title?: string }) {
         </Link>
         <button
           aria-label="Log out"
-          onClick={onLogout}
+          onClick={requestLogout}
           className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-border bg-surface-2/60 hover:border-brand/40 hover:text-brand"
         >
           <LogOut className="h-4 w-4" />
         </button>
       </div>
+      {logoutDialog}
     </header>
   );
 }
