@@ -24,12 +24,17 @@ import { Pagination } from "@/components/data-table/pagination";
 import { MobileHeader } from "@/components/layout/mobile-nav";
 import { cleanMobile, isMobile } from "@/lib/phone";
 import { PageHeader } from "@/components/layout/page-header";
-import { api, apiErrorMessage } from "@/lib/api";
+import { api, apiErrorMessage, fileUrl } from "@/lib/api";
 import type { ManagedVendor } from "@/lib/mock";
 
 const PAGE_SIZE = 10;
 const fmtINR = (n: number) => new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(n);
 const fmtDate = (s: string | null) => (s ? new Date(s.replace(" ", "T")).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "—");
+const kycPill = (s: string | null) =>
+  s === "verified" ? "bg-emerald-500/10 text-emerald-500"
+  : s === "pending" ? "bg-amber-500/10 text-amber-500"
+  : s === "rejected" ? "bg-rose-500/10 text-rose-500"
+  : "bg-surface-2 text-muted-foreground";
 
 type NewVendor = { name: string; mobile: string; shop_name: string; password: string; vendor_category_id: string; commission_pct: string };
 type EditVendor = { id: number; name: string; shop_name: string; vendor_category_id: string; commission_pct: string };
@@ -52,6 +57,8 @@ type VendorDetail = {
   state_name: string | null; district_name: string | null; taluk_name: string | null;
   products_count: number; orders_count: number; total_sales: number;
   account_holder: string | null; bank_name: string | null; account_number: string | null; ifsc_code: string | null; upi: string | null;
+  aadhar: string | null; aadhar_image: string | null; pan: string | null; pan_image: string | null; bank_passbook: string | null;
+  kyc_status: string | null; kyc_note: string | null;
 };
 
 function normalizeVendor(raw: unknown): Vendor {
@@ -220,6 +227,8 @@ export default function ManageVendorsPage() {
         state_name: str(d.state_name), district_name: str(d.district_name), taluk_name: str(d.taluk_name),
         products_count: num(d.products_count), orders_count: num(d.orders_count), total_sales: num(d.total_sales),
         account_holder: str(d.account_holder), bank_name: str(d.bank_name), account_number: str(d.account_number), ifsc_code: str(d.ifsc_code), upi: str(d.upi),
+        aadhar: str(d.aadhar), aadhar_image: str(d.aadhar_image), pan: str(d.pan), pan_image: str(d.pan_image), bank_passbook: str(d.bank_passbook),
+        kyc_status: str(d.kyc_status), kyc_note: str(d.kyc_note),
       });
     } catch (err) {
       toast.error(apiErrorMessage(err, "Could not load vendor profile"));
@@ -543,6 +552,25 @@ export default function ManageVendorsPage() {
                   <Field label="UPI" value={detail.upi} />
                 </div>
               </div>
+
+              <div className="space-y-3 border-t border-border pt-4">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">KYC documents</p>
+                  <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium capitalize ${kycPill(detail.kyc_status)}`}>
+                    {detail.kyc_status || "none"}
+                  </span>
+                </div>
+                {detail.kyc_note && <p className="text-xs text-muted-foreground">Note: {detail.kyc_note}</p>}
+                <div className="grid grid-cols-2 gap-x-4 gap-y-3">
+                  <Field label="Aadhaar no." value={detail.aadhar} />
+                  <Field label="PAN no." value={detail.pan} />
+                </div>
+                <div className="grid grid-cols-3 gap-3">
+                  <DocImage label="Aadhaar image" url={fileUrl(detail.aadhar_image)} />
+                  <DocImage label="PAN image" url={fileUrl(detail.pan_image)} />
+                  <DocImage label="Bank passbook" url={fileUrl(detail.bank_passbook)} />
+                </div>
+              </div>
             </div>
           ) : (
             <div className="py-10 text-center text-sm text-muted-foreground">Could not load profile.</div>
@@ -730,6 +758,23 @@ function Field({ label, value }: { label: string; value: string | null | undefin
     <div className="min-w-0">
       <p className="text-[11px] uppercase tracking-wider text-muted-foreground">{label}</p>
       <p className="truncate text-sm font-medium">{value || "—"}</p>
+    </div>
+  );
+}
+
+// KYC document thumbnail → opens the full image in a new tab.
+function DocImage({ label, url }: { label: string; url: string | null }) {
+  return (
+    <div className="space-y-1">
+      <p className="text-[10px] uppercase tracking-wider text-muted-foreground">{label}</p>
+      {url ? (
+        <a href={url} target="_blank" rel="noreferrer">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={url} alt={label} className="h-24 w-full rounded-lg border border-border object-cover transition hover:opacity-90" />
+        </a>
+      ) : (
+        <div className="flex h-24 w-full items-center justify-center rounded-lg border border-dashed border-border text-[11px] text-muted-foreground">No image</div>
+      )}
     </div>
   );
 }

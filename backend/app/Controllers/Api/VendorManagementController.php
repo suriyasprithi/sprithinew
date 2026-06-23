@@ -160,6 +160,15 @@ class VendorManagementController extends BaseApiController
             'account_number' => $u['account_number'] ?? null,
             'ifsc_code'      => $u['ifsc_code'] ?? null,
             'upi'            => $u['upi'] ?? null,
+            // KYC documents (image values are raw paths / legacy URLs — the client
+            // resolves them with fileUrl()).
+            'aadhar'         => $u['aadhar'] ?? null,
+            'aadhar_image'   => $u['aadhar_image'] ?? null,
+            'pan'            => $u['pan'] ?? null,
+            'pan_image'      => $u['pan_image'] ?? null,
+            'bank_passbook'  => $u['bank_passbook'] ?? null,
+            'kyc_status'     => $u['kyc_status'] ?? 'none',
+            'kyc_note'       => $u['kyc_note'] ?? null,
         ]);
     }
 
