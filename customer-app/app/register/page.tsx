@@ -223,6 +223,17 @@ function RegisterInner() {
         taluk_id: talukId ?? undefined,
         referrer_code: referrerCode.trim() || undefined,
       });
+      // Web (referral funnel): a new signup is sent to the Play Store to install
+      // the app and sign in there — we don't log them in on the website.
+      const { Capacitor } = await import("@capacitor/core");
+      if (!Capacitor.isNativePlatform()) {
+        clearPendingReferral();
+        toast.success("Account created! Install the app to sign in.");
+        window.location.href = "https://play.google.com/store/apps/details?id=com.epey.customer";
+        return;
+      }
+
+      // Native (already inside the app): log in and continue to the storefront.
       const tokens = res.data.data;
       if (typeof window !== "undefined" && tokens?.access_token) {
         window.localStorage.setItem("epey.access_token", tokens.access_token);

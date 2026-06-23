@@ -26,28 +26,22 @@ class RefController extends BaseController
         $code = preg_replace('/\D/', '', $code);
         $valid = (bool) preg_match('/^[0-9]{10}$/', $code);
 
-        // Play Store URL — the referrer param is what the Install Referrer API reads.
-        $playUrl = 'https://play.google.com/store/apps/details?id=' . self::PACKAGE
-            . ($valid ? '&referrer=' . rawurlencode('ref=' . $code) : '');
-
-        // Web fallback — the registration screen lives under the /customer base path.
+        // Everyone (any device) goes to the web registration screen with the code
+        // pre-filled. After they finish registering, the web flow forwards them to
+        // the Play Store to install the app and sign in. App-installed users never
+        // reach this page — their verified App Link opens the app directly.
         $base   = rtrim(base_url(), '/');
         $webUrl = $base . '/customer/register/' . ($valid ? '?ref=' . rawurlencode($code) : '');
-
-        $ua        = strtolower((string) $this->request->getUserAgent()->getAgentString());
-        $isAndroid = str_contains($ua, 'android');
-        // Android-without-app → Play Store; everyone else → web register.
-        $target = $isAndroid ? $playUrl : $webUrl;
+        $target = $webUrl;
 
         // Cheap audit trail (no new table) — App Links opens never hit this page,
         // so a hit here means "app not installed / opened in a browser".
-        log_message('info', 'referral-landing code={code} valid={valid} android={a} -> {t}', [
-            'code' => $code ?: '-', 'valid' => $valid ? '1' : '0', 'a' => $isAndroid ? '1' : '0', 't' => $target,
+        log_message('info', 'referral-landing code={code} valid={valid} -> {t}', [
+            'code' => $code ?: '-', 'valid' => $valid ? '1' : '0', 't' => $target,
         ]);
 
         $targetJs   = esc($target, 'js');
         $targetAttr = esc($target, 'attr');
-        $playAttr   = esc($playUrl, 'attr');
 
         $html = <<<HTML
 <!doctype html>
@@ -81,7 +75,7 @@ class RefController extends BaseController
       e.preventDefault(); window.location.href = "{$targetJs}";
     });
   </script>
-  <noscript><meta http-equiv="refresh" content="0;url={$playAttr}"></noscript>
+  <noscript><meta http-equiv="refresh" content="0;url={$targetAttr}"></noscript>
 </body>
 </html>
 HTML;
