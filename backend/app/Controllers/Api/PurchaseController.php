@@ -84,8 +84,6 @@ class PurchaseController extends BaseApiController
         if (! $this->validate([
             'customer_mobile' => 'required|regex_match[/^[0-9]{10}$/]',
             'amount'          => 'required|numeric|greater_than[0]',
-            'mode'            => 'required|in_list[online,offline]',
-            'note'            => 'permit_empty|string|max_length[500]',
         ])) return $this->fail('Validation failed', 422, $this->validator->getErrors());
 
         $d = $this->request->getJSON(true) ?? $this->request->getPost();
@@ -94,9 +92,6 @@ class PurchaseController extends BaseApiController
         if (! $customer) return $this->fail('Customer not found', 404);
 
         $amount = (float) $d['amount'];
-        $mode   = $d['mode'] === 'online' ? 'online' : 'offline';
-        // Note is only kept for offline sales (online ones surface in Orders).
-        $note   = ($mode === 'offline' && ! empty($d['note'])) ? trim((string) $d['note']) : '';
 
         $vendor    = $users->find($auth->id);
         $poolPct   = CommissionService::poolPctForVendor((int) $auth->id);
@@ -113,16 +108,13 @@ class PurchaseController extends BaseApiController
             return $this->fail("Insufficient main wallet balance to cover the {$poolLabel}% commission (₹{$poolAmt}).", 402);
         }
 
-        // Synthetic order record (no items). Customer wallet untouched. The
-        // marker prefix 'In-store purchase (vendor-entered)' is kept (queries
-        // match on it); any offline note is appended after a separator.
+        // Synthetic order record (no items). Customer wallet untouched.
         $orderId = (new OrderModel())->insert([
             'customer_id' => (int) $customer['id'],
             'vendor_id'   => (int) $auth->id,
             'total'       => $amount,
             'status'      => 'paid',
-            'sale_mode'   => $mode,
-            'notes'       => 'In-store purchase (vendor-entered)' . ($note !== '' ? ' — ' . $note : ''),
+            'notes'       => 'In-store purchase (vendor-entered)',
         ], true);
 
         // Deduct the commission from the vendor's main wallet — it funds the MLM
@@ -152,7 +144,7 @@ class PurchaseController extends BaseApiController
         if ($auth->role !== 'vendor') return $this->fail('Forbidden', 403);
 
         $rows = \Config\Database::connect()->query(
-            "SELECT o.id, o.total, o.created_at, o.qr_transferred_at, o.sale_mode, o.notes,
+            "SELECT o.id, o.total, o.created_at, o.qr_transferred_at,
                     cu.name AS customer_name, cu.mobile_number AS customer_mobile,
                     CASE WHEN o.notes LIKE '%vendor-entered%' THEN 'entered' ELSE 'qr' END AS source
              FROM orders o
@@ -166,16 +158,10 @@ class PurchaseController extends BaseApiController
         // The QR wallet holds the vendor's share (gross minus the commission
         // pool). Surface that share + whether the row was already moved to the
         // main wallet, so the QR scanner page can show a per-row Transfer button.
-        // Also surface sale_mode (online/offline) + the offline note (parsed from
-        // the notes column after the marker prefix) for the Customer purchase tabs.
         $poolPct = CommissionService::poolPctForVendor((int) $auth->id);
         foreach ($rows as &$r) {
             $r['vendor_share'] = round((float) $r['total'] * (1 - $poolPct / 100), 2);
             $r['transferred']  = ! empty($r['qr_transferred_at']);
-            $r['sale_mode']    = $r['sale_mode'] ?: 'offline';   // old rows default to offline
-            $note              = trim(str_replace('In-store purchase (vendor-entered)', '', (string) ($r['notes'] ?? '')));
-            $r['note']         = trim($note, " —");
-            unset($r['notes']);
         }
         unset($r);
 

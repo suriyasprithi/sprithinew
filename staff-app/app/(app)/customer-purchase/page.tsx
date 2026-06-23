@@ -28,7 +28,6 @@ const fmtINR = (n: number) =>
   new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(n);
 const fmtDateTime = (s: string | null) => (s ?? "").replace("T", " ").slice(0, 16);
 
-type SaleMode = "online" | "offline";
 type Purchase = {
   id: number;
   total: number | string;
@@ -36,61 +35,65 @@ type Purchase = {
   customer_name: string | null;
   customer_mobile: string | null;
   source: "qr" | "entered";
-  sale_mode: SaleMode;
-  note: string | null;
 };
 
 /**
- * Vendor-entered Customer purchase. The vendor records an in-store sale (the
- * customer paid in person), tagged Online or Offline:
- *   - Online  → also appears in the vendor's Orders list.
- *   - Offline → carries an optional note, shown only here.
- * Money flow is the same for both — the customer's wallet is not charged; the
- * vendor's commission % is deducted from their main wallet.
+ * Vendor-initiated in-store purchase: the vendor opens a popup, types the
+ * customer's mobile and the bill amount. The backend debits the customer's
+ * wallet, credits the vendor's main wallet their share, and runs the commission
+ * cascade. Below, a full-width, searchable, paginated table lists the purchases
+ * this vendor entered here (source=entered).
  */
 export default function CustomerPurchasePage() {
   const [open, setOpen] = useState(false);
   const [mobile, setMobile] = useState("");
   const [amount, setAmount] = useState("");
-  const [mode, setMode] = useState<SaleMode | "">("");
-  const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
 
   const [rows, setRows] = useState<Purchase[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
-  const [tab, setTab] = useState<SaleMode>("online");
   const [page, setPage] = useState(1);
 
   // Only the purchases entered from this page (not customer-scanned QR).
-  async function load(initial = false) {
-    if (!initial) setLoading(true);
+  async function refresh() {
+    setLoading(true);
     try {
       const res = await api.get("/purchase/mine");
       const all = (res.data.data?.items ?? []) as Purchase[];
       setRows(all.filter((r) => r.source === "entered"));
     } catch (e) {
-      if (!initial) toast.error(apiErrorMessage(e));
+      toast.error(apiErrorMessage(e));
       setRows([]);
     } finally {
       setLoading(false);
     }
   }
-  useEffect(() => { void load(true); }, []);
-
-  const onlineCount = rows.filter((r) => r.sale_mode === "online").length;
-  const offlineCount = rows.filter((r) => r.sale_mode === "offline").length;
+  // Initial load — inline so no setState fires synchronously in the effect body
+  // (loading already starts true). Post-charge reloads go through refresh().
+  useEffect(() => {
+    void (async () => {
+      try {
+        const res = await api.get("/purchase/mine");
+        const all = (res.data.data?.items ?? []) as Purchase[];
+        setRows(all.filter((r) => r.source === "entered"));
+      } catch {
+        setRows([]);
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, []);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return rows.filter((r) => {
-      if (r.sale_mode !== tab) return false;
-      if (!q) return true;
-      return (r.customer_name ?? "").toLowerCase().includes(q) || (r.customer_mobile ?? "").includes(q);
-    });
-  }, [rows, search, tab]);
+    if (!q) return rows;
+    return rows.filter((r) =>
+      (r.customer_name ?? "").toLowerCase().includes(q) ||
+      (r.customer_mobile ?? "").includes(q));
+  }, [rows, search]);
 
-  useEffect(() => setPage(1), [search, tab]);
+  useEffect(() => setPage(1), [search]);
   const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const safePage = Math.min(page, pageCount);
   const paged = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
@@ -101,23 +104,14 @@ export default function CustomerPurchasePage() {
     const amt = Number(amount);
     if (!isMobile(mobile)) { toast.error("Enter a valid 10-digit customer mobile"); return; }
     if (!amt || amt <= 0) { toast.error("Enter an amount"); return; }
-    if (!mode) { toast.error("Select Online or Offline"); return; }
     setBusy(true);
     try {
-      await api.post("/purchase/from-customer", {
-        customer_mobile: mobile,
-        amount: amt,
-        mode,
-        note: mode === "offline" ? note.trim() || undefined : undefined,
-      });
-      toast.success(`${mode === "online" ? "Online" : "Offline"} sale recorded · ₹${amt}`);
+      await api.post("/purchase/from-customer", { customer_mobile: mobile, amount: amt });
+      toast.success(`₹${amt} charged to ${mobile}`);
       setMobile("");
       setAmount("");
-      setMode("");
-      setNote("");
       setOpen(false);
-      setTab(mode);
-      void load();
+      void refresh();
     } catch (e) {
       toast.error(apiErrorMessage(e));
     } finally {
@@ -135,7 +129,7 @@ export default function CustomerPurchasePage() {
           eyebrow="Payments"
           icon={CreditCard}
           title="Customer purchase"
-          description="Record an in-store sale. Online sales also show in your Orders; offline sales stay here with an optional note."
+          description="Charge a customer's wallet for an in-store bill. Your sale lands in your main wallet."
           action={
             <GradientButton onClick={() => setOpen(true)}>
               <Plus className="h-4 w-4" /> Add
@@ -148,22 +142,6 @@ export default function CustomerPurchasePage() {
           <StatCard label="Total collected" value={totalAmount}  icon={CreditCard} tone="emerald" spark={[2, 3, 4, 4, 5, 5, 6, 6]} format={fmtINR} />
         </div>
 
-        {/* Online / Offline tabs */}
-        <div className="flex gap-2">
-          {(["online", "offline"] as const).map((t) => (
-            <button
-              key={t}
-              type="button"
-              onClick={() => setTab(t)}
-              className={`rounded-full px-4 py-1.5 text-sm font-semibold capitalize transition-colors ${
-                tab === t ? "bg-brand text-brand-foreground" : "bg-surface-2/60 text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              {t} <span className="ml-1 text-xs opacity-80">{t === "online" ? onlineCount : offlineCount}</span>
-            </button>
-          ))}
-        </div>
-
         <div className="glass rounded-2xl p-3">
           <div className="relative">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -174,14 +152,14 @@ export default function CustomerPurchasePage() {
         <div className="luxe-card overflow-hidden">
           <div className="hidden grid-cols-[72px_1fr_140px_180px] gap-3 border-b border-border bg-surface-2/40 px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground md:grid">
             <span>#</span>
-            <span>Customer{tab === "offline" ? " · Note" : ""}</span>
+            <span>Customer</span>
             <span className="text-right">Amount</span>
             <span className="text-right">Date</span>
           </div>
           {loading ? (
             <div className="p-3"><TableSkeleton rows={6} cols={4} /></div>
           ) : filtered.length === 0 ? (
-            <EmptyState icon={Receipt} title={`No ${tab} purchases`} description={`Tap “Add” and choose ${tab} to record a sale.`} />
+            <EmptyState icon={Receipt} title="No customer purchases" description="Tap “Add” to charge a customer." />
           ) : (
             <div className="divide-y divide-border">
               {paged.map((r, i) => (
@@ -200,7 +178,6 @@ export default function CustomerPurchasePage() {
                     <div className="min-w-0">
                       <p className="truncate text-sm font-semibold">{r.customer_name || "Customer"}</p>
                       <p className="truncate text-xs text-muted-foreground">{r.customer_mobile || "—"}</p>
-                      {r.note && <p className="truncate text-[11px] text-muted-foreground">📝 {r.note}</p>}
                     </div>
                   </div>
                   <p className="justify-self-end text-sm font-semibold text-brand md:text-right">{fmtINR(Number(r.total))}</p>
@@ -223,7 +200,7 @@ export default function CustomerPurchasePage() {
           <DialogHeader>
             <DialogTitle>Customer purchase</DialogTitle>
             <DialogDescription>
-              Record an in-store sale for a customer. Online sales also appear in your Orders.
+              Enter the customer&apos;s mobile and the bill amount. Their wallet is charged and your sale lands in your main wallet.
             </DialogDescription>
           </DialogHeader>
 
@@ -250,38 +227,8 @@ export default function CustomerPurchasePage() {
                 className="h-11 rounded-xl bg-surface-2/60"
               />
             </div>
-            <div className="space-y-1.5">
-              <Label>Type <span className="text-brand">*</span></Label>
-              <div className="grid grid-cols-2 gap-2">
-                {(["online", "offline"] as const).map((t) => (
-                  <button
-                    key={t}
-                    type="button"
-                    onClick={() => setMode(t)}
-                    className={`h-11 rounded-xl border text-sm font-semibold capitalize transition-colors ${
-                      mode === t ? "border-brand bg-brand/10 text-brand" : "border-input bg-surface-2/60 text-muted-foreground hover:border-brand/40"
-                    }`}
-                  >
-                    {t}
-                  </button>
-                ))}
-              </div>
-            </div>
-            {mode === "offline" && (
-              <div className="space-y-1.5">
-                <Label htmlFor="note">Note <span className="text-xs font-normal text-muted-foreground">(optional)</span></Label>
-                <textarea
-                  id="note"
-                  value={note}
-                  onChange={(e) => setNote(e.target.value)}
-                  rows={2}
-                  placeholder="e.g. paid by cash at the counter"
-                  className="w-full rounded-xl border border-input bg-surface-2/60 p-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
-                />
-              </div>
-            )}
             <GradientButton size="lg" className="w-full" disabled={busy} onClick={() => void charge()}>
-              {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : (amt > 0 ? `Record ₹${amt} ${mode || "sale"}` : "Record sale")}
+              {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : (amt > 0 ? `Charge ₹${amt}` : "Charge")}
             </GradientButton>
           </div>
         </DialogContent>
