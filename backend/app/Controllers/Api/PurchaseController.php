@@ -84,6 +84,7 @@ class PurchaseController extends BaseApiController
         if (! $this->validate([
             'customer_mobile' => 'required|regex_match[/^[0-9]{10}$/]',
             'amount'          => 'required|numeric|greater_than[0]',
+            'sale_mode'       => 'required|in_list[online,offline]',
         ])) return $this->fail('Validation failed', 422, $this->validator->getErrors());
 
         $d = $this->request->getJSON(true) ?? $this->request->getPost();
@@ -91,7 +92,12 @@ class PurchaseController extends BaseApiController
         $customer = $users->findByMobileAndRole($d['customer_mobile'], 'customer');
         if (! $customer) return $this->fail('Customer not found', 404);
 
-        $amount = (float) $d['amount'];
+        $amount   = (float) $d['amount'];
+        // History tag only — ONLINE rows also surface in the Orders list, OFFLINE
+        // rows stay on the Customer purchase page. Neither changes the money flow.
+        $saleMode = $d['sale_mode'] === 'online' ? 'online' : 'offline';
+        // Optional free-text remark, kept for offline records.
+        $note     = trim((string) ($d['note'] ?? ''));
 
         $vendor    = $users->find($auth->id);
         $poolPct   = CommissionService::poolPctForVendor((int) $auth->id);
@@ -109,12 +115,16 @@ class PurchaseController extends BaseApiController
         }
 
         // Synthetic order record (no items). Customer wallet untouched.
+        // Keep the 'In-store purchase (vendor-entered)' prefix intact (the Orders
+        // list filter + the QR scanner page both match on it); append the optional
+        // remark after it for offline records.
         $orderId = (new OrderModel())->insert([
             'customer_id' => (int) $customer['id'],
             'vendor_id'   => (int) $auth->id,
             'total'       => $amount,
             'status'      => 'paid',
-            'notes'       => 'In-store purchase (vendor-entered)',
+            'sale_mode'   => $saleMode,
+            'notes'       => 'In-store purchase (vendor-entered)' . ($note !== '' ? ' — ' . $note : ''),
         ], true);
 
         // Deduct the commission from the vendor's main wallet — it funds the MLM
@@ -144,7 +154,7 @@ class PurchaseController extends BaseApiController
         if ($auth->role !== 'vendor') return $this->fail('Forbidden', 403);
 
         $rows = \Config\Database::connect()->query(
-            "SELECT o.id, o.total, o.created_at, o.qr_transferred_at,
+            "SELECT o.id, o.total, o.created_at, o.qr_transferred_at, o.sale_mode,
                     cu.name AS customer_name, cu.mobile_number AS customer_mobile,
                     CASE WHEN o.notes LIKE '%vendor-entered%' THEN 'entered' ELSE 'qr' END AS source
              FROM orders o

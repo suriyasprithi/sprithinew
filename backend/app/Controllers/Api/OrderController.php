@@ -575,6 +575,10 @@ class OrderController extends BaseApiController
         $params = [];
         if ($auth->role === 'vendor') { $where[] = 'o.vendor_id = ?'; $params[] = (int) $auth->id; }
         if ($status = $this->request->getGet('status')) { $where[] = 'o.status = ?'; $params[] = $status; }
+        // Vendor-entered "Customer purchase" sales: only the ONLINE ones belong in
+        // the Orders list. Offline (and legacy un-tagged) ones live only on the
+        // Customer purchase page.
+        $where[] = "NOT (o.notes LIKE 'In-store purchase (vendor-entered)%' AND COALESCE(o.sale_mode, 'offline') <> 'online')";
         $whereSql = implode(' AND ', $where);
 
         $total = (int) ($db->query("SELECT COUNT(*) AS c FROM orders o WHERE $whereSql", $params)->getRow()->c ?? 0);

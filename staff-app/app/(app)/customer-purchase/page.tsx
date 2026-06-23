@@ -28,6 +28,18 @@ const fmtINR = (n: number) =>
   new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(n);
 const fmtDateTime = (s: string | null) => (s ?? "").replace("T", " ").slice(0, 16);
 
+// History tag for a vendor-entered purchase. Untagged legacy rows read as Offline.
+function SaleBadge({ mode }: { mode: "online" | "offline" | null }) {
+  const online = mode === "online";
+  return (
+    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold ${online ? "bg-emerald-500/10 text-emerald-600" : "bg-amber-500/10 text-amber-600"}`}>
+      {online ? "Online" : "Offline"}
+    </span>
+  );
+}
+
+type SaleMode = "online" | "offline";
+
 type Purchase = {
   id: number;
   total: number | string;
@@ -35,6 +47,7 @@ type Purchase = {
   customer_name: string | null;
   customer_mobile: string | null;
   source: "qr" | "entered";
+  sale_mode: SaleMode | null;
 };
 
 /**
@@ -48,6 +61,8 @@ export default function CustomerPurchasePage() {
   const [open, setOpen] = useState(false);
   const [mobile, setMobile] = useState("");
   const [amount, setAmount] = useState("");
+  const [saleMode, setSaleMode] = useState<SaleMode | "">("");
+  const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
 
   const [rows, setRows] = useState<Purchase[]>([]);
@@ -104,12 +119,20 @@ export default function CustomerPurchasePage() {
     const amt = Number(amount);
     if (!isMobile(mobile)) { toast.error("Enter a valid 10-digit customer mobile"); return; }
     if (!amt || amt <= 0) { toast.error("Enter an amount"); return; }
+    if (!saleMode) { toast.error("Select Online or Offline"); return; }
     setBusy(true);
     try {
-      await api.post("/purchase/from-customer", { customer_mobile: mobile, amount: amt });
-      toast.success(`₹${amt} charged to ${mobile}`);
+      await api.post("/purchase/from-customer", {
+        customer_mobile: mobile,
+        amount: amt,
+        sale_mode: saleMode,
+        ...(saleMode === "offline" && note.trim() ? { note: note.trim() } : {}),
+      });
+      toast.success(`₹${amt} recorded for ${mobile}`);
       setMobile("");
       setAmount("");
+      setSaleMode("");
+      setNote("");
       setOpen(false);
       void refresh();
     } catch (e) {
@@ -150,9 +173,10 @@ export default function CustomerPurchasePage() {
         </div>
 
         <div className="luxe-card overflow-hidden">
-          <div className="hidden grid-cols-[72px_1fr_140px_180px] gap-3 border-b border-border bg-surface-2/40 px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground md:grid">
+          <div className="hidden grid-cols-[72px_1fr_110px_130px_170px] gap-3 border-b border-border bg-surface-2/40 px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground md:grid">
             <span>#</span>
             <span>Customer</span>
+            <span>Type</span>
             <span className="text-right">Amount</span>
             <span className="text-right">Date</span>
           </div>
@@ -168,7 +192,7 @@ export default function CustomerPurchasePage() {
                   initial={{ opacity: 0, y: 4 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: i * 0.02 }}
-                  className="grid grid-cols-[1fr_auto] items-center gap-3 px-4 py-3 transition-colors hover:bg-surface-2/40 md:grid-cols-[72px_1fr_140px_180px]"
+                  className="grid grid-cols-[1fr_auto] items-center gap-3 px-4 py-3 transition-colors hover:bg-surface-2/40 md:grid-cols-[72px_1fr_110px_130px_170px]"
                 >
                   <p className="hidden font-mono text-xs text-muted-foreground md:block">#{r.id}</p>
                   <div className="flex min-w-0 items-center gap-3">
@@ -178,8 +202,10 @@ export default function CustomerPurchasePage() {
                     <div className="min-w-0">
                       <p className="truncate text-sm font-semibold">{r.customer_name || "Customer"}</p>
                       <p className="truncate text-xs text-muted-foreground">{r.customer_mobile || "—"}</p>
+                      <span className="mt-1 inline-flex md:hidden"><SaleBadge mode={r.sale_mode} /></span>
                     </div>
                   </div>
+                  <div className="hidden md:block"><SaleBadge mode={r.sale_mode} /></div>
                   <p className="justify-self-end text-sm font-semibold text-brand md:text-right">{fmtINR(Number(r.total))}</p>
                   <p className="hidden text-right text-xs text-muted-foreground md:block">{fmtDateTime(r.created_at)}</p>
                 </motion.div>
@@ -200,7 +226,7 @@ export default function CustomerPurchasePage() {
           <DialogHeader>
             <DialogTitle>Customer purchase</DialogTitle>
             <DialogDescription>
-              Enter the customer&apos;s mobile and the bill amount. Their wallet is charged and your sale lands in your main wallet.
+              Record a customer&apos;s in-store bill. Pick <b>Online</b> to also list it under Orders, or <b>Offline</b> to keep it as a record only.
             </DialogDescription>
           </DialogHeader>
 
@@ -227,6 +253,40 @@ export default function CustomerPurchasePage() {
                 className="h-11 rounded-xl bg-surface-2/60"
               />
             </div>
+            <div className="space-y-1.5">
+              <Label>Sale type</Label>
+              <div className="grid grid-cols-2 gap-2">
+                {(["online", "offline"] as const).map((m) => (
+                  <button
+                    key={m}
+                    type="button"
+                    onClick={() => setSaleMode(m)}
+                    className={`h-11 rounded-xl border text-sm font-semibold capitalize transition-colors ${
+                      saleMode === m
+                        ? "border-brand bg-brand/10 text-brand"
+                        : "border-input bg-surface-2/60 text-muted-foreground hover:bg-accent"
+                    }`}
+                  >
+                    {m}
+                  </button>
+                ))}
+              </div>
+            </div>
+            {saleMode === "online" && (
+              <p className="text-xs text-muted-foreground">This sale will also appear in your Orders list.</p>
+            )}
+            {saleMode === "offline" && (
+              <div className="space-y-1.5">
+                <Label htmlFor="note">Note (optional)</Label>
+                <Input
+                  id="note"
+                  value={note}
+                  onChange={(e) => setNote(e.target.value)}
+                  placeholder="e.g. Paid by cash in store"
+                  className="h-11 rounded-xl bg-surface-2/60"
+                />
+              </div>
+            )}
             <GradientButton size="lg" className="w-full" disabled={busy} onClick={() => void charge()}>
               {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : (amt > 0 ? `Charge ₹${amt}` : "Charge")}
             </GradientButton>
