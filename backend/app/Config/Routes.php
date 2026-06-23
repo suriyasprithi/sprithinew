@@ -25,6 +25,8 @@ $routes->group('api/v1', ['filter' => 'cors'], static function ($routes) {
         $routes->post('staff-login',     'Api\AuthController::staffLogin', ['filter' => 'rate_limit:auth-login,10,300']);
         $routes->post('forgot-password', 'Api\AuthController::forgotPassword', ['filter' => 'rate_limit:auth-login,5,3600']);
         $routes->post('reset-password',  'Api\AuthController::resetPassword',  ['filter' => 'rate_limit:auth-login,10,3600']);
+        $routes->post('forgot-password-otp', 'Api\AuthController::sendResetOtp',     ['filter' => 'rate_limit:auth-otp,5,3600']);
+        $routes->post('reset-password-otp',  'Api\AuthController::resetPasswordOtp', ['filter' => 'rate_limit:auth-login,10,3600']);
         $routes->post('refresh',         'Api\AuthController::refresh');
     });
     $routes->group('auth', ['filter' => 'auth'], static function ($routes) {

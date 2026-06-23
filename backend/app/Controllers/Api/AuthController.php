@@ -61,10 +61,10 @@ class AuthController extends BaseApiController
      * cleared so it can't be replayed. Wrong tries are counted; after
      * self::OTP_TRIES the entry is dropped and the customer must resend.
      */
-    private function consumeOtp(string $mobile, string $otp): bool
+    private function consumeOtp(string $mobile, string $otp, string $prefix = 'otp'): bool
     {
         $cache = service('cache');
-        $key   = "otp_{$mobile}";
+        $key   = "{$prefix}_{$mobile}";
         $rec   = $cache->get($key);
         if (! is_array($rec) || empty($rec['otp'])) {
             return false;
@@ -80,6 +80,69 @@ class AuthController extends BaseApiController
         }
         $cache->delete($key);
         return true;
+    }
+
+    /**
+     * Customer password reset — step 1: SMS a 6-digit OTP to a registered
+     * customer's mobile. Always responds generically so the endpoint can't be
+     * used to probe which numbers are registered. Uses the 'rpotp' cache
+     * namespace so it never collides with the signup OTP ('otp').
+     */
+    public function sendResetOtp(): ResponseInterface
+    {
+        $body   = $this->request->getJSON(true) ?? $this->request->getPost();
+        $mobile = trim((string) ($body['mobile_number'] ?? ''));
+        if (! preg_match('/^[0-9]{10}$/', $mobile)) {
+            return $this->fail('Enter a valid 10-digit mobile number', 422);
+        }
+
+        $cache = service('cache');
+        if ($cache->get("rpotp_cd_{$mobile}")) {
+            return $this->fail('Please wait a moment before requesting another OTP', 429);
+        }
+
+        // Only actually send when a customer account exists for this mobile.
+        $user = (new UserModel())->where('mobile_number', $mobile)->where('role', 'customer')->first();
+        if ($user) {
+            $otp  = (string) random_int(100000, 999999);
+            // Same approved DLT template as registration — the fixed text must
+            // match EXACTLY or SMS Alert rejects it ("Invalid Template Match").
+            $text = "Your login OTP for Loyal Wings ERP is {$otp} - Sprithi Digital Mart";
+            if ((new SmsAlertService())->send($mobile, $text)) {
+                $cache->save("rpotp_{$mobile}", ['otp' => $otp, 'tries' => 0], self::OTP_TTL);
+                $cache->save("rpotp_cd_{$mobile}", 1, self::OTP_COOLDOWN);
+            }
+        }
+
+        return $this->ok(['sent' => true], 'If an account exists, an OTP has been sent');
+    }
+
+    /**
+     * Customer password reset — step 2: verify the SMS OTP and set the new
+     * password (uses the 'rpotp' OTP namespace).
+     */
+    public function resetPasswordOtp(): ResponseInterface
+    {
+        if (! $this->validate([
+            'mobile_number' => 'required|regex_match[/^[0-9]{10}$/]',
+            'otp'           => 'required|regex_match[/^[0-9]{6}$/]',
+            'password'      => 'required|string|min_length[6]|max_length[64]',
+        ])) {
+            return $this->fail('Validation failed', 422, $this->validator->getErrors());
+        }
+
+        $d      = $this->request->getJSON(true) ?? $this->request->getPost();
+        $mobile = trim((string) $d['mobile_number']);
+        if (! $this->consumeOtp($mobile, (string) $d['otp'], 'rpotp')) {
+            return $this->fail('Invalid or expired OTP. Please resend.', 422);
+        }
+
+        $users = new UserModel();
+        $user  = $users->where('mobile_number', $mobile)->where('role', 'customer')->first();
+        if (! $user) return $this->fail('Account not found', 404);
+        $users->update($user['id'], ['password_hash' => password_hash($d['password'], PASSWORD_BCRYPT)]);
+
+        return $this->ok(null, 'Password reset successful. Please sign in.');
     }
 
     public function register(): ResponseInterface
