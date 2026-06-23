@@ -144,7 +144,8 @@ export default function CustomerPurchasePage() {
   const totalAmount = rows.reduce((s, r) => s + Number(r.total), 0);
 
   // Online amount is driven by the chosen order; offline is typed.
-  const selectedOrder = orders.find((o) => o.id === orderId) ?? null;
+  // o.id arrives from the API as a string, orderId is a number — compare numerically.
+  const selectedOrder = orders.find((o) => Number(o.id) === orderId) ?? null;
   const effectiveAmount = saleMode === "online" ? Number(selectedOrder?.total ?? 0) : Number(amount);
 
   function resetForm() {
