@@ -81,10 +81,13 @@ class PurchaseController extends BaseApiController
         if (! $auth) return $this->fail('Unauthorized', 401);
         if ($auth->role !== 'vendor') return $this->fail('Only vendors can charge a customer', 403);
 
+        // sale_mode is permit_empty (defaults to 'offline' below) so an older
+        // deployed customer-purchase form — which only posts mobile + amount —
+        // keeps working instead of failing validation against this newer backend.
         if (! $this->validate([
             'customer_mobile' => 'required|regex_match[/^[0-9]{10}$/]',
             'amount'          => 'required|numeric|greater_than[0]',
-            'sale_mode'       => 'required|in_list[online,offline]',
+            'sale_mode'       => 'permit_empty|in_list[online,offline]',
         ])) return $this->fail('Validation failed', 422, $this->validator->getErrors());
 
         $d = $this->request->getJSON(true) ?? $this->request->getPost();
@@ -95,9 +98,25 @@ class PurchaseController extends BaseApiController
         $amount   = (float) $d['amount'];
         // History tag only — ONLINE rows also surface in the Orders list, OFFLINE
         // rows stay on the Customer purchase page. Neither changes the money flow.
-        $saleMode = $d['sale_mode'] === 'online' ? 'online' : 'offline';
+        $saleMode = ($d['sale_mode'] ?? '') === 'online' ? 'online' : 'offline';
         // Optional free-text remark, kept for offline records.
         $note     = trim((string) ($d['note'] ?? ''));
+
+        // ONLINE links to one of this customer's real orders (required); the
+        // reference is stored in the notes for display. This is a record-only
+        // link — it does NOT change the order or any money flow.
+        $linkOrderId = (int) ($d['order_id'] ?? 0);
+        if ($saleMode === 'online') {
+            if ($linkOrderId <= 0) return $this->fail('Select an order for an online sale', 422);
+            $linked = (new OrderModel())
+                ->where('id', $linkOrderId)
+                ->where('vendor_id', (int) $auth->id)
+                ->where('customer_id', (int) $customer['id'])
+                ->first();
+            if (! $linked) return $this->fail('That order does not belong to this customer', 422);
+            // Amount is authoritative from the linked order, never the client.
+            $amount = (float) $linked['total'];
+        }
 
         $vendor    = $users->find($auth->id);
         $poolPct   = CommissionService::poolPctForVendor((int) $auth->id);
@@ -116,15 +135,21 @@ class PurchaseController extends BaseApiController
 
         // Synthetic order record (no items). Customer wallet untouched.
         // Keep the 'In-store purchase (vendor-entered)' prefix intact (the Orders
-        // list filter + the QR scanner page both match on it); append the optional
-        // remark after it for offline records.
+        // list filter + the QR scanner page both match on it); append the linked
+        // order ref (online) or the optional remark (offline) after it.
+        $notes = 'In-store purchase (vendor-entered)';
+        if ($saleMode === 'online') {
+            $notes .= ' · order #' . $linkOrderId;
+        } elseif ($note !== '') {
+            $notes .= ' — ' . $note;
+        }
         $orderId = (new OrderModel())->insert([
             'customer_id' => (int) $customer['id'],
             'vendor_id'   => (int) $auth->id,
             'total'       => $amount,
             'status'      => 'paid',
             'sale_mode'   => $saleMode,
-            'notes'       => 'In-store purchase (vendor-entered)' . ($note !== '' ? ' — ' . $note : ''),
+            'notes'       => $notes,
         ], true);
 
         // Deduct the commission from the vendor's main wallet — it funds the MLM
@@ -154,7 +179,7 @@ class PurchaseController extends BaseApiController
         if ($auth->role !== 'vendor') return $this->fail('Forbidden', 403);
 
         $rows = \Config\Database::connect()->query(
-            "SELECT o.id, o.total, o.created_at, o.qr_transferred_at, o.sale_mode,
+            "SELECT o.id, o.total, o.created_at, o.qr_transferred_at, o.sale_mode, o.notes,
                     cu.name AS customer_name, cu.mobile_number AS customer_mobile,
                     CASE WHEN o.notes LIKE '%vendor-entered%' THEN 'entered' ELSE 'qr' END AS source
              FROM orders o
@@ -172,8 +197,43 @@ class PurchaseController extends BaseApiController
         foreach ($rows as &$r) {
             $r['vendor_share'] = round((float) $r['total'] * (1 - $poolPct / 100), 2);
             $r['transferred']  = ! empty($r['qr_transferred_at']);
+            // Parse the linked order ref (online) / remark (offline) out of notes.
+            $notes = (string) ($r['notes'] ?? '');
+            $r['linked_order_id'] = preg_match('/order #(\d+)/', $notes, $m) ? (int) $m[1] : null;
+            $pos = strpos($notes, ' — ');
+            $r['note'] = $pos !== false ? trim(substr($notes, $pos + strlen(' — '))) : '';
         }
         unset($r);
+
+        return $this->ok(['items' => $rows]);
+    }
+
+    /**
+     * Vendor: a customer's real orders (by mobile), used to link an ONLINE
+     * customer-purchase record to the order it was for. Excludes the synthetic
+     * in-store purchase rows so only genuine app orders are selectable.
+     */
+    public function customerOrders(): ResponseInterface
+    {
+        $auth = $this->authUser();
+        if (! $auth) return $this->fail('Unauthorized', 401);
+        if ($auth->role !== 'vendor') return $this->fail('Forbidden', 403);
+
+        $mobile = (string) ($this->request->getGet('mobile') ?? '');
+        if (! preg_match('/^[0-9]{10}$/', $mobile)) return $this->fail('Enter a valid 10-digit mobile', 422);
+
+        $customer = (new UserModel())->findByMobileAndRole($mobile, 'customer');
+        if (! $customer) return $this->fail('Customer not found', 404);
+
+        $rows = \Config\Database::connect()->query(
+            "SELECT o.id, o.total, o.status, o.created_at
+             FROM orders o
+             WHERE o.vendor_id = ? AND o.customer_id = ?
+                   AND COALESCE(o.notes,'') NOT LIKE 'In-store purchase%'
+             ORDER BY o.id DESC
+             LIMIT 100",
+            [(int) $auth->id, (int) $customer['id']]
+        )->getResultArray();
 
         return $this->ok(['items' => $rows]);
     }
