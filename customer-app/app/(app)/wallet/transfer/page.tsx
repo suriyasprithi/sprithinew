@@ -32,10 +32,11 @@ function TransferInner() {
     return 0;
   };
 
-  // Level AND referral-bonus wallets unlock only when the matching depth-tier
+  // Welcome (referral-bonus) wallets unlock only when the matching depth-tier
   // referral count is reached; locked sources can't be selected/transferred.
+  // Purchase level_N wallets are not gated; they transfer freely.
   const lockFor = (k: WalletKey): string | null => {
-    const m = /^(?:welcome|level)_([123])$/.exec(k);
+    const m = /^welcome_([123])$/.exec(k);
     if (!m) return null;
     const lvl = Number(m[1]) as 1 | 2 | 3;
     const have = (lvl === 1 ? user?.level_1_count : lvl === 2 ? user?.level_2_count : user?.level_3_count) ?? 0;
@@ -43,16 +44,18 @@ function TransferInner() {
     return have >= need ? null : `Locked · ${have.toLocaleString("en-IN")}/${need.toLocaleString("en-IN")} referrals`;
   };
 
-  // Level money is freely transferable to the main wallet (no restriction).
+  // Purchase-level money is freely transferable to the main wallet (no restriction).
   // "Level (all)" drains L1+L2+L3; the individual levels are listed too.
-  // Welcome wallets appear too, but are disabled until unlocked.
-  // Synced with the dashboard wallet cards: Level (+ L1/L2/L3), Buyback, Global.
-  // (Referral-bonus sources are not shown here, matching the dashboard.)
+  // Welcome (referral-bonus) wallets are listed but stay locked until their
+  // referral threshold (L1 100, L2 10k, L3 10 lakh) is reached.
   const sources: { key: WalletKey; label: string }[] = [
     { key: "level",     label: "Level (all)" },
     { key: "level_1",   label: "Level 1 (purchase)" },
     { key: "level_2",   label: "Level 2 (purchase)" },
     { key: "level_3",   label: "Level 3 (purchase)" },
+    { key: "welcome_1", label: "Referral L1 bonus" },
+    { key: "welcome_2", label: "Referral L2 bonus" },
+    { key: "welcome_3", label: "Referral L3 bonus" },
     { key: "buyback",   label: "Buyback wallet" },
     { key: "global",    label: "Global wallet" },
   ];

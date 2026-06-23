@@ -30,7 +30,9 @@ type CartRow = {
 };
 
 const fmtINR = (n: number) =>
-  new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(n);
+  new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(n);
+const fmtBal = (n: number) =>
+  new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
 
 /** Format total minutes as "45m" / "2h" / "1h 30m". */
 const fmtHM = (m: number) => {
@@ -453,7 +455,7 @@ export default function CheckoutPage() {
             </span>
             <div className="min-w-0 flex-1">
               <p className="text-sm font-semibold">Pay from wallet</p>
-              <p className="text-xs text-muted-foreground">Balance: {fmtINR(balance)}</p>
+              <p className="text-xs text-muted-foreground">Balance: {fmtBal(balance)}</p>
             </div>
             {payMethod === "wallet" && !walletOk && (
               <span className="text-xs font-semibold uppercase tracking-wider text-rose-400">Insufficient</span>

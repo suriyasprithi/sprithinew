@@ -100,7 +100,7 @@ type FilterState = {
 };
 
 const fmtINR = (n: number) =>
-  new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(n);
+  new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(n);
 
 function adaptRelated(raw: ApiProduct): MarketplaceProduct {
   return {

@@ -390,21 +390,14 @@ class WalletController extends BaseApiController
         $d   = $this->request->getJSON(true) ?? $this->request->getPost();
         $svc = new WalletService();
 
-        // "level" = the combined level (L1+L2+L3). Each level unlocks only when
-        // its depth-tier referral count reaches the threshold (L1 ≥ 100, L2 ≥ 10k,
-        // L3 ≥ 10 lakh) — so this drains the UNLOCKED levels only, L1→L2→L3, up to
-        // the requested amount.
+        // "level" = the combined level (L1+L2+L3). Purchase-level wallets transfer
+        // freely to the main wallet (no referral gate). Drains L1, L2, L3 up to the
+        // requested amount.
         if (($d['from'] ?? '') === 'level') {
             if (! is_numeric($d['amount'] ?? null) || (float) $d['amount'] <= 0) return $this->fail('Amount required', 422);
             $amount   = round((float) $d['amount'], 2);
             $bal      = $svc->balances((int) $auth->id);
-            $unlocked = [];
-            foreach ([1, 2, 3] as $lvl) {
-                if ($this->referralDepthCount((int) $auth->id, $lvl) >= $this->welcomeThreshold($lvl)) {
-                    $unlocked[] = "level_{$lvl}";
-                }
-            }
-            if (! $unlocked) return $this->fail('No level unlocked yet — reach the referral threshold first.', 403);
+            $unlocked = ['level_1', 'level_2', 'level_3'];
             $avail = 0.0;
             foreach ($unlocked as $lk) $avail = round($avail + $bal[$lk], 2);
             if ($amount > $avail + 0.005) return $this->fail('Insufficient unlocked level balance', 402);
@@ -424,11 +417,11 @@ class WalletController extends BaseApiController
         ])) return $this->fail('Validation failed', 422, $this->validator->getErrors());
         if ($d['from'] === $d['to']) return $this->fail('Source and destination must differ', 422);
 
-        // Level AND welcome/referral-bonus wallets unlock only when the user's
-        // downline at that depth reaches the configured threshold (depth-1 ≥ 100,
-        // depth-2 ≥ 10k, depth-3 ≥ 10 lakh). Gating the SOURCE blocks any outbound
-        // hop, so there's no bypass via an intermediate wallet.
-        if (preg_match('/^(?:welcome|level)_([123])$/', $d['from'], $m)) {
+        // Welcome/referral-bonus wallets unlock only when the user's downline at
+        // that depth reaches the configured threshold (depth-1 = 100, depth-2 = 10k,
+        // depth-3 = 10 lakh). Gating the SOURCE blocks any outbound hop, so there's
+        // no bypass. Purchase level_N wallets are NOT gated; they transfer freely.
+        if (preg_match('/^welcome_([123])$/', $d['from'], $m)) {
             $level     = (int) $m[1];
             $have      = $this->referralDepthCount((int) $auth->id, $level);
             $threshold = $this->welcomeThreshold($level);

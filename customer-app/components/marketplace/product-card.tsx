@@ -26,7 +26,7 @@ export type MarketplaceProduct = {
 };
 
 const fmtINR = (n: number) =>
-  new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(n);
+  new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(n);
 
 export function ProductCard({ product, onAdd }: {
   product: MarketplaceProduct;

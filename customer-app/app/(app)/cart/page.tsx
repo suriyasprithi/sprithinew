@@ -13,7 +13,7 @@ import { api, apiErrorMessage } from "@/lib/api";
 import { cartBadge } from "@/lib/cart";
 
 const fmtINR = (n: number) =>
-  new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(n);
+  new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(n);
 
 type CartRow = {
   cart_id: number;

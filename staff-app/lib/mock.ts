@@ -132,7 +132,7 @@ const statsByRole: Record<string, StaffStats> = {
 // ----- Vendor / orders / products (vendor pov) -------------------------------
 
 export type VendorOrder = {
-  id: number; customer_name: string; status: "pending"|"paid"|"shipped"|"delivered"|"cancelled";
+  id: number; customer_name: string; status: "pending"|"confirmed"|"packed"|"shipped"|"delivered"|"paid"|"completed"|"cancelled";
   total: number; created_at: string; item_count: number; product_names?: string | null;
 };
 const vendorOrders: VendorOrder[] = [

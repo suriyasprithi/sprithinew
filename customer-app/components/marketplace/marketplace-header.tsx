@@ -11,7 +11,7 @@ import { wishlist } from "@/lib/wishlist";
 import { cartBadge } from "@/lib/cart";
 
 type Suggestion = { id: number; name: string; price: number; image: string | null };
-const fmtINR = (n: number) => new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(n);
+const fmtINR = (n: number) => new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(n);
 
 export function MarketplaceHeader({ cartCount = 0, wishlistCount = 0, unreadCount = 0 }: {
   cartCount?: number;

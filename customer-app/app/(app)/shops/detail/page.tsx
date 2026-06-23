@@ -16,7 +16,7 @@ type Shop = { id: number; name: string; shop_name: string; area: string; pincode
 type Product = { id: number; name: string; price: number; stock: number; image: string | null; vendor_name: string | null; category_name: string | null; has_variants: boolean };
 
 const fmtINR = (n: number) =>
-  new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(n);
+  new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(n);
 
 export default function ShopDetailPage() {
   return (

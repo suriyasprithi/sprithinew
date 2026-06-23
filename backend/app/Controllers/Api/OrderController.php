@@ -203,8 +203,8 @@ class OrderController extends BaseApiController
                 'delivery_minutes'  => $deliveryMinutes,
                 'delivery_at'       => $deliveryAtSql,
                 'payment_method'    => $paymentMethod,
-                // Wallet orders are paid up-front; COD stays 'pending' until delivered.
-                'status'            => $paymentMethod === 'cod' ? 'pending' : 'paid',
+                // Wallet orders are prepaid (start 'confirmed'); COD stays 'pending' until delivered.
+                'status'            => $paymentMethod === 'cod' ? 'pending' : 'confirmed',
                 'notes'             => $notes ?: null,
                 'delivery_address'  => $deliveryAddress,
                 'prescription_path' => $rxPath,
@@ -453,7 +453,9 @@ class OrderController extends BaseApiController
     {
         $deliveredAt = $order['delivered_at'] ?? null;
         $until = null; $canReturn = false;
-        if ($windowDays > 0 && ($order['status'] ?? '') === 'delivered' && ! empty($deliveredAt)) {
+        // Returnable from delivery until the vendor marks the order 'completed'
+        // (force-complete) or the window lapses — spans the delivered + paid steps.
+        if ($windowDays > 0 && ! empty($deliveredAt) && ! in_array($order['status'] ?? '', ['completed', 'cancelled'], true)) {
             $ts        = strtotime($deliveredAt . ' +' . $windowDays . ' days');
             $until     = date('Y-m-d H:i:s', $ts);
             $canReturn = ! $hasRequest && time() <= $ts;
@@ -477,7 +479,8 @@ class OrderController extends BaseApiController
     private function cancelInfo(array $order, int $windowHours): array
     {
         $until = null; $canCancel = false;
-        if ($windowHours > 0 && ($order['status'] ?? '') === 'pending' && ! empty($order['created_at'])) {
+        // Cancellable only while pending AND before a driver is assigned.
+        if ($windowHours > 0 && ($order['status'] ?? '') === 'pending' && empty($order['driver_id']) && ! empty($order['created_at'])) {
             $ts        = strtotime($order['created_at'] . ' +' . $windowHours . ' hours');
             $until     = date('Y-m-d H:i:s', $ts);
             $canCancel = time() <= $ts;
@@ -623,7 +626,7 @@ class OrderController extends BaseApiController
         // A finished order never enters the driver's delivery queue, so changing
         // its driver is meaningless and only fires a misleading "assigned to you"
         // notification — block it.
-        if (in_array($order['status'] ?? '', ['delivered', 'cancelled'], true)) {
+        if (in_array($order['status'] ?? '', ['delivered', 'paid', 'completed', 'cancelled'], true)) {
             return $this->fail('This order is already ' . $order['status'] . ' — its driver can\'t be changed', 422);
         }
 
@@ -696,7 +699,7 @@ class OrderController extends BaseApiController
         }
         $builder = (new OrderModel())
             ->where('driver_id', (int) $auth->id)
-            ->whereIn('status', ['pending', 'paid', 'shipped']);
+            ->whereIn('status', ['pending', 'confirmed', 'packed', 'shipped']);
         if ($legacyIds) $builder->whereNotIn('id', $legacyIds);
         $orders = $builder->orderBy('id', 'DESC')->findAll(200);
         if (! $orders) return $this->ok(['items' => []]);
@@ -804,7 +807,7 @@ class OrderController extends BaseApiController
 
         $d = $this->request->getJSON(true) ?? $this->request->getPost();
         $status = (string) ($d['status'] ?? '');
-        if (! in_array($status, ['pending', 'paid', 'shipped', 'delivered', 'cancelled'], true)) {
+        if (! in_array($status, ['pending', 'confirmed', 'packed', 'shipped', 'delivered', 'paid', 'completed', 'cancelled'], true)) {
             return $this->fail('Invalid status', 422);
         }
 
@@ -818,6 +821,22 @@ class OrderController extends BaseApiController
                 return $this->fail('Forbidden', 403);
             }
             if ($status !== 'delivered') return $this->fail('Drivers can only mark delivered', 403);
+        }
+
+        // Forward-only fulfillment chain — status can't move backward (this is what
+        // used to rewind the customer stepper, e.g. marking 'paid' after 'delivered').
+        $cur  = (string) ($order['status'] ?? '');
+        $rank = ['pending' => 0, 'confirmed' => 1, 'packed' => 2, 'shipped' => 3, 'delivered' => 4, 'paid' => 5, 'completed' => 6];
+        if ($status === 'cancelled') {
+            if (isset($rank[$cur]) && $rank[$cur] >= $rank['delivered']) {
+                return $this->fail('A delivered order can no longer be cancelled', 422);
+            }
+        } elseif (isset($rank[$status], $rank[$cur]) && $rank[$status] < $rank[$cur]) {
+            return $this->fail('Order status can only move forward', 422);
+        }
+        // COD payment + completion come only AFTER delivery (delivered_at is stamped then).
+        if (in_array($status, ['paid', 'completed'], true) && empty($order['delivered_at'])) {
+            return $this->fail('Mark the order delivered first', 422);
         }
 
         $patch = ['status' => $status];
@@ -885,8 +904,9 @@ class OrderController extends BaseApiController
         $order = (new OrderModel())->find($id);
         if (! $order) return $this->fail('Not found', 404);
         if ((int) $order['customer_id'] !== (int) $auth->id) return $this->fail('Forbidden', 403);
-        if (($order['status'] ?? '') !== 'delivered' || empty($order['delivered_at'])) {
-            return $this->fail('Only delivered orders can be returned', 422);
+        // Returnable once delivered, until the vendor marks it 'completed'.
+        if (empty($order['delivered_at']) || in_array($order['status'] ?? '', ['completed', 'cancelled'], true)) {
+            return $this->fail('Only delivered orders (before completion) can be returned', 422);
         }
 
         $days = (int) (new SystemSettingsService())->get('returns.window_days', '0');
@@ -940,6 +960,10 @@ class OrderController extends BaseApiController
             return $this->fail(($order['status'] ?? '') === 'delivered'
                 ? 'Delivered orders can only be returned, not cancelled'
                 : 'This order can no longer be cancelled', 422);
+        }
+        // Once a driver is assigned the order is on its way; no more cancelling.
+        if (! empty($order['driver_id'])) {
+            return $this->fail('A driver is already assigned, so this order can no longer be cancelled', 422);
         }
 
         $svc   = new SystemSettingsService();

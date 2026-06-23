@@ -39,13 +39,13 @@ const fmtINR = (n: number) =>
   new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(n);
 
 // Statuses a vendor can set (the backend accepts exactly these).
-const SETTABLE = ["pending", "paid", "shipped", "delivered", "cancelled"] as const;
+const SETTABLE = ["pending", "confirmed", "packed", "shipped", "delivered", "paid", "completed", "cancelled"] as const;
 // Display labels for every status — includes the legacy import values
 // (assigned/picked) so an order already in one of those still shows a clean
 // label in the trigger, even though they're not selectable.
 const STATUS_LABELS: Record<string, string> = {
-  pending: "Pending", assigned: "Assigned", picked: "Picked",
-  paid: "Paid", shipped: "Shipped", delivered: "Delivered", cancelled: "Cancelled",
+  pending: "Pending", confirmed: "Confirmed", packed: "Packed", assigned: "Assigned", picked: "Picked",
+  shipped: "Out for Delivery", delivered: "Delivered", paid: "Paid", completed: "Completed", cancelled: "Cancelled",
 };
 const STATUS_ITEMS = Object.entries(STATUS_LABELS).map(([value, label]) => ({ value, label }));
 
@@ -159,8 +159,8 @@ export default function StaffOrdersPage() {
   const safePage = Math.min(page, pageCount);
   const paged = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
 
-  const pending = items.filter((o) => o.status === "pending" || o.status === "paid");
-  const delivered = items.filter((o) => o.status === "delivered");
+  const pending = items.filter((o) => ["pending", "confirmed", "packed", "shipped"].includes(o.status));
+  const delivered = items.filter((o) => ["delivered", "paid", "completed"].includes(o.status));
   const totalRevenue = items.reduce((s, o) => s + o.total, 0);
 
   async function changeStatus(o: OrderRow, next: string) {
@@ -194,7 +194,7 @@ export default function StaffOrdersPage() {
   const driverOptionsFor = (_o: OrderRow) => drivers;
   // Finished orders never enter the driver's delivery queue → assigning a driver
   // there is a dead end. Show the driver read-only instead of an editable picker.
-  const isFinished = (o: OrderRow) => o.status === "delivered" || o.status === "cancelled";
+  const isFinished = (o: OrderRow) => ["delivered", "paid", "completed", "cancelled"].includes(o.status);
 
   return (
     <>
@@ -226,11 +226,14 @@ export default function StaffOrdersPage() {
               items={[
                 { value: "all", label: "Any status" },
                 { value: "pending", label: "Pending" },
+                { value: "confirmed", label: "Confirmed" },
+                { value: "packed", label: "Packed" },
                 { value: "assigned", label: "Assigned" },
                 { value: "picked", label: "Picked" },
-                { value: "paid", label: "Paid" },
-                { value: "shipped", label: "Shipped" },
+                { value: "shipped", label: "Out for Delivery" },
                 { value: "delivered", label: "Delivered" },
+                { value: "paid", label: "Paid" },
+                { value: "completed", label: "Completed" },
                 { value: "cancelled", label: "Cancelled" },
               ]}
             >
@@ -238,11 +241,14 @@ export default function StaffOrdersPage() {
               <SelectContent>
                 <SelectItem value="all">Any status</SelectItem>
                 <SelectItem value="pending">Pending</SelectItem>
+                <SelectItem value="confirmed">Confirmed</SelectItem>
+                <SelectItem value="packed">Packed</SelectItem>
                 <SelectItem value="assigned">Assigned</SelectItem>
                 <SelectItem value="picked">Picked</SelectItem>
-                <SelectItem value="paid">Paid</SelectItem>
-                <SelectItem value="shipped">Shipped</SelectItem>
+                <SelectItem value="shipped">Out for Delivery</SelectItem>
                 <SelectItem value="delivered">Delivered</SelectItem>
+                <SelectItem value="paid">Paid</SelectItem>
+                <SelectItem value="completed">Completed</SelectItem>
                 <SelectItem value="cancelled">Cancelled</SelectItem>
               </SelectContent>
             </Select>

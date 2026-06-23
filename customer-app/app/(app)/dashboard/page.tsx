@@ -41,7 +41,7 @@ const WALLET_TONE: Record<string, WalletPalette> = {
 };
 
 const fmtINR = (n: number) =>
-  new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(n);
+  new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
 
 type Tile = { key: WalletKey; label: string; value: number; tone: keyof typeof WALLET_TONE; transferable: boolean };
 
@@ -71,11 +71,11 @@ export default function DashboardPage() {
   // Transfer unlocks only when the depth-tier referral count reaches the
   // threshold (L1 ≥ 100, L2 ≥ 10k, L3 ≥ 10 lakh).
   const levelCards = ([1, 2, 3] as const).map((lvl) => {
-    const value = lvl === 1 ? user?.level_1_wallet : lvl === 2 ? user?.level_2_wallet : user?.level_3_wallet;
+    const value = lvl === 1 ? user?.welcome_1_wallet : lvl === 2 ? user?.welcome_2_wallet : user?.welcome_3_wallet;
     const users = lvl === 1 ? user?.level_1_count  : lvl === 2 ? user?.level_2_count  : user?.level_3_count;
     const have  = users ?? 0;
     const need  = WELCOME_UNLOCK[lvl];
-    return { lvl, key: `level_${lvl}` as WalletKey, label: `L${lvl}`, value: value ?? 0, users: have, need, unlocked: have >= need, tone: (lvl === 1 ? "sky" : lvl === 2 ? "amber" : "rose") as keyof typeof WALLET_TONE };
+    return { lvl, key: `welcome_${lvl}` as WalletKey, label: `L${lvl}`, value: value ?? 0, users: have, need, unlocked: have >= need, tone: (lvl === 1 ? "sky" : lvl === 2 ? "amber" : "rose") as keyof typeof WALLET_TONE };
   });
 
   return (
@@ -196,7 +196,7 @@ export default function DashboardPage() {
                   <p className="mt-1 inline-flex items-center justify-center gap-1 text-[11px] font-semibold text-[#be185d]">
                     <Users className="h-3 w-3" /> <AnimatedCounter value={lc.users} /> users
                   </p>
-                  {lc.key === "level_1" && (
+                  {lc.lvl === 1 && (
                     <Link
                       href="/wallet/history?wallet=welcome"
                       className="mt-2 block rounded-lg border border-black/10 bg-white/70 py-1 text-center text-[11px] font-semibold text-[#374151] hover:border-brand/40 hover:text-brand"

@@ -54,10 +54,10 @@ export default function WalletPage() {
   const tiles: Tile[] = [
     { key: "wallet",  label: "Main wallet",     value: user?.wallet_balance ?? 0, transferable: false },
     { key: "level",   label: "Level wallet",    value: user?.level_wallet   ?? 0, transferable: true  },
-    // Purchase commission — gated by depth-tier referral count.
-    gatedTile("level_1", "Level 1 (purchase)", 1, user?.level_1_wallet ?? 0),
-    gatedTile("level_2", "Level 2 (purchase)", 2, user?.level_2_wallet ?? 0),
-    gatedTile("level_3", "Level 3 (purchase)", 3, user?.level_3_wallet ?? 0),
+    // Purchase commission — transfers freely to main wallet (no referral gate).
+    { key: "level_1", label: "Level 1 (purchase)", value: user?.level_1_wallet ?? 0, transferable: true },
+    { key: "level_2", label: "Level 2 (purchase)", value: user?.level_2_wallet ?? 0, transferable: true },
+    { key: "level_3", label: "Level 3 (purchase)", value: user?.level_3_wallet ?? 0, transferable: true },
     // Referral (signup) bonus — gated by depth-tier referral count.
     gatedTile("welcome_1", "Referral L1 bonus", 1, user?.welcome_1_wallet ?? 0),
     gatedTile("welcome_2", "Referral L2 bonus", 2, user?.welcome_2_wallet ?? 0),

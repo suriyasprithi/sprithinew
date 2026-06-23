@@ -249,7 +249,7 @@ export default function ReferPage() {
             <div key={lv.label}>
               <p className="text-2xl font-bold tracking-tight"><AnimatedCounter value={lv.count} /></p>
               <p className="text-[10px] uppercase tracking-wider text-muted-foreground">{lv.label}</p>
-              <p className="mt-0.5 text-[11px] font-medium text-brand">₹{Math.round(lv.total)}</p>
+              <p className="mt-0.5 text-[11px] font-medium text-brand">₹{Number(lv.total ?? 0).toFixed(2)}</p>
             </div>
           ))}
         </LuxuryCard>
@@ -308,7 +308,7 @@ export default function ReferPage() {
                         </p>
                       </div>
                     </div>
-                    <span className="font-semibold text-emerald-400">+₹{r.bonus_amount}</span>
+                    <span className="font-semibold text-emerald-400">+₹{Number(r.bonus_amount ?? 0).toFixed(2)}</span>
                   </LuxuryCard>
                 </motion.div>
               ))}

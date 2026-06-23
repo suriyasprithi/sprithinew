@@ -61,7 +61,7 @@ function isOptionAvailable(variants: Variant[], picks: Record<string, string>, a
 }
 
 const fmtINR = (n: number) =>
-  new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(n);
+  new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(n);
 
 function ProductInner() {
   const search = useSearchParams();
