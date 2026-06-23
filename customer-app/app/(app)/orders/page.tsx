@@ -11,9 +11,9 @@ import { api, apiErrorMessage, fileUrl } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 const fmtINR = (n: number) =>
-  new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(n);
+  new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(n);
 
-type OrderStatus = "pending" | "paid" | "shipped" | "delivered" | "cancelled";
+type OrderStatus = "pending" | "confirmed" | "packed" | "shipped" | "delivered" | "paid" | "completed" | "cancelled";
 
 type OrderRow = {
   id: number;
@@ -60,18 +60,21 @@ type OrderDetail = { items: OrderItem[]; driver: DriverInfo | null; prescription
 
 const STATUS_STYLE: Record<OrderStatus, string> = {
   pending:   "bg-amber-500/10 text-amber-400 border-amber-500/30",
-  paid:      "bg-sky-500/10 text-sky-400 border-sky-500/30",
+  confirmed: "bg-sky-500/10 text-sky-400 border-sky-500/30",
+  packed:    "bg-indigo-500/10 text-indigo-400 border-indigo-500/30",
   shipped:   "bg-violet-500/10 text-violet-400 border-violet-500/30",
   delivered: "bg-emerald-500/10 text-emerald-400 border-emerald-500/30",
+  paid:      "bg-teal-500/10 text-teal-400 border-teal-500/30",
+  completed: "bg-emerald-600/15 text-emerald-600 border-emerald-600/30",
   cancelled: "bg-rose-500/10 text-rose-400 border-rose-500/30",
 };
 
 // Customer-facing delivery progress. The backend only has 5 statuses, so the
 // intermediate stages are derived (display-only — no backend change):
 //   pending → Placed · paid → Confirmed · shipped → Out for Delivery · delivered → Delivered.
-const STAGES = ["Order Placed", "Confirmed", "Packed", "Out for Delivery", "Delivered"] as const;
+const STAGES = ["Order Placed", "Confirmed", "Packed", "Out for Delivery", "Delivered", "Paid", "Completed"] as const;
 const STATUS_STAGE: Record<OrderStatus, number> = {
-  pending: 0, paid: 1, shipped: 3, delivered: 4, cancelled: -1,
+  pending: 0, confirmed: 1, packed: 2, shipped: 3, delivered: 4, paid: 5, completed: 6, cancelled: -1,
 };
 
 function StatusStepper({ status }: { status: OrderStatus }) {
@@ -121,6 +124,7 @@ export default function OrdersPage() {
   const [cancelOpenId, setCancelOpenId] = useState<number | null>(null);
   const [cancelReason, setCancelReason] = useState("");
   const [cancellingId, setCancellingId] = useState<number | null>(null);
+  const [idPreview, setIdPreview] = useState<string | null>(null);
 
   async function toggleDetail(id: number) {
     if (openId === id) { setOpenId(null); return; }
@@ -276,7 +280,7 @@ export default function OrdersPage() {
                     </div>
                   )}
 
-                  {o.status === "delivered" && (o.return_window_days ?? 0) > 0 && (
+                  {o.delivered_at && o.status !== "cancelled" && (o.return_window_days ?? 0) > 0 && (
                     <div className="mt-3 border-t border-border/60 pt-3">
                       {o.return_status === "approved" ? (
                         <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-2.5 py-1 text-xs font-medium text-emerald-500">
@@ -385,15 +389,34 @@ export default function OrdersPage() {
                                 )}
                               </div>
                             ) : null}
+                            {detailById[o.id]?.driver ? (
+                              <div className="border-t border-border/60 pt-3">
+                                <p className="mb-1 text-xs text-muted-foreground">Delivery driver</p>
+                                <p className="text-sm font-medium">{detailById[o.id]!.driver!.name}</p>
+                                {detailById[o.id]!.driver!.mobile ? (
+                                  <a href={`tel:${detailById[o.id]!.driver!.mobile}`} className="text-sm font-semibold text-brand">
+                                    {detailById[o.id]!.driver!.mobile}
+                                  </a>
+                                ) : null}
+                              </div>
+                            ) : null}
                             {detailById[o.id]?.driver?.id_card_url ? (
                               <div className="border-t border-border/60 pt-3">
                                 <p className="mb-1 text-xs text-muted-foreground">Driver ID card</p>
-                                {/* eslint-disable-next-line @next/next/no-img-element */}
-                                <img
-                                  src={detailById[o.id]!.driver!.id_card_url!}
-                                  alt="Driver ID card"
-                                  className="w-full rounded-xl border border-border object-contain"
-                                />
+                                <button
+                                  type="button"
+                                  onClick={() => setIdPreview(detailById[o.id]!.driver!.id_card_url!)}
+                                  className="inline-flex flex-col items-start gap-1"
+                                  aria-label="Preview driver ID card"
+                                >
+                                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                                  <img
+                                    src={detailById[o.id]!.driver!.id_card_url!}
+                                    alt="Driver ID card"
+                                    className="h-24 w-auto rounded-lg border border-border object-contain"
+                                  />
+                                  <span className="text-[10px] text-brand">Tap to preview</span>
+                                </button>
                               </div>
                             ) : o.driver_name ? (
                               <p className="text-xs text-muted-foreground">Driver ID card not uploaded.</p>
@@ -409,6 +432,19 @@ export default function OrdersPage() {
           })
         )}
       </section>
+
+      {/* In-app ID-card preview (no new window). Tap anywhere to close. */}
+      {idPreview && (
+        <button
+          type="button"
+          onClick={() => setIdPreview(null)}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm"
+          aria-label="Close ID card preview"
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={idPreview} alt="Driver ID card" className="max-h-[85vh] max-w-full rounded-xl border border-border object-contain" />
+        </button>
+      )}
     </>
   );
 }
