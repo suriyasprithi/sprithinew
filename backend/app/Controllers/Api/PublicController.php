@@ -217,13 +217,22 @@ class PublicController extends BaseApiController
 
     public function vendors(): ResponseInterface
     {
-        $pincode    = (string) $this->request->getGet('pincode');
-        $talukId    = (int) $this->request->getGet('taluk_id');
-        $districtId = (int) $this->request->getGet('district_id');
-        $stateId    = (int) $this->request->getGet('state_id');
+        $pincode     = (string) $this->request->getGet('pincode');
+        $talukId     = (int) $this->request->getGet('taluk_id');
+        $districtId  = (int) $this->request->getGet('district_id');
+        $stateId     = (int) $this->request->getGet('state_id');
+        $vendorCatId = (int) $this->request->getGet('vendor_category_id');
 
         $vendorIds = $this->geoVendorIds($pincode, $talukId, $districtId, $stateId);
         if (is_array($vendorIds) && empty($vendorIds)) return $this->ok(['items' => []]);
+
+        // Browse by shop category: keep only shops in the chosen vendor category.
+        if ($vendorCatId > 0) {
+            $catIds = (new VendorProfileModel())->where('vendor_category_id', $vendorCatId)->findColumn('user_id') ?: [];
+            if (empty($catIds)) return $this->ok(['items' => []]);
+            $vendorIds = $vendorIds === null ? $catIds : array_values(array_intersect($vendorIds, $catIds));
+            if (empty($vendorIds)) return $this->ok(['items' => []]);
+        }
 
         $users = (new UserModel())->where('role', 'vendor')->where('status', 'active');
         if ($vendorIds !== null) $users->whereIn('id', $vendorIds);
