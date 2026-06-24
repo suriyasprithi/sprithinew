@@ -25,7 +25,7 @@ import { cleanMobile, isMobile } from "@/lib/phone";
 
 const PAGE_SIZE = 10;
 const fmtINR = (n: number) =>
-  new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(n);
+  new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
 const fmtDateTime = (s: string | null) => (s ?? "").replace("T", " ").slice(0, 16);
 const fmtDate = (s: string | null) => (s ?? "").replace("T", " ").slice(0, 10);
 
@@ -34,11 +34,10 @@ type SaleMode = "online" | "offline";
 type Purchase = {
   id: number;
   total: number | string;
-  status: string | null;
   created_at: string | null;
   customer_name: string | null;
   customer_mobile: string | null;
-  source: "qr" | "entered" | "order";
+  source: "qr" | "entered";
   sale_mode: SaleMode | null;
   linked_order_id: number | null;
   note: string | null;
@@ -237,7 +236,7 @@ export default function CustomerPurchasePage() {
           <div className="hidden grid-cols-[72px_1fr_140px_130px_170px] gap-3 border-b border-border bg-surface-2/40 px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground md:grid">
             <span>#</span>
             <span>Customer</span>
-            <span>{tab === "online" ? "Status" : "Note"}</span>
+            <span>{tab === "online" ? "Order" : "Note"}</span>
             <span className="text-right">Amount</span>
             <span className="text-right">Date</span>
           </div>
@@ -263,13 +262,17 @@ export default function CustomerPurchasePage() {
                     <div className="min-w-0">
                       <p className="truncate text-sm font-semibold">{r.customer_name || "Customer"}</p>
                       <p className="truncate text-xs text-muted-foreground">{r.customer_mobile || "—"}</p>
-                      <p className="truncate text-xs capitalize text-muted-foreground md:hidden">
-                        {tab === "online" ? (r.status || "") : (r.note || "")}
+                      <p className="truncate text-xs text-muted-foreground md:hidden">
+                        {tab === "online"
+                          ? (r.linked_order_id ? `Order #${r.linked_order_id}` : "")
+                          : (r.note || "")}
                       </p>
                     </div>
                   </div>
-                  <div className="hidden truncate text-xs capitalize text-muted-foreground md:block">
-                    {tab === "online" ? (r.status || "—") : (r.note || "—")}
+                  <div className="hidden truncate text-xs text-muted-foreground md:block">
+                    {tab === "online"
+                      ? (r.linked_order_id ? `#${r.linked_order_id}` : "—")
+                      : (r.note || "—")}
                   </div>
                   <p className="justify-self-end text-sm font-semibold text-brand md:text-right">{fmtINR(Number(r.total))}</p>
                   <p className="hidden text-right text-xs text-muted-foreground md:block">{fmtDateTime(r.created_at)}</p>
@@ -365,7 +368,7 @@ export default function CustomerPurchasePage() {
                     className="h-11 rounded-xl bg-surface-2/40"
                   />
                 </div>
-                <p className="text-xs text-muted-foreground">The selected order will be marked <b>paid</b> (no new order is created).</p>
+                <p className="text-xs text-muted-foreground">The order is marked <b>paid</b> and your commission is charged to your wallet. No new order is added.</p>
               </>
             )}
 
