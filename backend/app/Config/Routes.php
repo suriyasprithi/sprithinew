@@ -125,6 +125,8 @@ $routes->group('api/v1', ['filter' => 'cors'], static function ($routes) {
     });
     // Driver-scoped: orders for the current driver's assigned vendor (awaiting delivery).
     $routes->get('driver/orders', 'Api\OrderController::driverOrders', ['filter' => 'auth']);
+    // Driver scans the shop QR to confirm pickup → order goes out for delivery.
+    $routes->post('driver/orders/(:num)/pickup', 'Api\OrderController::driverPickup/$1', ['filter' => 'auth']);
 
     // Customer-scoped: KM slabs for the current cart's vendor's taluk.
     $routes->get('customer/delivery-rates/km', 'Api\DeliveryRateController::customerSlabs', ['filter' => 'auth']);

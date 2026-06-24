@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ChevronRight, Loader2, MapPin, Phone, Truck } from "lucide-react";
+import { ChevronRight, Loader2, MapPin, Phone, Truck, QrCode } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -10,6 +10,7 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { ProductImage } from "@/components/ui/custom/product-image";
+import { QrScanModal } from "@/components/qr-scan-modal";
 import { api, apiErrorMessage } from "@/lib/api";
 
 type Status = "paid" | "shipped" | "delivered";
@@ -71,6 +72,7 @@ export default function DriverOrdersPage() {
   const [loading, setLoading] = useState(true);
   const [actingId, setActingId] = useState<number | null>(null);
   const [confirmId, setConfirmId] = useState<number | null>(null);
+  const [scanForId, setScanForId] = useState<number | null>(null);
 
   async function refresh() {
     setLoading(true);
@@ -94,6 +96,22 @@ export default function DriverOrdersPage() {
       await refresh();
     } catch (err) {
       toast.error(apiErrorMessage(err, "Action failed"));
+    } finally {
+      setActingId(null);
+    }
+  }
+
+  // Driver scans the shop's QR at pickup → vendor mobile verified → order goes
+  // out for delivery, then "Mark delivered" appears.
+  async function pickup(id: number, vendorMobile: string) {
+    setScanForId(null);
+    setActingId(id);
+    try {
+      await api.post(`/driver/orders/${id}/pickup`, { vendor_mobile: vendorMobile });
+      toast.success(`Picked up #${id} — out for delivery`);
+      await refresh();
+    } catch (err) {
+      toast.error(apiErrorMessage(err, "Pickup failed"));
     } finally {
       setActingId(null);
     }
@@ -172,7 +190,9 @@ export default function DriverOrdersPage() {
             </Button>
           )}
           {o.status === "paid" && (
-            <p className="text-xs text-muted-foreground">Waiting for vendor to ship.</p>
+            <Button size="sm" variant="outline" className="w-full" disabled={actingId === o.id} onClick={() => setScanForId(o.id)}>
+              <QrCode className="h-4 w-4" /> Scan shop QR to pick up
+            </Button>
           )}
         </CardContent></Card>
       ))}
@@ -201,6 +221,12 @@ export default function DriverOrdersPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <QrScanModal
+        open={scanForId != null}
+        onClose={() => setScanForId(null)}
+        onResult={(mobile) => { if (scanForId != null) void pickup(scanForId, mobile); }}
+      />
     </section>
   );
 }

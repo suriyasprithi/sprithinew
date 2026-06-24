@@ -304,6 +304,7 @@ export default function CustomerPurchasePage() {
               <Input
                 id="m"
                 inputMode="numeric"
+                maxLength={10}
                 value={mobile}
                 onChange={(e) => setMobile(cleanMobile(e.target.value))}
                 placeholder="9876543210"

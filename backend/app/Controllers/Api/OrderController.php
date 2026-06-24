@@ -681,6 +681,54 @@ class OrderController extends BaseApiController
     }
 
     /**
+     * Driver scans the shop's QR at pickup. The scanned value is the vendor's
+     * mobile — verify it matches THIS order's vendor (right shop), then advance
+     * the order to 'shipped' (out for delivery), syncing vendor + customer.
+     * After this the driver's "Mark delivered" becomes available.
+     */
+    public function driverPickup(int $id): ResponseInterface
+    {
+        $auth = $this->authUser();
+        if (! $auth) return $this->fail('Unauthorized', 401);
+        if ($auth->role !== 'driver') return $this->fail('Forbidden', 403);
+
+        $order = (new OrderModel())->find($id);
+        if (! $order) return $this->fail('Not found', 404);
+        if ((int) ($order['driver_id'] ?? 0) !== (int) $auth->id) {
+            return $this->fail('This order is not assigned to you', 403);
+        }
+
+        $rank = ['pending' => 0, 'confirmed' => 1, 'packed' => 2, 'shipped' => 3, 'delivered' => 4, 'paid' => 5, 'completed' => 6];
+        if (($rank[$order['status'] ?? 'pending'] ?? 0) >= $rank['shipped']) {
+            return $this->fail('Order already picked up', 409);
+        }
+
+        $vendor = ! empty($order['vendor_id']) ? (new UserModel())->find((int) $order['vendor_id']) : null;
+        if (! $vendor) return $this->fail('Order has no vendor to pick up from', 422);
+
+        $d       = $this->request->getJSON(true) ?? $this->request->getPost() ?? [];
+        $scanned = substr(preg_replace('/\D/', '', (string) ($d['vendor_mobile'] ?? '')), -10);
+        $shop    = substr(preg_replace('/\D/', '', (string) ($vendor['mobile_number'] ?? '')), -10);
+        if ($scanned === '' || $scanned !== $shop) {
+            return $this->fail("Wrong QR — scan the shop's QR for order #{$id}", 422);
+        }
+
+        (new OrderModel())->update($id, ['status' => 'shipped']);
+
+        try {
+            $svc = new NotificationService();
+            $svc->sendTyped((int) $vendor['id'], 'order_update', $id, '/orders', 'Order picked up',
+                "Driver picked up order #{$id} — now out for delivery.");
+            $svc->sendTyped((int) $order['customer_id'], 'order_update', $id, '/orders', 'Out for delivery',
+                "Order #{$id} is out for delivery.");
+        } catch (\Throwable $e) {
+            log_message('error', 'Driver pickup notify failed: ' . $e->getMessage());
+        }
+
+        return $this->ok(null, 'Picked up — out for delivery');
+    }
+
+    /**
      * Orders awaiting delivery for the current driver's assigned vendor.
      * Returns shipped + paid orders (paid = upcoming, shipped = ready to deliver).
      */
