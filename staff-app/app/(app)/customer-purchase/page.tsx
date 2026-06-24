@@ -34,10 +34,11 @@ type SaleMode = "online" | "offline";
 type Purchase = {
   id: number;
   total: number | string;
+  status: string | null;
   created_at: string | null;
   customer_name: string | null;
   customer_mobile: string | null;
-  source: "qr" | "entered";
+  source: "qr" | "entered" | "order";
   sale_mode: SaleMode | null;
   linked_order_id: number | null;
   note: string | null;
@@ -75,13 +76,14 @@ export default function CustomerPurchasePage() {
   const [page, setPage] = useState(1);
   const [tab, setTab] = useState<SaleMode>("online");
 
-  // Only the purchases entered from this page (not customer-scanned QR).
+  // Customer-purchase rows only — offline synthetic records + online real orders
+  // marked paid here. QR-scanned sales belong to the QR scanner page.
   async function refresh() {
     setLoading(true);
     try {
       const res = await api.get("/purchase/mine");
       const all = (res.data.data?.items ?? []) as Purchase[];
-      setRows(all.filter((r) => r.source === "entered"));
+      setRows(all.filter((r) => r.source !== "qr"));
     } catch (e) {
       toast.error(apiErrorMessage(e));
       setRows([]);
@@ -96,7 +98,7 @@ export default function CustomerPurchasePage() {
       try {
         const res = await api.get("/purchase/mine");
         const all = (res.data.data?.items ?? []) as Purchase[];
-        setRows(all.filter((r) => r.source === "entered"));
+        setRows(all.filter((r) => r.source !== "qr"));
       } catch {
         setRows([]);
       } finally {
@@ -158,17 +160,21 @@ export default function CustomerPurchasePage() {
     if (!saleMode) { toast.error("Select Online or Offline"); return; }
     if (saleMode === "online" && !orderId) { toast.error("Select an order"); return; }
     const amt = effectiveAmount;
-    if (!amt || amt <= 0) { toast.error("Enter an amount"); return; }
+    if (saleMode === "offline" && (!amt || amt <= 0)) { toast.error("Enter an amount"); return; }
     setBusy(true);
     try {
-      await api.post("/purchase/from-customer", {
+      const res = await api.post("/purchase/from-customer", {
         customer_mobile: mobile,
         amount: amt,
         sale_mode: saleMode,
         ...(saleMode === "online" ? { order_id: orderId } : {}),
         ...(saleMode === "offline" && note.trim() ? { note: note.trim() } : {}),
       });
-      toast.success(`₹${amt} recorded for ${mobile}`);
+      toast.success(
+        saleMode === "online"
+          ? (res.data?.message ?? `Order #${orderId} marked paid`)
+          : `₹${amt} recorded for ${mobile}`,
+      );
       resetForm();
       setOpen(false);
       void refresh();
@@ -231,7 +237,7 @@ export default function CustomerPurchasePage() {
           <div className="hidden grid-cols-[72px_1fr_140px_130px_170px] gap-3 border-b border-border bg-surface-2/40 px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground md:grid">
             <span>#</span>
             <span>Customer</span>
-            <span>{tab === "online" ? "Order" : "Note"}</span>
+            <span>{tab === "online" ? "Status" : "Note"}</span>
             <span className="text-right">Amount</span>
             <span className="text-right">Date</span>
           </div>
@@ -257,17 +263,13 @@ export default function CustomerPurchasePage() {
                     <div className="min-w-0">
                       <p className="truncate text-sm font-semibold">{r.customer_name || "Customer"}</p>
                       <p className="truncate text-xs text-muted-foreground">{r.customer_mobile || "—"}</p>
-                      <p className="truncate text-xs text-muted-foreground md:hidden">
-                        {tab === "online"
-                          ? (r.linked_order_id ? `Order #${r.linked_order_id}` : "")
-                          : (r.note || "")}
+                      <p className="truncate text-xs capitalize text-muted-foreground md:hidden">
+                        {tab === "online" ? (r.status || "") : (r.note || "")}
                       </p>
                     </div>
                   </div>
-                  <div className="hidden truncate text-xs text-muted-foreground md:block">
-                    {tab === "online"
-                      ? (r.linked_order_id ? `#${r.linked_order_id}` : "—")
-                      : (r.note || "—")}
+                  <div className="hidden truncate text-xs capitalize text-muted-foreground md:block">
+                    {tab === "online" ? (r.status || "—") : (r.note || "—")}
                   </div>
                   <p className="justify-self-end text-sm font-semibold text-brand md:text-right">{fmtINR(Number(r.total))}</p>
                   <p className="hidden text-right text-xs text-muted-foreground md:block">{fmtDateTime(r.created_at)}</p>
@@ -363,7 +365,7 @@ export default function CustomerPurchasePage() {
                     className="h-11 rounded-xl bg-surface-2/40"
                   />
                 </div>
-                <p className="text-xs text-muted-foreground">This sale will also appear in your Orders list.</p>
+                <p className="text-xs text-muted-foreground">The selected order will be marked <b>paid</b> (no new order is created).</p>
               </>
             )}
 
@@ -395,7 +397,7 @@ export default function CustomerPurchasePage() {
             )}
 
             <GradientButton size="lg" className="w-full" disabled={busy} onClick={() => void charge()}>
-              {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : (effectiveAmount > 0 ? `Record ₹${effectiveAmount}` : "Record")}
+              {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : (saleMode === "online" ? "Mark order paid" : (effectiveAmount > 0 ? `Record ₹${effectiveAmount}` : "Record"))}
             </GradientButton>
           </div>
         </DialogContent>

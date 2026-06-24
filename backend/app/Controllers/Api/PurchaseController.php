@@ -96,51 +96,85 @@ class PurchaseController extends BaseApiController
         if (! $customer) return $this->fail('Customer not found', 404);
 
         $amount   = (float) $d['amount'];
-        // History tag only — ONLINE rows also surface in the Orders list, OFFLINE
-        // rows stay on the Customer purchase page. Neither changes the money flow.
         $saleMode = ($d['sale_mode'] ?? '') === 'online' ? 'online' : 'offline';
         // Optional free-text remark, kept for offline records.
         $note     = trim((string) ($d['note'] ?? ''));
 
-        // ONLINE links to one of this customer's real orders (required); the
-        // reference is stored in the notes for display. This is a record-only
-        // link — it does NOT change the order or any money flow.
-        $linkOrderId = (int) ($d['order_id'] ?? 0);
+        // ============================ ONLINE ============================
+        // Online does NOT create a new order and moves no money of its own. It
+        // marks the customer's SELECTED real order as 'paid' (same rules as the
+        // Orders page) and tags it sale_mode='online' so it lists under the
+        // Customer purchase Online tab. The order settles its own commission on
+        // reaching 'paid' exactly as it would from the Orders page (idempotent).
         if ($saleMode === 'online') {
+            $linkOrderId = (int) ($d['order_id'] ?? 0);
             if ($linkOrderId <= 0) return $this->fail('Select an order for an online sale', 422);
-            $linked = (new OrderModel())
+
+            $orders = new OrderModel();
+            $linked = $orders
                 ->where('id', $linkOrderId)
                 ->where('vendor_id', (int) $auth->id)
                 ->where('customer_id', (int) $customer['id'])
                 ->first();
             if (! $linked) return $this->fail('That order does not belong to this customer', 422);
-            // Amount is authoritative from the linked order, never the client.
-            $amount = (float) $linked['total'];
+
+            $cur = (string) ($linked['status'] ?? '');
+            if (in_array($cur, ['paid', 'completed'], true)) {
+                // Already settled — just tag it so it shows under the Online tab.
+                $orders->update($linkOrderId, ['sale_mode' => 'online']);
+                return $this->ok(['order_id' => $linkOrderId], 'Order already paid');
+            }
+            // Forward-only: paid comes only after delivery (mirrors setStatus).
+            if (empty($linked['delivered_at'])) {
+                return $this->fail('Mark the order delivered first', 422);
+            }
+            $orders->update($linkOrderId, ['status' => 'paid', 'sale_mode' => 'online']);
+
+            // Non-COD orders settle commission on reaching 'paid' (idempotent via
+            // commission_distributed_at); legacy-imported orders are skipped; COD
+            // settles cash in person (no commission) — same as setStatus.
+            $db = \Config\Database::connect();
+            $isLegacy = $db->tableExists('legacy_id_map') && (bool) $db->table('legacy_id_map')
+                ->where('old_table', 'order')->where('new_id', $linkOrderId)->countAllResults();
+            if (($linked['payment_method'] ?? '') !== 'cod' && ! $isLegacy) {
+                (new CommissionService())->distributeForOrder(
+                    $linkOrderId,
+                    (int) $linked['customer_id'],
+                    (float) $linked['total'],
+                    ! empty($linked['vendor_id']) ? (int) $linked['vendor_id'] : null,
+                );
+            }
+
+            try {
+                (new NotificationService())->sendTyped((int) $linked['customer_id'], 'order_update', $linkOrderId, '/orders', "Order #{$linkOrderId}", 'Status updated to paid');
+            } catch (\Throwable $e) {
+                log_message('error', 'Online customer-purchase notify failed: ' . $e->getMessage());
+            }
+
+            return $this->ok(['order_id' => $linkOrderId], 'Order marked paid');
         }
 
+        // ============================ OFFLINE ===========================
+        // Vendor-entered in-store purchase: the customer paid the bill in person,
+        // so the customer's wallet is NOT charged and the vendor receives NO sale
+        // credit (they already hold the cash). The platform commission (the
+        // vendor's commission_pct of the sale) is DEBITED from the vendor's main
+        // wallet and distributed to the MLM uplines + admin pools. Require the
+        // vendor can cover the commission before recording the sale.
         $vendor    = $users->find($auth->id);
         $poolPct   = CommissionService::poolPctForVendor((int) $auth->id);
         $poolAmt   = round($amount * $poolPct / 100, 2);
         $poolLabel = rtrim(rtrim(number_format($poolPct, 2, '.', ''), '0'), '.');
 
-        // Vendor-entered in-store purchase: the customer paid the bill in person,
-        // so the customer's wallet is NOT charged and the vendor receives NO sale
-        // credit (they already hold the cash). Instead the platform commission
-        // (the vendor's commission_pct of the sale) is DEBITED from the vendor's
-        // main wallet and distributed to the MLM uplines + admin pools. Require
-        // the vendor can cover the commission before recording the sale.
         if ($poolAmt > 0 && (float) ($vendor['wallet_balance'] ?? 0) < $poolAmt) {
             return $this->fail("Insufficient main wallet balance to cover the {$poolLabel}% commission (₹{$poolAmt}).", 402);
         }
 
-        // Synthetic order record (no items). Customer wallet untouched.
-        // Keep the 'In-store purchase (vendor-entered)' prefix intact (the Orders
-        // list filter + the QR scanner page both match on it); append the linked
-        // order ref (online) or the optional remark (offline) after it.
+        // Synthetic order record (no items). Customer wallet untouched. Keep the
+        // 'In-store purchase (vendor-entered)' prefix intact (the Orders list
+        // filter + the QR scanner page match on it); append the optional remark.
         $notes = 'In-store purchase (vendor-entered)';
-        if ($saleMode === 'online') {
-            $notes .= ' · order #' . $linkOrderId;
-        } elseif ($note !== '') {
+        if ($note !== '') {
             $notes .= ' — ' . $note;
         }
         $orderId = (new OrderModel())->insert([
@@ -148,17 +182,14 @@ class PurchaseController extends BaseApiController
             'vendor_id'   => (int) $auth->id,
             'total'       => $amount,
             'status'      => 'paid',
-            'sale_mode'   => $saleMode,
+            'sale_mode'   => 'offline',
             'notes'       => $notes,
         ], true);
 
-        // Deduct the commission from the vendor's main wallet — it funds the MLM
-        // pool distribution below (no sale credit to the vendor).
         if ($poolAmt > 0) {
             (new WalletService())->debit((int) $auth->id, 'wallet', $poolAmt, 'commission', 'order#' . $orderId, "Commission ({$poolLabel}% of in-store sale)");
         }
 
-        // 9-way commission pool distribution (funded by the vendor's debit above)
         (new CommissionService())->distributeForOrder((int) $orderId, (int) $customer['id'], $amount, (int) $auth->id);
 
         $svc = new NotificationService();
@@ -178,13 +209,22 @@ class PurchaseController extends BaseApiController
         if (! $auth) return $this->fail('Unauthorized', 401);
         if ($auth->role !== 'vendor') return $this->fail('Forbidden', 403);
 
+        // Rows shown on the Customer purchase + QR scanner pages:
+        //  - QR / offline rows are synthetic in-store records (notes prefix).
+        //  - ONLINE rows are the vendor's REAL orders marked paid via the online
+        //    customer-purchase flow (tagged sale_mode='online').
         $rows = \Config\Database::connect()->query(
-            "SELECT o.id, o.total, o.created_at, o.qr_transferred_at, o.sale_mode, o.notes,
+            "SELECT o.id, o.total, o.status, o.created_at, o.qr_transferred_at, o.sale_mode, o.notes,
                     cu.name AS customer_name, cu.mobile_number AS customer_mobile,
-                    CASE WHEN o.notes LIKE '%vendor-entered%' THEN 'entered' ELSE 'qr' END AS source
+                    CASE
+                        WHEN o.notes LIKE 'In-store purchase via QR%'           THEN 'qr'
+                        WHEN o.notes LIKE 'In-store purchase (vendor-entered)%' THEN 'entered'
+                        ELSE 'order'
+                    END AS source
              FROM orders o
              LEFT JOIN users cu ON cu.id = o.customer_id
-             WHERE o.vendor_id = ? AND o.notes LIKE 'In-store purchase%'
+             WHERE o.vendor_id = ?
+                   AND (o.notes LIKE 'In-store purchase%' OR o.sale_mode = 'online')
              ORDER BY o.id DESC
              LIMIT 100",
             [(int) $auth->id]
@@ -197,11 +237,17 @@ class PurchaseController extends BaseApiController
         foreach ($rows as &$r) {
             $r['vendor_share'] = round((float) $r['total'] * (1 - $poolPct / 100), 2);
             $r['transferred']  = ! empty($r['qr_transferred_at']);
-            // Parse the linked order ref (online) / remark (offline) out of notes.
-            $notes = (string) ($r['notes'] ?? '');
-            $r['linked_order_id'] = preg_match('/order #(\d+)/', $notes, $m) ? (int) $m[1] : null;
-            $pos = strpos($notes, ' — ');
-            $r['note'] = $pos !== false ? trim(substr($notes, $pos + strlen(' — '))) : '';
+            if (($r['source'] ?? '') === 'order') {
+                // Real order marked paid online — the linked order IS this row.
+                $r['linked_order_id'] = (int) $r['id'];
+                $r['note'] = '';
+            } else {
+                // Synthetic record — parse the linked ref / remark out of notes.
+                $notes = (string) ($r['notes'] ?? '');
+                $r['linked_order_id'] = preg_match('/order #(\d+)/', $notes, $m) ? (int) $m[1] : null;
+                $pos = strpos($notes, ' — ');
+                $r['note'] = $pos !== false ? trim(substr($notes, $pos + strlen(' — '))) : '';
+            }
         }
         unset($r);
 
