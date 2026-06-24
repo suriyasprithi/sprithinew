@@ -928,10 +928,11 @@ class OrderController extends BaseApiController
 
         $d      = $this->request->getJSON(true) ?? $this->request->getPost() ?? [];
         $reason = trim((string) ($d['reason'] ?? ''));
+        if ($reason === '') return $this->fail('A return reason is required', 422);
         $rrm->insert([
             'order_id'    => $id,
             'customer_id' => (int) $auth->id,
-            'reason'      => $reason !== '' ? mb_substr($reason, 0, 255) : null,
+            'reason'      => mb_substr($reason, 0, 255),
             'status'      => 'pending',
         ]);
 

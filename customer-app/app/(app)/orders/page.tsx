@@ -121,6 +121,8 @@ export default function OrdersPage() {
   const [loadingId, setLoadingId] = useState<number | null>(null);
   const [detailById, setDetailById] = useState<Record<number, OrderDetail>>({});
   const [returningId, setReturningId] = useState<number | null>(null);
+  const [returnOpenId, setReturnOpenId] = useState<number | null>(null);
+  const [returnReason, setReturnReason] = useState("");
   const [cancelOpenId, setCancelOpenId] = useState<number | null>(null);
   const [cancelReason, setCancelReason] = useState("");
   const [cancellingId, setCancellingId] = useState<number | null>(null);
@@ -162,10 +164,13 @@ export default function OrdersPage() {
   useEffect(() => { void load(); }, []);
 
   async function requestReturn(id: number) {
+    if (!returnReason.trim()) { toast.error("Please enter a reason for the return"); return; }
     setReturningId(id);
     try {
-      await api.post(`/orders/${id}/return`);
+      await api.post(`/orders/${id}/return`, { reason: returnReason.trim() });
       toast.success("Return requested — our team will reach out.");
+      setReturnOpenId(null);
+      setReturnReason("");
       await load();
     } catch (e) {
       toast.error(apiErrorMessage(e));
@@ -291,19 +296,41 @@ export default function OrdersPage() {
                           <RotateCcw className="h-3.5 w-3.5" /> Return requested
                         </span>
                       ) : o.can_return ? (
-                        <div className="flex flex-wrap items-center justify-between gap-2">
-                          <p className="text-xs text-muted-foreground">
-                            Returnable until {(o.return_eligible_until ?? "").replace("T", " ").slice(0, 16)}
-                          </p>
-                          <button
-                            type="button"
-                            onClick={() => void requestReturn(o.id)}
-                            disabled={returningId === o.id}
-                            className="inline-flex items-center gap-1.5 rounded-full border border-brand/40 px-3 py-1.5 text-xs font-semibold text-brand hover:bg-brand/10 disabled:opacity-50"
-                          >
-                            {returningId === o.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RotateCcw className="h-3.5 w-3.5" />} Request Return
-                          </button>
-                        </div>
+                        returnOpenId === o.id ? (
+                          <div className="space-y-2">
+                            <textarea
+                              value={returnReason}
+                              onChange={(e) => setReturnReason(e.target.value)}
+                              rows={2}
+                              placeholder="Reason for return (required)"
+                              className="w-full rounded-xl border border-border bg-surface-2/60 p-2.5 text-sm outline-none focus:border-brand/50"
+                            />
+                            <div className="flex items-center justify-end gap-2">
+                              <button type="button" onClick={() => { setReturnOpenId(null); setReturnReason(""); }} className="rounded-full px-3 py-1.5 text-xs font-medium text-muted-foreground hover:bg-surface-2">Cancel</button>
+                              <button
+                                type="button"
+                                disabled={returningId === o.id || !returnReason.trim()}
+                                onClick={() => void requestReturn(o.id)}
+                                className="inline-flex items-center gap-1.5 rounded-full border border-brand/40 px-3 py-1.5 text-xs font-semibold text-brand hover:bg-brand/10 disabled:opacity-50"
+                              >
+                                {returningId === o.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RotateCcw className="h-3.5 w-3.5" />} Submit return
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <p className="text-xs text-muted-foreground">
+                              Returnable until {(o.return_eligible_until ?? "").replace("T", " ").slice(0, 16)}
+                            </p>
+                            <button
+                              type="button"
+                              onClick={() => { setReturnOpenId(o.id); setReturnReason(""); }}
+                              className="inline-flex items-center gap-1.5 rounded-full border border-brand/40 px-3 py-1.5 text-xs font-semibold text-brand hover:bg-brand/10"
+                            >
+                              <RotateCcw className="h-3.5 w-3.5" /> Request Return
+                            </button>
+                          </div>
+                        )
                       ) : o.return_status === "rejected" ? (
                         <span className="inline-flex items-center gap-1.5 rounded-full bg-rose-500/10 px-2.5 py-1 text-xs font-medium text-rose-500">
                           <RotateCcw className="h-3.5 w-3.5" /> Return declined
