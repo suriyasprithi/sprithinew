@@ -133,9 +133,10 @@ export default function TokensPage() {
   async function submitRequest() {
     const t = Number(reqTokens);
     if (!t) { toast.error("Tokens required"); return; }
+    if (!reqFile) { toast.error("Attachment is required (upload payment proof)"); return; }
     setBusy(true);
     try {
-      await api.post("/tokens/requests", { tokens: t, notes: reqNotes || undefined, attachment: reqFile || undefined });
+      await api.post("/tokens/requests", { tokens: t, notes: reqNotes || undefined, attachment: reqFile });
       toast.success("Request submitted");
       setReqTokens(""); setReqNotes(""); setReqFile(null); setRequestOpen(false);
       void refresh();
@@ -349,7 +350,7 @@ export default function TokensPage() {
               <Input id="reqNotes" value={reqNotes} onChange={(e) => setReqNotes(e.target.value)} placeholder="Stock replenishment" />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="reqFile">Attachment (optional)</Label>
+              <Label htmlFor="reqFile">Attachment <span className="text-rose-500">*</span></Label>
               <input
                 id="reqFile"
                 type="file"
@@ -368,7 +369,7 @@ export default function TokensPage() {
           </div>
           <DialogFooter>
             <Button variant="ghost" onClick={() => setRequestOpen(false)}>Cancel</Button>
-            <GradientButton onClick={() => void submitRequest()} disabled={busy || uploading}>
+            <GradientButton onClick={() => void submitRequest()} disabled={busy || uploading || !reqFile}>
               {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <><ArrowDownToLine className="h-4 w-4" /> Submit</>}
             </GradientButton>
           </DialogFooter>

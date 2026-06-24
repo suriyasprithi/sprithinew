@@ -575,11 +575,12 @@ class OrderController extends BaseApiController
         $params = [];
         if ($auth->role === 'vendor') { $where[] = 'o.vendor_id = ?'; $params[] = (int) $auth->id; }
         if ($status = $this->request->getGet('status')) { $where[] = 'o.status = ?'; $params[] = $status; }
-        // Vendor-entered "Customer purchase" records are hidden commission rows —
-        // they live only on the Customer purchase page, never in the Orders list.
-        // (Online purchases instead mark the customer's real order paid, and that
-        // real order shows here normally.)
-        $where[] = "COALESCE(o.notes,'') NOT LIKE 'In-store purchase (vendor-entered)%'";
+        // Vendor-entered "Customer purchase" rows: OFFLINE entries are standalone
+        // in-store sales with no other record, so they DO belong in the orders list.
+        // ONLINE entries (and legacy untagged ones) instead mark the customer's real
+        // order paid — that real order already shows here — so hide those to avoid
+        // double-counting revenue.
+        $where[] = "NOT (COALESCE(o.notes,'') LIKE 'In-store purchase (vendor-entered)%' AND COALESCE(o.sale_mode,'') <> 'offline')";
         $whereSql = implode(' AND ', $where);
 
         $total = (int) ($db->query("SELECT COUNT(*) AS c FROM orders o WHERE $whereSql", $params)->getRow()->c ?? 0);
