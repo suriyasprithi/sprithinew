@@ -24,7 +24,7 @@ import { api, apiErrorMessage } from "@/lib/api";
 import { mock, type AdminWithdrawal } from "@/lib/mock";
 
 const PAGE_SIZE = 10;
-const fmtINR = (n: number) => new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(n);
+const fmtINR = (n: number) => new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
 
 type PayoutDetails = Record<string, string>;
 type Row = AdminWithdrawal & { details: PayoutDetails; role: string | null; address: string | null };

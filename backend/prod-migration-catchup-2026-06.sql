@@ -65,6 +65,31 @@ CREATE TABLE IF NOT EXISTS `buyback_cycles` (
 
 ALTER TABLE `purchase_commissions` ADD COLUMN IF NOT EXISTS `buyback_cycle_id` BIGINT(20) UNSIGNED NULL;
 
+-- token requests: escalation + attachment (fixes "Request tokens" 500) --------
+ALTER TABLE `token_requests` ADD COLUMN IF NOT EXISTS `target_user_id` BIGINT(20) UNSIGNED NULL;
+ALTER TABLE `token_requests` ADD COLUMN IF NOT EXISTS `current_level`  VARCHAR(20) NULL DEFAULT 'taluk';
+ALTER TABLE `token_requests` ADD COLUMN IF NOT EXISTS `processed_by`   BIGINT(20) UNSIGNED NULL;
+ALTER TABLE `token_requests` ADD COLUMN IF NOT EXISTS `tokens`         DECIMAL(12,2) NULL DEFAULT 0.00;
+ALTER TABLE `token_requests` ADD COLUMN IF NOT EXISTS `attachment`     VARCHAR(255) NULL;
+
+CREATE TABLE IF NOT EXISTS `token_request_events` (
+  `id`         BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT,
+  `request_id` BIGINT(20) UNSIGNED NOT NULL,
+  `actor_id`   BIGINT(20) UNSIGNED DEFAULT NULL,
+  `action`     VARCHAR(20) NOT NULL,
+  `from_level` VARCHAR(20) DEFAULT NULL,
+  `to_level`   VARCHAR(20) DEFAULT NULL,
+  `notes`      VARCHAR(255) DEFAULT NULL,
+  `created_at` DATETIME DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  KEY `request_id` (`request_id`),
+  KEY `actor_id` (`actor_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- token economy: bonus on distributions + per-category token cost -------------
+ALTER TABLE `distribute_tokens` ADD COLUMN IF NOT EXISTS `bonus`      DECIMAL(12,2) NULL DEFAULT 0.00;
+ALTER TABLE `categories`        ADD COLUMN IF NOT EXISTS `token_cost` INT UNSIGNED NULL DEFAULT 1;
+
 -- level unlock thresholds (welcome-wallet gating) ----------------------------
 UPDATE `system_settings` SET `value`='1000000'
   WHERE `setting_key`='level.unlock_threshold_3' AND `value`='100000';

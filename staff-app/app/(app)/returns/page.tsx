@@ -29,7 +29,7 @@ const PILL: Record<Status, string> = {
   approved: "bg-emerald-500/10 text-emerald-500",
   rejected: "bg-rose-500/10 text-rose-500",
 };
-const fmtINR = (n: number) => new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(n);
+const fmtINR = (n: number) => new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
 
 export default function ReturnsPage() {
   const [rows, setRows] = useState<Row[]>([]);

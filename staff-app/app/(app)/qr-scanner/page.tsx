@@ -16,7 +16,7 @@ import { api, apiErrorMessage } from "@/lib/api";
 import { useAuth } from "@/stores/auth";
 
 const PAGE_SIZE = 8;
-const fmtINR = (n: number) => new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(n);
+const fmtINR = (n: number) => new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
 const fmtDateTime = (s: string | null) => (s ?? "").replace("T", " ").slice(0, 16);
 
 type QrPurchase = {

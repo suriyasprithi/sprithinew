@@ -16,7 +16,7 @@ type Stats = {
   customers_series: { month: string; count: number }[];
 };
 
-const formatCurrency = (n: number) => new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(n);
+const formatCurrency = (n: number) => new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
 
 export function AdminCharts() {
   const [data, setData] = useState<Stats | null>(null);

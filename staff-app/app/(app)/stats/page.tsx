@@ -9,7 +9,7 @@ import { PageHeader } from "@/components/layout/page-header";
 import { mock, type StaffStats } from "@/lib/mock";
 
 const fmtINR = (n: number) =>
-  new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(n);
+  new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
 
 type Tile = { label: string; value: number; icon: LucideIcon; tone: StatTone; spark: number[]; format?: (v: number) => string };
 

@@ -34,7 +34,7 @@ type DriverOrder = {
 };
 
 const formatCurrency = (n: number) =>
-  new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(n);
+  new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
 
 const STATUS_STYLE: Record<Status, string> = {
   paid:      "bg-amber-100 text-amber-800",

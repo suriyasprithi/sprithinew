@@ -26,7 +26,7 @@ import { api, apiErrorMessage } from "@/lib/api";
 import { mock, type ManagedCustomer } from "@/lib/mock";
 
 const PAGE_SIZE = 20;
-const fmtINR = (n: number) => new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(n);
+const fmtINR = (n: number) => new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
 const fmtDate = (s: string) => (s ? new Date(s.replace(" ", "T")).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "—");
 
 type CustomerStats = { total: number; active: number; inactive: number; wallet_sum: number };

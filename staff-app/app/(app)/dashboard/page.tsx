@@ -36,7 +36,7 @@ const fmtShiftTime = (s: DriverShift) => {
 };
 
 const fmtINR = (n: number) =>
-  new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(n);
+  new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
 
 const SPARKS = {
   up:     [3, 4, 3, 5, 6, 5, 7, 8],
@@ -181,7 +181,7 @@ export default function StaffDashboardPage() {
   const [loadingMoreOrders, setLoadingMoreOrders] = useState(false);
   const seenOrderIds = useRef<Set<number>>(new Set());
 
-  const fmt = useMemo(() => new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }), []);
+  const fmt = useMemo(() => new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", minimumFractionDigits: 2, maximumFractionDigits: 2 }), []);
 
   async function loadMoreOrders() {
     if (loadingMoreOrders || !hasMoreOrders || !user) return;

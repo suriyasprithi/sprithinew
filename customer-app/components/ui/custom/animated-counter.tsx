@@ -22,7 +22,10 @@ export function AnimatedCounter({ value, duration = 900, format, className }: Pr
       if (startRef.current === null) startRef.current = t;
       const p = Math.min(1, (t - startRef.current) / duration);
       const eased = 1 - Math.pow(1 - p, 3);
-      setDisplay(Math.round(fromRef.current + (value - fromRef.current) * eased));
+      const current = fromRef.current + (value - fromRef.current) * eased;
+      // Round to whole numbers while counting for a smooth tick, but land on the
+      // exact value at the end so decimal amounts (paise) are preserved.
+      setDisplay(p < 1 ? Math.round(current) : value);
       if (p < 1) raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);

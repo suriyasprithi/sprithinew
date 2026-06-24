@@ -36,7 +36,7 @@ type DriverOpt = { id: number; name: string; busy: boolean };
 
 const PAGE_SIZE = 10;
 const fmtINR = (n: number) =>
-  new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(n);
+  new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
 
 // Statuses a vendor can set (the backend accepts exactly these).
 const SETTABLE = ["pending", "confirmed", "packed", "shipped", "delivered", "paid", "completed", "cancelled"] as const;
