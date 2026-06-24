@@ -102,7 +102,12 @@ class WalletController extends BaseApiController
             $conds[]  = 'notes LIKE ?';
             $params[] = '%[legacy purchase]%';
         }
-        $where = 'user_id = ? AND (' . implode(' OR ', $conds) . ')';
+        // Match the legacy note-tags (unchanged) OR the new first-class `wallet`
+        // column (set by WalletService + the wallet:backfill command). The column
+        // rescues rows whose notes never carried a tag — the "missing old records".
+        $walletInPh = implode(',', array_fill(0, count($tagWallets), '?'));
+        $where = 'user_id = ? AND ( (' . implode(' OR ', $conds) . ') OR wallet IN (' . $walletInPh . ') )';
+        foreach ($tagWallets as $tw) { $params[] = $tw; }
         // Commission views (referral / direct level_N): the NEW per-order purchase
         // commission only — exclude both signup bonuses and old legacy income.
         // Referral-bonus views (welcome alias / direct welcome_N): signup welcome
@@ -118,7 +123,7 @@ class WalletController extends BaseApiController
         // while only the latest 100 are returned for display.
         $db   = \Config\Database::connect();
         $rows = $db->query(
-            'SELECT id, amount, type, reference, notes, created_at
+            'SELECT id, amount, type, wallet, reference, notes, created_at
              FROM wallet_transactions
              WHERE ' . $where . '
              ORDER BY id DESC
@@ -146,6 +151,12 @@ class WalletController extends BaseApiController
                     $isCredit   = false;
                     $matchedTag = 'wallet';
                 }
+            }
+            // Backfilled rows: no note-tag, but the wallet column says which wallet.
+            // Direction comes from the transaction type (money out vs money in).
+            if ($matchedTag === null && ! empty($r['wallet'])) {
+                $matchedTag = (string) $r['wallet'];
+                $isCredit   = ! in_array((string) $r['type'], ['payment', 'withdraw', 'debit'], true);
             }
 
             // Strip the internal [+wallet] / [-wallet] tag for display.

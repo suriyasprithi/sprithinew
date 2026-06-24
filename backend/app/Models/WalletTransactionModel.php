@@ -13,7 +13,7 @@ class WalletTransactionModel extends Model
     protected $useSoftDeletes   = false;
     protected $protectFields    = true;
 
-    protected $allowedFields = ['user_id','peer_user_id','amount','type','reference','notes'];
+    protected $allowedFields = ['user_id','peer_user_id','amount','type','wallet','reference','notes'];
 
     protected $useTimestamps = true;
     protected $dateFormat    = 'datetime';

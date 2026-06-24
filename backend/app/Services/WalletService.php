@@ -64,6 +64,7 @@ class WalletService
             'user_id'   => $userId,
             'amount'    => $amount,
             'type'      => $type,
+            'wallet'    => $wallet,
             'reference' => $reference,
             'notes'     => ($notes ? $notes . ' ' : '') . "[+{$wallet}]",
         ]);
@@ -87,6 +88,7 @@ class WalletService
             'user_id'   => $userId,
             'amount'    => $amount,
             'type'      => $type,
+            'wallet'    => $wallet,
             'reference' => $reference,
             'notes'     => ($notes ? $notes . ' ' : '') . "[-{$wallet}]",
         ]);

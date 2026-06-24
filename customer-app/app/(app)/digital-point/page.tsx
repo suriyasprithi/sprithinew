@@ -63,6 +63,13 @@ export default function DigitalPointPage() {
   const [loading, setLoading] = useState(true);
   const [active, setActive] = useState<string>(SECTIONS[0].key);
 
+  // Open a specific tab when linked with ?section=… (e.g. from the dashboard cards).
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const sec = new URLSearchParams(window.location.search).get("section");
+    if (sec && SECTIONS.some((s) => s.key === sec)) setActive(sec);
+  }, []);
+
   useEffect(() => {
     void (async () => {
       try {

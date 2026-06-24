@@ -45,6 +45,21 @@ const fmtINR = (n: number) =>
 
 type Tile = { key: WalletKey; label: string; value: number; tone: keyof typeof WALLET_TONE; transferable: boolean };
 
+/** Which referral level a welcome-view credit belongs to — from its source
+ *  (matched wallet tag level_N / welcome_N), else its notes. Mirrors the Digital
+ *  Point page so both screens classify rows identically. */
+function levelOf(it: { source?: string | null; notes?: string | null }): 1 | 2 | 3 | null {
+  const s = (it.source ?? "").toLowerCase();
+  if (s === "level_1" || s === "welcome_1") return 1;
+  if (s === "level_2" || s === "welcome_2") return 2;
+  if (s === "level_3" || s === "welcome_3") return 3;
+  const n = (it.notes ?? "").toLowerCase();
+  if (n.includes("level 1") || /\bl1\b/.test(n)) return 1;
+  if (n.includes("level 2") || /\bl2\b/.test(n)) return 2;
+  if (n.includes("level 3") || /\bl3\b/.test(n)) return 3;
+  return null;
+}
+
 export default function DashboardPage() {
   const { user } = useAuth();
   const balance = user?.wallet_balance ?? 0;
@@ -60,6 +75,25 @@ export default function DashboardPage() {
     })();
   }, []);
 
+  // Per-level referral-bonus totals, computed exactly like the "Referral Bonus
+  // Digital Point" page (sum of welcome-view credits per level) so the LEVELS
+  // cards here always show the same L1 / L2 / L3 amounts as that page.
+  const [refByLevel, setRefByLevel] = useState<Record<1 | 2 | 3, number>>({ 1: 0, 2: 0, 3: 0 });
+  useEffect(() => {
+    void (async () => {
+      try {
+        const r = await api.get("/wallet/history", { params: { wallet: "welcome" } });
+        const items = (r.data.data?.items ?? []) as Array<{ source?: string | null; notes?: string | null; direction: string; amount: number }>;
+        const t: Record<1 | 2 | 3, number> = { 1: 0, 2: 0, 3: 0 };
+        for (const it of items) {
+          const lvl = levelOf(it);
+          if (lvl && it.direction === "credit") t[lvl] += it.amount;
+        }
+        setRefByLevel(t);
+      } catch { /* cards fall back to 0 */ }
+    })();
+  }, []);
+
   const wallets: Tile[] = [
     { key: "wallet",  label: "Main",    value: user?.wallet_balance ?? 0, tone: "brand",  transferable: false },
     { key: "level",   label: "Level",   value: user?.level_commission ?? 0, tone: "sky", transferable: true },
@@ -67,15 +101,15 @@ export default function DashboardPage() {
     { key: "global",  label: "Global",  value: user?.global_wallet  ?? 0, tone: "amber",  transferable: true  },
   ];
 
-  // Each level card combines the wallet balance with its referral head-count.
-  // Transfer unlocks only when the depth-tier referral count reaches the
-  // threshold (L1 ≥ 100, L2 ≥ 10k, L3 ≥ 10 lakh).
+  // Each level card shows that tier's referral-bonus total — identical to the
+  // "Referral Bonus Digital Point" page. Transfer unlocks only when the depth-tier
+  // referral count reaches the threshold (L1 ≥ 100, L2 ≥ 10k, L3 ≥ 10 lakh).
   const levelCards = ([1, 2, 3] as const).map((lvl) => {
-    const value = lvl === 1 ? user?.welcome_1_wallet : lvl === 2 ? user?.welcome_2_wallet : user?.welcome_3_wallet;
+    const value = refByLevel[lvl];
     const users = lvl === 1 ? user?.level_1_count  : lvl === 2 ? user?.level_2_count  : user?.level_3_count;
     const have  = users ?? 0;
     const need  = WELCOME_UNLOCK[lvl];
-    return { lvl, key: `welcome_${lvl}` as WalletKey, label: `L${lvl}`, value: value ?? 0, users: have, need, unlocked: have >= need, tone: (lvl === 1 ? "sky" : lvl === 2 ? "amber" : "rose") as keyof typeof WALLET_TONE };
+    return { lvl, key: `welcome_${lvl}` as WalletKey, label: `L${lvl}`, value, users: have, need, unlocked: have >= need, tone: (lvl === 1 ? "sky" : lvl === 2 ? "amber" : "rose") as keyof typeof WALLET_TONE };
   });
 
   return (
@@ -142,7 +176,6 @@ export default function DashboardPage() {
                     <span className={`inline-flex h-9 w-9 items-center justify-center rounded-xl ${palette.chip}`}>
                       <WalletIcon className="h-4 w-4" />
                     </span>
-                    {w.transferable && <span className="rounded-full bg-[#d1fae5] px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-[#047857]">free</span>}
                   </div>
                   <p className="mt-3 text-[13px] font-bold uppercase tracking-wider text-[#6b7280]">{w.label}</p>
                   <p className="mt-1 text-[28px] font-bold leading-none tracking-tight text-[#111827]">
@@ -150,7 +183,7 @@ export default function DashboardPage() {
                   </p>
                   <div className="mt-auto space-y-1 pt-3">
                     <Link
-                      href={w.key === "global" ? "/wallet/global-history" : `/wallet/history?wallet=${w.key === "level" ? "referral" : w.key}`}
+                      href={w.key === "level" ? "/digital-point?section=referral" : (w.key === "buyback" || w.key === "global") ? `/digital-point?section=${w.key}` : `/wallet/history?wallet=${w.key}`}
                       className="block w-full rounded-lg border border-black/10 bg-white/70 py-1.5 text-center text-xs font-semibold text-[#374151] hover:border-brand/40 hover:text-brand"
                     >
                       History →
@@ -198,7 +231,7 @@ export default function DashboardPage() {
                   </p>
                   {lc.lvl === 1 && (
                     <Link
-                      href="/wallet/history?wallet=welcome"
+                      href="/digital-point"
                       className="mt-2 block rounded-lg border border-black/10 bg-white/70 py-1 text-center text-[11px] font-semibold text-[#374151] hover:border-brand/40 hover:text-brand"
                     >
                       History →
