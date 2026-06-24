@@ -17,7 +17,7 @@ const QUICK = [
   { href: "/wallet/send",     label: "Send",     icon: Send,          tone: "brand" },
   { href: "/wallet/withdraw", label: "Withdraw", icon: ArrowDownLeft, tone: "amber" },
   { href: "/refer",           label: "Refer",    icon: Gift,          tone: "pink" },
-  { href: "/shops",           label: "Shops",    icon: Store,         tone: "violet" },
+  { href: "/vendors-public",  label: "Shops",    icon: Store,         tone: "violet" },
 ] as const;
 
 // Quick-action icon palette (small badges only)
