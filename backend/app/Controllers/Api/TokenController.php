@@ -160,6 +160,10 @@ class TokenController extends BaseApiController
         ])) return $this->fail('Validation failed', 422, $this->validator->getErrors());
 
         $d = $this->request->getJSON(true) ?? $this->request->getPost();
+        // Attachment (payment proof) is mandatory for every requester role.
+        if (empty($d['attachment'])) {
+            return $this->fail('An attachment (payment proof) is required', 422);
+        }
 
         // Where does the request enter the chain? Vendor → taluk; taluk → district; district → state; state → admin.
         $startLevel = match ($auth->role) {
