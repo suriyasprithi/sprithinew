@@ -29,6 +29,7 @@ const fmtHM = (m: number) => {
 };
 
 type DeliveryRate = { id: number; time_min: number; price: number };
+type DeliveryQuote = { free: boolean; amount: number; reason: string };
 
 /** Format a Date as a datetime-local input value ("YYYY-MM-DDTHH:MM"), local tz. */
 const toLocalInput = (d: Date) => {
@@ -78,8 +79,25 @@ function PrescriptionOrderInner() {
   const [minDateTime, setMinDateTime] = useState("");
   const [rates, setRates] = useState<DeliveryRate[]>([]);
   const [rateId, setRateId] = useState<number | null>(null);
+  const [quote, setQuote] = useState<DeliveryQuote | null>(null);
 
   useEffect(() => { setMinDateTime(toLocalInput(new Date())); }, []);
+
+  // Order-level delivery quote (free-by-eta + evening + slot). No cart here, so
+  // we ask for the order-level fee only; the shop adds the medicine total later.
+  useEffect(() => {
+    const day = deliveryAt.split("T")[0];
+    if (!day) { setQuote(null); return; }
+    void (async () => {
+      try {
+        const url = `/customer/delivery-quote?order_level=1&delivery_at=${encodeURIComponent(deliveryAt)}`
+          + (rateId ? `&delivery_rate_id=${rateId}` : "");
+        const res = await api.get(url);
+        const d = (res.data.data ?? {}) as Record<string, unknown>;
+        setQuote({ free: Boolean(d.free), amount: Number(d.amount ?? 0), reason: String(d.reason ?? "") });
+      } catch { setQuote(null); }
+    })();
+  }, [deliveryAt, rateId]);
 
   useEffect(() => {
     void (async () => {
@@ -232,7 +250,18 @@ function PrescriptionOrderInner() {
               />
             )}
           </div>
-          <p className="text-[11px] text-muted-foreground">The shop sets the medicine total; delivery fee (if any) is added then.</p>
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-muted-foreground">Delivery fee</span>
+            {quote
+              ? (quote.free
+                  ? <span className="font-semibold text-emerald-500">Free Delivery</span>
+                  : <span className="font-medium">{fmtINR(quote.amount)}</span>)
+              : <span className="text-muted-foreground">—</span>}
+          </div>
+          {quote && !quote.free && quote.reason === "sum" && (
+            <p className="text-[11px] text-muted-foreground">Schedule 4+ hours ahead for free delivery.</p>
+          )}
+          <p className="text-[11px] text-muted-foreground">The shop adds the medicine total to this — you pay on delivery.</p>
         </LuxuryCard>
 
         {/* Delivery address */}

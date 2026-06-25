@@ -77,14 +77,25 @@ api.interceptors.response.use(
       return api(original);
     } catch (err) {
       flushQueue(err, null);
-      storage.remove(STORAGE_KEYS.ACCESS);
-      storage.remove(STORAGE_KEYS.REFRESH);
-      if (typeof window !== "undefined") {
-        // Keep the deployment's base path (web build = "/customer", APK = "") so we
-        // land on the real login form instead of a bare root "/login" that 404s.
-        const bp = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
-        if (!window.location.pathname.startsWith(`${bp}/login`)) {
-          window.location.href = `${bp}/login/`;
+      // Only log the user out on a GENUINE auth rejection: no refresh token at
+      // all, or the backend explicitly rejecting the refresh token (401/403/422).
+      // A network blip or a 5xx (server hiccup, CORS-less 500) must NOT clear a
+      // still-valid session — keep the tokens so the next request can retry,
+      // instead of bouncing the customer to login over a transient error.
+      const refreshStatus = (err as AxiosError)?.response?.status;
+      const isAuthRejection =
+        (err instanceof Error && err.message === "no_refresh_token") ||
+        refreshStatus === 401 || refreshStatus === 403 || refreshStatus === 422;
+      if (isAuthRejection) {
+        storage.remove(STORAGE_KEYS.ACCESS);
+        storage.remove(STORAGE_KEYS.REFRESH);
+        if (typeof window !== "undefined") {
+          // Keep the deployment's base path (web build = "/customer", APK = "") so we
+          // land on the real login form instead of a bare root "/login" that 404s.
+          const bp = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
+          if (!window.location.pathname.startsWith(`${bp}/login`)) {
+            window.location.href = `${bp}/login/`;
+          }
         }
       }
       return Promise.reject(err);
@@ -161,5 +172,9 @@ export type AuthTokens = {
 
 export function apiErrorMessage(err: unknown, fallback = "Something went wrong"): string {
   const ax = err as AxiosError<{ message?: string; errors?: Record<string, string> }>;
-  return ax.response?.data?.message || ax.message || fallback;
+  const msg = ax.response?.data?.message || ax.message || fallback;
+  // Internal auth sentinels must never reach the UI verbatim.
+  if (msg === "no_refresh_token") return "Your session has expired. Please log in again.";
+  if (msg === "Network Error") return "Couldn't reach the server. Please try again.";
+  return msg;
 }

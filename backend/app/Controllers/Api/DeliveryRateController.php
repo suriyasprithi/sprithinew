@@ -117,8 +117,14 @@ class DeliveryRateController extends BaseApiController
             $rate = (new \App\Models\DeliveryTimeRateModel())->find($rateId);
             if ($rate) $slotPrice = (float) $rate['price'];
         }
-        // Per-shop summed quote so the checkout total matches what placement charges.
-        return $this->ok((new DeliveryChargeService())->quoteCart((int) $auth->id, $deliveryAt, $slotPrice));
+        // Prescription-only orders have no cart yet → quote just the order-level
+        // fee (free-by-eta + evening + slot); the shop adds any category charge
+        // when it bills. Otherwise the full per-shop summed cart quote.
+        $svc = new DeliveryChargeService();
+        if ($this->request->getGet('order_level')) {
+            return $this->ok($svc->quoteOrderLevel($deliveryAt, $slotPrice));
+        }
+        return $this->ok($svc->quoteCart((int) $auth->id, $deliveryAt, $slotPrice));
     }
 
     /** Resolve the taluk of the (first) vendor in the customer's cart, or 0. */

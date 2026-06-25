@@ -19,7 +19,10 @@ class JwtService
     {
         $this->secret     = (string) env('jwt.secret', '');
         $this->accessTtl  = (int) env('jwt.accessTtl', 900);
-        $this->refreshTtl = (int) env('jwt.refreshTtl', 604800);
+        // Default 1 year — the session is a sliding window (each refresh re-issues
+        // a fresh refresh token), so an active user effectively stays logged in
+        // until they log out manually. Override via env('jwt.refreshTtl').
+        $this->refreshTtl = (int) env('jwt.refreshTtl', 31536000);
 
         if ($this->secret === '') {
             throw new \RuntimeException('JWT secret is not configured.');

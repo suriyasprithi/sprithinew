@@ -52,6 +52,23 @@ class DeliveryChargeService
         return $this->result($amount <= 0, $amount, 'sum', $catTotal, $evening, $slot);
     }
 
+    /**
+     * Order-level-only quote (no cart): the free-by-eta gate + evening (B) +
+     * slot (C). Used by prescription-only orders, which have no items yet, so
+     * the per-shop vendor-category charge (A) is added later when the shop bills.
+     * @return array{free:bool, amount:float, reason:string, breakdown:array}
+     */
+    public function quoteOrderLevel(?string $deliveryAt = null, float $slotPrice = 0.0): array
+    {
+        if ($this->isFreeByEta($deliveryAt)) {
+            return $this->result(true, 0.0, 'eta', 0.0, 0.0, 0.0);
+        }
+        $evening = $this->eveningCharge($deliveryAt);
+        $slot    = max(0.0, round($slotPrice, 2));
+        $amount  = round($evening + $slot, 2);
+        return $this->result($amount <= 0, $amount, 'sum', 0.0, $evening, $slot);
+    }
+
     /** True when the order is scheduled beyond the free-above-hours window. */
     public function isFreeByEta(?string $deliveryAt): bool
     {
