@@ -136,10 +136,11 @@ class CommissionService
             3 => max(0.0, (float) $settingsModel->get('buyback.slot_3_pct', (string) self::SLOT_PCT['buyback_3'])),
             4 => max(0.0, (float) $settingsModel->get('buyback.slot_4_pct', (string) self::SLOT_PCT['buyback_4'])),
         ];
-        $applied   = [];
-        $adminPool = 0.0;
+        $applied       = [];
+        $adminPool     = 0.0;
+        $pendingNotifs = [];   // M4: collected during payouts, sent only AFTER commit
 
-        $awardUser = function (?array $upline, string $walletKind, int $level, float $amt) use ($wallet, $log, $notif, $orderId, $purchaserUserId, $levelPct, &$applied, &$adminPool) {
+        $awardUser = function (?array $upline, string $walletKind, int $level, float $amt) use ($wallet, $log, $orderId, $purchaserUserId, $levelPct, &$applied, &$adminPool, &$pendingNotifs) {
             if (! $upline) { $adminPool += $amt; return; }
             $wallet->credit((int) $upline['id'], $walletKind, $amt, 'commission', 'order#' . $orderId, "L{$level} commission");
             $log->insert([
@@ -150,9 +151,16 @@ class CommissionService
                 'percent'        => $levelPct[$level] ?? self::SLOT_PCT["level_{$level}"],
                 'amount'         => $amt,
             ]);
-            try { $notif->sendToUser((int) $upline['id'], 'Commission earned', "₹{$amt} (L{$level}) from order #{$orderId}"); } catch (\Throwable $e) { /* non-fatal */ }
+            $pendingNotifs[] = ['user' => (int) $upline['id'], 'title' => 'Commission earned', 'body' => "₹{$amt} (L{$level}) from order #{$orderId}"];
             $applied[] = ['slot' => "level_{$level}", 'beneficiary_id' => (int) $upline['id'], 'amount' => $amt];
         };
+
+        // M4: wrap all payout writes in ONE transaction so a mid-cascade failure
+        // rolls back instead of leaving some uplines paid and others not. The
+        // commission_distributed_at claim above is un-stamped on rollback so a
+        // later trigger retries. Notifications are deferred to AFTER commit (their
+        // DB inserts must not flip transStatus and roll back real money).
+        $db->transBegin();
 
         // L1 / L2 / L3 referral slots (percentages admin-tunable; see $levelPct)
         $awardUser($l1, 'level_1', 1, round($pool * $levelPct[1] / 100, 2));
@@ -207,9 +215,7 @@ class CommissionService
                 'percent'          => $slotPct,
                 'amount'           => $amt,
             ]);
-            try {
-                $notif->sendToUser($collectorId, 'Buyback bonus', "₹{$amt} (slot {$slot}) from order #{$orderId}");
-            } catch (\Throwable $e) { /* non-fatal */ }
+            $pendingNotifs[] = ['user' => $collectorId, 'title' => 'Buyback bonus', 'body' => "₹{$amt} (slot {$slot}) from order #{$orderId}"];
             $applied[]    = ['slot' => "buyback_{$slot}", 'beneficiary_id' => $collectorId, 'amount' => $amt];
             $buybackSpent = round($buybackSpent + $amt, 2);
 
@@ -276,6 +282,21 @@ class CommissionService
         $applied[] = ['slot' => 'lucky_draw',  'pool' => 'monthly_lucky_draw_pools:' . date('Y-m'), 'amount' => $luckyAmt];
         $applied[] = ['slot' => 'token_share', 'pool' => 'token_share',                             'amount' => $tokenShareAmt];
         $applied[] = ['slot' => 'admin',       'pool' => 'admin_wallet',                            'amount' => $adminAmt];
+
+        // M4 commit/rollback: if any payout query failed, roll the whole cascade
+        // back and un-stamp the order so a later trigger retries (never half-paid).
+        if ($db->transStatus() === false) {
+            $db->transRollback();
+            if ($orderRow) $db->query("UPDATE orders SET commission_distributed_at = NULL WHERE id = ?", [$orderId]);
+            return [];
+        }
+        $db->transCommit();
+
+        // Deferred notifications — sent only after the money committed; a push
+        // failure here must never roll back commission.
+        foreach ($pendingNotifs as $n) {
+            try { $notif->sendToUser($n['user'], $n['title'], $n['body']); } catch (\Throwable $e) { /* non-fatal */ }
+        }
 
         return $applied;
     }
