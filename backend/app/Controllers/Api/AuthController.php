@@ -69,16 +69,25 @@ class AuthController extends BaseApiController
         if (! is_array($rec) || empty($rec['otp'])) {
             return false;
         }
-        if ((int) ($rec['tries'] ?? 0) >= self::OTP_TRIES) {
+
+        // Count this attempt FIRST, atomically, on a separate key — so parallel
+        // guesses can't slip past the cap via a read-modify-write race on a shared
+        // 'tries' field. increment() is atomic on redis/memcached; the file driver
+        // falls back to a seed when it returns 0 for a missing key.
+        $triesKey = "{$prefix}tries_{$mobile}";
+        $tries    = (int) $cache->increment($triesKey, 1);
+        if ($tries <= 0) { $cache->save($triesKey, 1, self::OTP_TTL); $tries = 1; }
+        if ($tries > self::OTP_TRIES) {
             $cache->delete($key);
+            $cache->delete($triesKey);
             return false;
         }
         if (! hash_equals((string) $rec['otp'], $otp)) {
-            $rec['tries'] = (int) ($rec['tries'] ?? 0) + 1;
-            $cache->save($key, $rec, self::OTP_TTL);
             return false;
         }
+        // Success — clear the OTP + counter so it can't be replayed.
         $cache->delete($key);
+        $cache->delete($triesKey);
         return true;
     }
 
@@ -200,22 +209,32 @@ class AuthController extends BaseApiController
             if ($ref) $referrerId = (int) $ref['id'];
         }
 
-        $userId = $users->insert([
-            'name'          => trim($data['name']),
-            'mobile_number' => trim($data['mobile_number']),
-            'email'         => isset($data['email']) ? trim($data['email']) : null,
-            'password_hash' => password_hash($data['password'], PASSWORD_BCRYPT),
-            'role'          => $role,
-            'status'        => 'active',
-            'pincode'       => $data['pincode'] ?? null,
-            'referrer_id'   => $referrerId,
-            'dob'           => $data['dob'],
-            'state_id'      => (int) $data['state_id'],
-            'district_id'   => (int) $data['district_id'],
-            'taluk_id'      => ! empty($data['taluk_id']) ? (int) $data['taluk_id'] : null,
-        ], true);
+        try {
+            $userId = $users->insert([
+                'name'          => trim($data['name']),
+                'mobile_number' => trim($data['mobile_number']),
+                'email'         => isset($data['email']) ? trim($data['email']) : null,
+                'password_hash' => password_hash($data['password'], PASSWORD_BCRYPT),
+                'role'          => $role,
+                'status'        => 'active',
+                'pincode'       => $data['pincode'] ?? null,
+                'referrer_id'   => $referrerId,
+                'dob'           => $data['dob'],
+                'state_id'      => (int) $data['state_id'],
+                'district_id'   => (int) $data['district_id'],
+                'taluk_id'      => ! empty($data['taluk_id']) ? (int) $data['taluk_id'] : null,
+            ], true);
+        } catch (\Throwable $e) {
+            // Lost a concurrent register race for the same mobile — the DB
+            // UNIQUE(mobile_number, role) rejected the second insert. Fall through
+            // to the duplicate check below for a clean 409 instead of a 500.
+            $userId = null;
+        }
 
         if (! $userId) {
+            if ($users->mobileExistsForRole($data['mobile_number'], $role)) {
+                return $this->fail('Mobile number already registered', 409);
+            }
             return $this->fail('Could not create user', 500, $users->errors());
         }
 
@@ -273,8 +292,10 @@ class AuthController extends BaseApiController
 
         for ($level = 1; $level <= 3; $level++) {
             if (! $current) break;
-            $col = "level_{$level}_count";
-            $users->update($current['id'], [$col => (int) ($current[$col] ?? 0) + 1]);
+            $col = "level_{$level}_count";   // $level is 1..3 — safe to interpolate
+            // Atomic increment so two customers signing up under the same referrer
+            // concurrently don't lose-update each other's count.
+            \Config\Database::connect()->query("UPDATE users SET {$col} = {$col} + 1 WHERE id = ?", [(int) $current['id']]);
             if ($newCustomerId > 0) {
                 try {
                     $refModel->insert([

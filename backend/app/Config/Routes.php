@@ -171,11 +171,13 @@ $routes->group('api/v1', ['filter' => 'cors'], static function ($routes) {
         $routes->get('transactions', 'Api\WalletController::transactions');
         $routes->get('global-history','Api\WalletController::globalHistory');
         $routes->get('history',       'Api\WalletController::history');
-        $routes->post('send',        'Api\WalletController::send');
-        $routes->post('transfer',    'Api\WalletController::transfer');
+        // Money-moving endpoints get an abuse throttle on top of auth (the array
+        // form keeps the auth filter explicitly so it's never dropped).
+        $routes->post('send',        'Api\WalletController::send',     ['filter' => ['auth', 'rate_limit:wallet-send,20,3600']]);
+        $routes->post('transfer',    'Api\WalletController::transfer', ['filter' => ['auth', 'rate_limit:wallet-transfer,30,3600']]);
     });
     $routes->group('withdrawals', ['filter' => 'auth'], static function ($routes) {
-        $routes->post('/',   'Api\WithdrawalController::create');
+        $routes->post('/',   'Api\WithdrawalController::create', ['filter' => ['auth', 'rate_limit:withdraw,10,3600']]);
         $routes->get('mine', 'Api\WithdrawalController::mine');
     });
 

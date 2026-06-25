@@ -509,48 +509,41 @@ export default function OrdersPage() {
                                 </div>
                               );
                             })()}
-                            {detailById[o.id]?.prescriptionUrl ? (
+                            {(detailById[o.id]?.prescriptionUrl || detailById[o.id]?.billUrl) ? (
                               <div className="border-t border-border/60 pt-3">
-                                <p className="mb-1 text-xs text-muted-foreground">Prescription</p>
-                                {detailById[o.id]!.prescriptionUrl!.toLowerCase().endsWith(".pdf") ? (
-                                  <a
-                                    href={detailById[o.id]!.prescriptionUrl!}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    className="text-sm font-medium text-brand underline"
-                                  >
-                                    View prescription (PDF)
-                                  </a>
-                                ) : (
-                                  // eslint-disable-next-line @next/next/no-img-element
-                                  <img
-                                    src={detailById[o.id]!.prescriptionUrl!}
-                                    alt="Prescription"
-                                    className="w-full rounded-xl border border-border object-contain"
-                                  />
-                                )}
-                              </div>
-                            ) : null}
-                            {detailById[o.id]?.billUrl ? (
-                              <div className="border-t border-border/60 pt-3">
-                                <p className="mb-1 text-xs text-muted-foreground">Pharmacy bill</p>
-                                {detailById[o.id]!.billUrl!.toLowerCase().endsWith(".pdf") ? (
-                                  <a
-                                    href={detailById[o.id]!.billUrl!}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    className="text-sm font-medium text-brand underline"
-                                  >
-                                    View bill (PDF)
-                                  </a>
-                                ) : (
-                                  // eslint-disable-next-line @next/next/no-img-element
-                                  <img
-                                    src={detailById[o.id]!.billUrl!}
-                                    alt="Pharmacy bill"
-                                    className="w-full rounded-xl border border-border object-contain"
-                                  />
-                                )}
+                                <p className="mb-2 text-xs text-muted-foreground">Documents</p>
+                                <div className="flex flex-wrap gap-3">
+                                  {([
+                                    { url: detailById[o.id]?.prescriptionUrl ?? null, label: "Prescription" },
+                                    { url: detailById[o.id]?.billUrl ?? null, label: "Pharmacy bill" },
+                                  ] as const).map((doc) =>
+                                    doc.url ? (
+                                      <div key={doc.label} className="flex flex-col items-center gap-1">
+                                        {doc.url.toLowerCase().endsWith(".pdf") ? (
+                                          <a
+                                            href={doc.url}
+                                            target="_blank"
+                                            rel="noreferrer"
+                                            className="flex h-20 w-20 items-center justify-center rounded-xl border border-border bg-surface-2 text-[10px] font-semibold text-brand"
+                                          >
+                                            PDF
+                                          </a>
+                                        ) : (
+                                          <button
+                                            type="button"
+                                            onClick={() => setIdPreview(doc.url)}
+                                            className="h-20 w-20 overflow-hidden rounded-xl border border-border"
+                                            aria-label={`Enlarge ${doc.label.toLowerCase()}`}
+                                          >
+                                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                                            <img src={doc.url} alt={doc.label} className="h-full w-full object-cover" />
+                                          </button>
+                                        )}
+                                        <span className="text-[10px] text-muted-foreground">{doc.label}</span>
+                                      </div>
+                                    ) : null,
+                                  )}
+                                </div>
                               </div>
                             ) : null}
                             {detailById[o.id]?.driver ? (
@@ -601,16 +594,17 @@ export default function OrdersPage() {
         )}
       </section>
 
-      {/* In-app ID-card preview (no new window). Tap anywhere to close. */}
+      {/* In-app image preview (prescription / bill / ID card). No new window —
+          tap anywhere to close. */}
       {idPreview && (
         <button
           type="button"
           onClick={() => setIdPreview(null)}
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm"
-          aria-label="Close ID card preview"
+          aria-label="Close preview"
         >
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={idPreview} alt="Driver ID card" className="max-h-[85vh] max-w-full rounded-xl border border-border object-contain" />
+          <img src={idPreview} alt="Preview" className="max-h-[85vh] max-w-full rounded-xl border border-border object-contain" />
         </button>
       )}
     </>
