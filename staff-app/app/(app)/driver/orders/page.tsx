@@ -10,7 +10,6 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { ProductImage } from "@/components/ui/custom/product-image";
-import { QrScanModal } from "@/components/qr-scan-modal";
 import { api, apiErrorMessage } from "@/lib/api";
 
 type Status = "paid" | "shipped" | "delivered";
@@ -28,6 +27,7 @@ type DriverOrder = {
   total: number;
   delivery_fee: number;
   pickup_address: string;
+  vendor_mobile: string;
   drop_address: string;
   customer_name: string;
   customer_mobile: string;
@@ -53,6 +53,7 @@ function normalize(raw: unknown): DriverOrder {
     total:           Number(r.total ?? 0),
     delivery_fee:    Number(r.delivery_fee ?? 0),
     pickup_address:  String(r.pickup_address ?? ""),
+    vendor_mobile:   String(r.vendor_mobile ?? ""),
     drop_address:    String(r.drop_address ?? ""),
     customer_name:   String(r.customer_name ?? ""),
     customer_mobile: String(r.customer_mobile ?? ""),
@@ -72,7 +73,6 @@ export default function DriverOrdersPage() {
   const [loading, setLoading] = useState(true);
   const [actingId, setActingId] = useState<number | null>(null);
   const [confirmId, setConfirmId] = useState<number | null>(null);
-  const [scanForId, setScanForId] = useState<number | null>(null);
 
   async function refresh() {
     setLoading(true);
@@ -96,22 +96,6 @@ export default function DriverOrdersPage() {
       await refresh();
     } catch (err) {
       toast.error(apiErrorMessage(err, "Action failed"));
-    } finally {
-      setActingId(null);
-    }
-  }
-
-  // Driver scans the shop's QR at pickup → vendor mobile verified → order goes
-  // out for delivery, then "Mark delivered" appears.
-  async function pickup(id: number, vendorMobile: string) {
-    setScanForId(null);
-    setActingId(id);
-    try {
-      await api.post(`/driver/orders/${id}/pickup`, { vendor_mobile: vendorMobile });
-      toast.success(`Picked up #${id} — out for delivery`);
-      await refresh();
-    } catch (err) {
-      toast.error(apiErrorMessage(err, "Pickup failed"));
     } finally {
       setActingId(null);
     }
@@ -190,9 +174,23 @@ export default function DriverOrdersPage() {
             </Button>
           )}
           {o.status === "paid" && (
-            <Button size="sm" variant="outline" className="w-full" disabled={actingId === o.id} onClick={() => setScanForId(o.id)}>
-              <QrCode className="h-4 w-4" /> Scan shop QR to pick up
-            </Button>
+            o.vendor_mobile ? (
+              <div className="flex flex-col items-center gap-1.5 rounded-lg border border-border/60 bg-muted/30 p-3">
+                <p className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                  <QrCode className="h-3.5 w-3.5" /> Vendor QR — pickup
+                </p>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={`https://api.qrserver.com/v1/create-qr-code/?size=220x220&qzone=2&data=${encodeURIComponent(o.vendor_mobile)}`}
+                  alt="Vendor QR"
+                  className="h-40 w-40 rounded bg-white p-1"
+                  referrerPolicy="no-referrer"
+                />
+                <p className="text-[11px] text-muted-foreground">Waiting for vendor to ship.</p>
+              </div>
+            ) : (
+              <p className="text-xs text-muted-foreground">Waiting for vendor to ship.</p>
+            )
           )}
         </CardContent></Card>
       ))}
@@ -221,12 +219,6 @@ export default function DriverOrdersPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-
-      <QrScanModal
-        open={scanForId != null}
-        onClose={() => setScanForId(null)}
-        onResult={(mobile) => { if (scanForId != null) void pickup(scanForId, mobile); }}
-      />
     </section>
   );
 }

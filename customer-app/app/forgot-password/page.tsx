@@ -7,6 +7,7 @@ import { motion } from "framer-motion";
 import { Loader2, Phone, ArrowLeft, KeyRound } from "lucide-react";
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/custom/password-input";
 import { Label } from "@/components/ui/label";
 import { LuxuryCard } from "@/components/ui/custom/luxury-card";
 import { GradientButton } from "@/components/ui/custom/gradient-button";
@@ -118,7 +119,7 @@ export default function ForgotPasswordPage() {
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="password">New password</Label>
-                <Input
+                <PasswordInput
                   id="password"
                   type="password"
                   autoComplete="new-password"
@@ -132,7 +133,7 @@ export default function ForgotPasswordPage() {
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="confirm">Confirm password</Label>
-                <Input
+                <PasswordInput
                   id="confirm"
                   type="password"
                   autoComplete="new-password"

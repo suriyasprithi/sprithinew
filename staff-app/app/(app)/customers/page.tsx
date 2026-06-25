@@ -5,6 +5,7 @@ import { Users, Search, MoreHorizontal, Ban, CheckCircle2, Wallet as WalletIcon,
 import { motion } from "framer-motion";
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/custom/password-input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -602,7 +603,7 @@ export default function AdminCustomersPage() {
             <div className="space-y-1.5"><Label>Pincode</Label><Input inputMode="numeric" maxLength={6} value={editing?.pincode ?? ""} onChange={(e) => setEditing((p) => p && ({ ...p, pincode: e.target.value.replace(/\D/g, "").slice(0, 6) }))} /></div>
             <div className="space-y-1.5">
               <Label>New password <span className="text-muted-foreground">(leave blank to keep)</span></Label>
-              <Input type="password" autoComplete="new-password" value={editing?.password ?? ""} onChange={(e) => setEditing((p) => p && ({ ...p, password: e.target.value }))} />
+              <PasswordInput type="password" autoComplete="new-password" value={editing?.password ?? ""} onChange={(e) => setEditing((p) => p && ({ ...p, password: e.target.value }))} />
             </div>
             <div className="rounded-xl bg-surface-2/40 p-3 text-xs text-muted-foreground">
               <p>Referred by: <span className="text-foreground">{editing?.referrer_name || "—"}</span>{editing?.referrer_mobile ? ` · ${editing.referrer_mobile}` : ""}</p>
@@ -662,7 +663,7 @@ export default function AdminCustomersPage() {
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="space-y-1.5 sm:col-span-2"><Label>Full name *</Label><Input value={creating?.name ?? ""} onChange={(e) => setCreating((p) => p && ({ ...p, name: e.target.value }))} placeholder="Ramesh Kumar" /></div>
             <div className="space-y-1.5"><Label>Mobile *</Label><Input inputMode="numeric" maxLength={10} value={creating?.mobile ?? ""} onChange={(e) => setCreating((p) => p && ({ ...p, mobile: e.target.value.replace(/\D/g, "").slice(0, 10) }))} placeholder="10-digit" /></div>
-            <div className="space-y-1.5"><Label>Password *</Label><Input type="password" autoComplete="new-password" value={creating?.password ?? ""} onChange={(e) => setCreating((p) => p && ({ ...p, password: e.target.value }))} placeholder="Min 6 characters" /></div>
+            <div className="space-y-1.5"><Label>Password *</Label><PasswordInput type="password" autoComplete="new-password" value={creating?.password ?? ""} onChange={(e) => setCreating((p) => p && ({ ...p, password: e.target.value }))} placeholder="Min 6 characters" /></div>
             <div className="space-y-1.5"><Label>Email</Label><Input type="email" value={creating?.email ?? ""} onChange={(e) => setCreating((p) => p && ({ ...p, email: e.target.value }))} placeholder="you@example.com" /></div>
             <div className="space-y-1.5"><Label>Pincode</Label><Input inputMode="numeric" maxLength={6} value={creating?.pincode ?? ""} onChange={(e) => setCreating((p) => p && ({ ...p, pincode: e.target.value.replace(/\D/g, "").slice(0, 6) }))} /></div>
             <div className="space-y-1.5"><Label>Date of birth</Label><Input type="date" value={creating?.dob ?? ""} onChange={(e) => setCreating((p) => p && ({ ...p, dob: e.target.value }))} /></div>

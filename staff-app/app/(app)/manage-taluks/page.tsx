@@ -5,6 +5,7 @@ import { Building2, KeyRound, MoreHorizontal, Pencil, Plus, Search, Trash2 } fro
 import { motion } from "framer-motion";
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/custom/password-input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Combobox } from "@/components/ui/combobox";
@@ -258,7 +259,7 @@ export default function ManageTaluksPage() {
             <div className="space-y-1.5"><Label>Login mobile number</Label><Input value={editing?.mobile_number ?? ""} onChange={(e) => setEditing((p) => ({ ...(p ?? {}), mobile_number: cleanMobile(e.target.value) }))} placeholder="9999000004" inputMode="numeric" maxLength={10} /></div>
             <div className="space-y-1.5">
               <Label>{editing?.id ? "New password (optional)" : "Password"}</Label>
-              <Input type="password" value={editing?.password ?? ""} onChange={(e) => setEditing((p) => ({ ...(p ?? {}), password: e.target.value }))} placeholder={editing?.id ? "Leave blank to keep current" : "min 6 chars"} />
+              <PasswordInput type="password" value={editing?.password ?? ""} onChange={(e) => setEditing((p) => ({ ...(p ?? {}), password: e.target.value }))} placeholder={editing?.id ? "Leave blank to keep current" : "min 6 chars"} />
             </div>
             <div className="space-y-1.5">
               <Label>Status</Label>
@@ -283,7 +284,7 @@ export default function ManageTaluksPage() {
           <DialogHeader><DialogTitle>Reset password</DialogTitle></DialogHeader>
           <div className="space-y-1.5">
             <Label>New password</Label>
-            <Input type="password" value={resetting?.password ?? ""} onChange={(e) => setResetting((p) => (p ? { ...p, password: e.target.value } : p))} placeholder="min 6 chars" />
+            <PasswordInput type="password" value={resetting?.password ?? ""} onChange={(e) => setResetting((p) => (p ? { ...p, password: e.target.value } : p))} placeholder="min 6 chars" />
           </div>
           <DialogFooter>
             <Button variant="ghost" onClick={() => setResetting(null)}>Cancel</Button>

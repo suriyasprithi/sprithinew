@@ -832,6 +832,7 @@ class OrderController extends BaseApiController
                 'total'           => (float) $o['total'],
                 'delivery_fee'    => (float) ($o['delivery_fee'] ?? 0),
                 'pickup_address'  => $pickup ?: ($vendorById[$vid]['name'] ?? 'Vendor'),
+                'vendor_mobile'   => $vendorById[$vid]['mobile_number'] ?? '',
                 'drop_address'    => $drop ?: 'Customer',
                 'customer_name'   => $c['name']          ?? '',
                 'customer_mobile' => $c['mobile_number'] ?? '',

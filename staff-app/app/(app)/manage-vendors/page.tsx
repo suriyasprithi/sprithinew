@@ -5,6 +5,7 @@ import { Store, Search, Plus, MoreHorizontal, Pencil, KeyRound, Copy, Trash2, Ch
 import { motion } from "framer-motion";
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/custom/password-input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Combobox } from "@/components/ui/combobox";
@@ -630,7 +631,7 @@ export default function ManageVendorsPage() {
               <Label>Commission % <span className="text-muted-foreground">(of each order)</span></Label>
               <Input type="number" step="0.01" min={0} max={100} value={adding?.commission_pct ?? "10"} onChange={(e) => setAdding((p) => p && ({ ...p, commission_pct: e.target.value }))} placeholder="10" />
             </div>
-            <div className="space-y-1.5"><Label>Password</Label><Input type="password" autoComplete="new-password" value={adding?.password ?? ""} onChange={(e) => setAdding((p) => p && ({ ...p, password: e.target.value }))} /></div>
+            <div className="space-y-1.5"><Label>Password</Label><PasswordInput type="password" autoComplete="new-password" value={adding?.password ?? ""} onChange={(e) => setAdding((p) => p && ({ ...p, password: e.target.value }))} /></div>
           </div>
           <DialogFooter>
             <Button variant="ghost" onClick={() => setAdding(null)} disabled={saving}>Cancel</Button>
@@ -681,7 +682,7 @@ export default function ManageVendorsPage() {
           <div className="grid gap-3">
             <div className="space-y-1.5">
               <Label>New password</Label>
-              <Input
+              <PasswordInput
                 type="password"
                 autoComplete="new-password"
                 value={resetting?.password ?? ""}

@@ -22,6 +22,15 @@ type GeoState    = { id: number; name: string };
 type GeoDistrict = { id: number; state_id: number; name: string };
 type GeoTaluk    = { id: number; district_id: number; name: string };
 
+const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+// Selectable birth years for the dropdowns: 18–100 years old.
+const DOB_YEARS = (() => {
+  const now = new Date().getFullYear();
+  const out: number[] = [];
+  for (let y = now - 18; y >= now - 100; y--) out.push(y);
+  return out;
+})();
+
 // Whole years between a YYYY-MM-DD date and today.
 function ageFrom(dob: string): number {
   const d = new Date(dob);
@@ -75,7 +84,13 @@ function RegisterInner() {
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [pincode, setPincode] = useState("");
-  const [dob, setDob] = useState("");
+  const [dobDay, setDobDay] = useState("");
+  const [dobMonth, setDobMonth] = useState("");
+  const [dobYear, setDobYear] = useState("");
+  // Assemble the YYYY-MM-DD the backend + validation expect from the dropdowns.
+  const dob = dobYear && dobMonth && dobDay
+    ? `${dobYear}-${dobMonth.padStart(2, "0")}-${dobDay.padStart(2, "0")}`
+    : "";
   const [referrerCode, setReferrerCode] = useState("");
   const [referrerName, setReferrerName] = useState<string | null>(null);
   const [refChecking, setRefChecking] = useState(false);
@@ -297,8 +312,21 @@ function RegisterInner() {
                 <Input id="pincode" inputMode="numeric" maxLength={6} placeholder="600001" value={pincode} onChange={(e) => setPincode(e.target.value.replace(/\D/g, "").slice(0, 6))} disabled={busy || isLoading} className="h-11 rounded-xl bg-surface-2/60" />
               </div>
               <div className="space-y-1.5 sm:col-span-2">
-                <Label htmlFor="dob">Date of birth</Label>
-                <Input id="dob" type="date" min={minDobForMaxAge()} max={maxDobForAdult()} value={dob} onChange={(e) => setDob(e.target.value)} disabled={busy || isLoading} className="h-11 rounded-xl bg-surface-2/60" />
+                <Label>Date of birth</Label>
+                <div className="grid grid-cols-3 gap-2">
+                  <select aria-label="Day" value={dobDay} onChange={(e) => setDobDay(e.target.value)} disabled={busy || isLoading} className={selectClass} style={selectStyle}>
+                    <option value="">Day</option>
+                    {Array.from({ length: 31 }, (_, i) => i + 1).map((d) => <option key={d} value={String(d)}>{d}</option>)}
+                  </select>
+                  <select aria-label="Month" value={dobMonth} onChange={(e) => setDobMonth(e.target.value)} disabled={busy || isLoading} className={selectClass} style={selectStyle}>
+                    <option value="">Month</option>
+                    {MONTHS.map((m, i) => <option key={m} value={String(i + 1)}>{m}</option>)}
+                  </select>
+                  <select aria-label="Year" value={dobYear} onChange={(e) => setDobYear(e.target.value)} disabled={busy || isLoading} className={selectClass} style={selectStyle}>
+                    <option value="">Year</option>
+                    {DOB_YEARS.map((y) => <option key={y} value={String(y)}>{y}</option>)}
+                  </select>
+                </div>
               </div>
               <div className="space-y-1.5 sm:col-span-2">
                 <Label htmlFor="state">State</Label>

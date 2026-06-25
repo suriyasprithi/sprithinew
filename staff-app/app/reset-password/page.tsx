@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/custom/password-input";
 import { Label } from "@/components/ui/label";
 import { api, apiErrorMessage } from "@/lib/api";
 
@@ -64,7 +65,7 @@ function ResetPasswordInner() {
             <form onSubmit={onSubmit} className="space-y-4">
               <div className="space-y-2">
                 <Label htmlFor="password">New password</Label>
-                <Input
+                <PasswordInput
                   id="password"
                   type="password"
                   autoComplete="new-password"
@@ -76,7 +77,7 @@ function ResetPasswordInner() {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="confirm">Confirm password</Label>
-                <Input
+                <PasswordInput
                   id="confirm"
                   type="password"
                   autoComplete="new-password"

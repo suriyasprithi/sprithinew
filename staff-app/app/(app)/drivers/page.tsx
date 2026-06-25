@@ -5,6 +5,7 @@ import { Truck, Plus, Search, MoreHorizontal, Banknote, Pencil, KeyRound, Ban, R
 import { motion } from "framer-motion";
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/custom/password-input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Combobox } from "@/components/ui/combobox";
@@ -414,7 +415,7 @@ export default function AdminDriversPage() {
           <div className="grid gap-3 md:grid-cols-2">
             <div className="space-y-1.5 md:col-span-2"><Label>Name</Label><Input value={adding?.name ?? ""} onChange={(e) => setAdding((p) => p && ({ ...p, name: e.target.value }))} /></div>
             <div className="space-y-1.5"><Label>Mobile</Label><Input inputMode="numeric" maxLength={10} value={adding?.mobile ?? ""} onChange={(e) => setAdding((p) => p && ({ ...p, mobile: cleanMobile(e.target.value) }))} /></div>
-            <div className="space-y-1.5"><Label>Password</Label><Input type="password" value={adding?.password ?? ""} onChange={(e) => setAdding((p) => p && ({ ...p, password: e.target.value }))} /></div>
+            <div className="space-y-1.5"><Label>Password</Label><PasswordInput type="password" value={adding?.password ?? ""} onChange={(e) => setAdding((p) => p && ({ ...p, password: e.target.value }))} /></div>
             <div className="space-y-1.5"><Label>Vehicle</Label><Input value={adding?.vehicle ?? ""} onChange={(e) => setAdding((p) => p && ({ ...p, vehicle: e.target.value }))} placeholder="TN-37 AB 1234" /></div>
             <div className="space-y-1.5"><Label>License</Label><Input value={adding?.license ?? ""} onChange={(e) => setAdding((p) => p && ({ ...p, license: e.target.value }))} /></div>
             <div className="space-y-1.5 md:col-span-2">
@@ -542,7 +543,7 @@ export default function AdminDriversPage() {
           </DialogHeader>
           <div className="space-y-1.5">
             <Label>New password</Label>
-            <Input type="password" value={resetting?.password ?? ""} onChange={(e) => setResetting((p) => p && ({ ...p, password: e.target.value }))} />
+            <PasswordInput type="password" value={resetting?.password ?? ""} onChange={(e) => setResetting((p) => p && ({ ...p, password: e.target.value }))} />
           </div>
           <DialogFooter>
             <Button variant="ghost" onClick={() => setResetting(null)} disabled={saving}>Cancel</Button>
