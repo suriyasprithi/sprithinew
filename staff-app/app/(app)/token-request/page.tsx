@@ -301,8 +301,8 @@ export default function TokenRequestPage() {
                             }
                           />
                           <DropdownMenuContent align="end" className="w-40">
-                            <DropdownMenuItem onClick={() => void approve(r.id)}><Check className="h-4 w-4" /> Approve</DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => void reject(r.id)} className="text-rose-400 focus:text-rose-400"><X className="h-4 w-4" /> Reject</DropdownMenuItem>
+                            <DropdownMenuItem disabled={rowBusy === r.id} onClick={() => void approve(r.id)}><Check className="h-4 w-4" /> Approve</DropdownMenuItem>
+                            <DropdownMenuItem disabled={rowBusy === r.id} onClick={() => void reject(r.id)} className="text-rose-400 focus:text-rose-400"><X className="h-4 w-4" /> Reject</DropdownMenuItem>
                           </DropdownMenuContent>
                         </DropdownMenu>
                       </>

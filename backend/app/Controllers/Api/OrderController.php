@@ -31,6 +31,18 @@ class OrderController extends BaseApiController
     {
         $auth = $this->authUser();
         if (! $auth) return $this->fail('Unauthorized', 401);
+
+        // Serialize order placement per customer: a double-tapped "Place order" on
+        // a slow network must not run twice concurrently (which would create
+        // duplicate orders + double-charge the wallet). The MySQL advisory lock is
+        // released explicitly after the cart is cleared below, and in any case auto-
+        // releases when the request connection closes (covers early-return paths).
+        $placeDb  = \Config\Database::connect();
+        $lockName = 'order_place_' . (int) $auth->id;
+        if (! (int) ($placeDb->query('SELECT GET_LOCK(?, 5) AS got', [$lockName])->getRow()->got ?? 0)) {
+            return $this->fail('An order is already being placed — please wait a moment.', 429);
+        }
+
         $body          = $this->request->getJSON(true) ?? $this->request->getPost() ?? [];
         $notes         = (string) ($body['notes'] ?? '');
         $paymentMethod = (($body['payment_method'] ?? 'wallet') === 'cod') ? 'cod' : 'wallet';
@@ -229,10 +241,12 @@ class OrderController extends BaseApiController
                     'price'           => $price,
                     'subtotal'        => $price * (int) $r['qty'],
                 ]);
+                // Atomic decrement (clamped at 0) so two concurrent orders for the
+                // same item can't lose-update each other's stock change.
                 if ($variant) {
-                    (new ProductVariantModel())->update($variant['id'], ['stock' => max(0, (int) $variant['stock'] - (int) $r['qty'])]);
+                    $placeDb->query("UPDATE product_variants SET stock = GREATEST(0, stock - ?) WHERE id = ?", [(int) $r['qty'], (int) $variant['id']]);
                 } else {
-                    (new ProductModel())->update((int) $p['id'], ['stock' => max(0, (int) $p['stock'] - (int) $r['qty'])]);
+                    $placeDb->query("UPDATE products SET stock = GREATEST(0, stock - ?) WHERE id = ?", [(int) $r['qty'], (int) $p['id']]);
                 }
             }
 
@@ -256,7 +270,9 @@ class OrderController extends BaseApiController
 
         // Customer settlement happens ONCE for the whole checkout.
         if ($paymentMethod === 'wallet') {
-            $users->update($auth->id, ['wallet_balance' => (float) $u['wallet_balance'] - $grandTotal]);
+            // Atomic decrement (balance was pre-checked above + placement is
+            // serialized per-user) so a concurrent credit/debit can't lose-update it.
+            $placeDb->query("UPDATE users SET wallet_balance = wallet_balance - ? WHERE id = ?", [$grandTotal, (int) $auth->id]);
             (new WalletTransactionModel())->insert([
                 'user_id'   => $auth->id,
                 'amount'    => $grandTotal,
@@ -277,8 +293,10 @@ class OrderController extends BaseApiController
             }
         }
 
-        // Clear cart
+        // Clear cart, then release the per-user placement lock — a waiting
+        // concurrent request now reads an empty cart instead of double-ordering.
         (new CartItemModel())->where('user_id', $auth->id)->delete();
+        $placeDb->query('SELECT RELEASE_LOCK(?)', [$lockName]);
 
         // Build the success response. Push it to the client NOW (before
         // notifications + commission cascade) so the customer doesn't wait

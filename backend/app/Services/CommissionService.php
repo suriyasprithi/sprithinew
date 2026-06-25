@@ -80,8 +80,15 @@ class CommissionService
         $ordersModel = new \App\Models\OrderModel();
         $orderRow    = $ordersModel->find($orderId);
         if ($orderRow) {
-            if (! empty($orderRow['commission_distributed_at'])) return [];
-            $ordersModel->update($orderId, ['commission_distributed_at' => date('Y-m-d H:i:s')]);
+            // Atomic claim: only the first caller that flips commission_distributed_at
+            // from NULL proceeds. A concurrent second call (or a re-trigger) gets 0
+            // affected rows and bails — prevents double commission/buyback.
+            $db = \Config\Database::connect();
+            $db->query(
+                "UPDATE orders SET commission_distributed_at = ? WHERE id = ? AND commission_distributed_at IS NULL",
+                [date('Y-m-d H:i:s'), $orderId]
+            );
+            if ($db->affectedRows() < 1) return [];   // already distributed by someone else
         }
 
         $wallet = new WalletService();

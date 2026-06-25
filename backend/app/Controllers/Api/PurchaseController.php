@@ -34,7 +34,7 @@ class PurchaseController extends BaseApiController
 
         $amount = (float) $d['amount'];
         $buyer = $users->find($auth->id);
-        if ((float) ($buyer['wallet_balance'] ?? 0) < $amount) return $this->fail('Insufficient wallet balance', 402);
+        if (! $buyer) return $this->fail('Buyer not found', 404);
 
         // Create a synthetic order record (no items)
         $orderId = (new OrderModel())->insert([
@@ -45,8 +45,15 @@ class PurchaseController extends BaseApiController
             'notes'       => 'In-store purchase via QR',
         ], true);
 
-        // Debit buyer
-        $users->update($auth->id, ['wallet_balance' => (float) $buyer['wallet_balance'] - $amount]);
+        // Atomic guarded debit — the `wallet_balance >= ?` makes the balance check
+        // and the debit one indivisible statement, so a double-click / concurrent
+        // charge can't pass a stale check and overdraw. 0 rows = insufficient.
+        $db = \Config\Database::connect();
+        $db->query("UPDATE users SET wallet_balance = wallet_balance - ? WHERE id = ? AND wallet_balance >= ?", [$amount, (int) $auth->id, $amount]);
+        if ($db->affectedRows() < 1) {
+            (new OrderModel())->delete($orderId);
+            return $this->fail('Insufficient wallet balance', 402);
+        }
         $tx = new WalletTransactionModel();
         $tx->insert(['user_id' => $auth->id, 'peer_user_id' => $vendor['id'], 'amount' => $amount, 'type' => 'payment', 'reference' => 'qr#' . $orderId, 'notes' => 'Vendor purchase']);
 
@@ -311,10 +318,20 @@ class PurchaseController extends BaseApiController
         $share   = round((float) $order['total'] * (1 - $poolPct / 100), 2);
         if ($share <= 0) return $this->fail('Nothing to transfer', 422);
 
+        // Atomic claim: only one concurrent transferOne (or a double-clicked
+        // Transfer) flips qr_transferred_at from NULL. The loser bails with 409
+        // before moving any money — prevents a double transfer to the main wallet.
+        $db = \Config\Database::connect();
+        $db->query(
+            "UPDATE orders SET qr_transferred_at = ? WHERE id = ? AND vendor_id = ? AND qr_transferred_at IS NULL",
+            [date('Y-m-d H:i:s'), $orderId, (int) $auth->id]
+        );
+        if ($db->affectedRows() < 1) return $this->fail('Already transferred to main wallet', 409);
+
         if (! (new WalletService())->transfer((int) $auth->id, 'qr', 'wallet', $share)) {
+            $orders->update($orderId, ['qr_transferred_at' => null]);   // release the claim
             return $this->fail('QR wallet balance is too low to transfer this purchase', 422);
         }
-        $orders->update($orderId, ['qr_transferred_at' => date('Y-m-d H:i:s')]);
 
         $bal = (new WalletService())->balances((int) $auth->id);
         return $this->ok([

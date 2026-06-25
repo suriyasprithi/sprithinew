@@ -60,6 +60,13 @@ class WithdrawalController extends BaseApiController
                 'bank_name'      => $u['bank_name'] ?? '',
             ];
 
+        // One pending withdrawal per user: collapses double-clicks and stops
+        // several pending requests from collectively exceeding the balance (each
+        // would pass the check above since a pending request reserves nothing).
+        if ((new WithdrawalModel())->where('user_id', $auth->id)->where('status', 'pending')->countAllResults() > 0) {
+            return $this->fail('You already have a withdrawal request pending approval.', 409);
+        }
+
         $id = (new WithdrawalModel())->insert([
             'user_id'      => $auth->id,
             'amount'       => $amount,
@@ -121,27 +128,37 @@ class WithdrawalController extends BaseApiController
         if (! $row) return $this->fail('Not found', 404);
         if ($row['status'] !== 'pending') return $this->fail('Already processed', 409);
 
-        $users = new UserModel();
-        $u = $users->find($row['user_id']);
-        // Pay out of the wallet (₹) first, then the token balance (1 token = ₹1)
-        // for any remainder — mirrors how the withdrawable amount was computed.
-        $wb  = (float) ($u['wallet_balance'] ?? 0);
-        $tb  = (float) ($u['token_balance'] ?? 0);
         $amt = (float) $row['amount'];
-        if ($wb + $tb < $amt) return $this->fail('User has insufficient balance', 409);
-        $fromWallet = min($wb, $amt);
-        $fromToken  = round($amt - $fromWallet, 2);
-        $users->update($row['user_id'], [
-            'wallet_balance' => round($wb - $fromWallet, 2),
-            'token_balance'  => round($tb - $fromToken, 2),
-        ]);
+        $db  = \Config\Database::connect();
+        $db->transBegin();
+
+        // Atomic claim: flip pending->paid; only one concurrent approve (or a
+        // double-clicked Approve) wins. The loser gets 0 rows and never pays out.
+        $db->query("UPDATE withdrawals SET status = 'paid', processed_by = ? WHERE id = ? AND status = 'pending'", [(int) $auth->id, $id]);
+        if ($db->affectedRows() < 1) { $db->transRollback(); return $this->fail('Already processed', 409); }
+
+        // Atomic deduction: wallet first, remainder from tokens (1 token = ₹1),
+        // guarded so a concurrent approval of another withdrawal for the same
+        // user can't overdraw. token_balance is assigned before wallet_balance so
+        // it reads the ORIGINAL wallet_balance. 0 rows = insufficient balance.
+        $db->query(
+            "UPDATE users
+                SET token_balance  = token_balance - GREATEST(0, ? - wallet_balance),
+                    wallet_balance = GREATEST(0, wallet_balance - ?)
+              WHERE id = ? AND (wallet_balance + token_balance) >= ?",
+            [$amt, $amt, (int) $row['user_id'], $amt]
+        );
+        if ($db->affectedRows() < 1) { $db->transRollback(); return $this->fail('User has insufficient balance', 409); }
+
         (new WalletTransactionModel())->insert([
             'user_id'   => (int) $row['user_id'],
-            'amount'    => (float) $row['amount'],
+            'amount'    => $amt,
             'type'      => 'withdraw',
             'reference' => 'wd#' . $id,
         ]);
-        $model->update($id, ['status' => 'paid', 'processed_by' => $auth->id]);
+
+        if ($db->transStatus() === false) { $db->transRollback(); return $this->fail('Could not process withdrawal', 500); }
+        $db->transCommit();
         try {
             (new NotificationService())->sendTyped(
                 (int) $row['user_id'], 'withdrawal_status', $id, '/wallet',

@@ -53,12 +53,13 @@ class WalletService
     {
         if (! in_array($wallet, self::WALLETS, true)) return false;
         if ($amount <= 0) return false;
-        $col = self::column($wallet);
+        $col = self::column($wallet);   // $col is from the WALLETS whitelist — safe to interpolate.
 
-        $users = new UserModel();
-        $u = $users->find($userId);
-        if (! $u) return false;
-        $users->update($userId, [$col => (float) ($u[$col] ?? 0) + $amount]);
+        // Atomic single-statement increment (no read-modify-write) so concurrent
+        // credits can't lose-update each other. amount is bound; col is whitelisted.
+        $db = \Config\Database::connect();
+        $db->query("UPDATE users SET {$col} = {$col} + ? WHERE id = ?", [$amount, $userId]);
+        if ($db->affectedRows() < 1) return false;   // no such user (amount>0 always changes the row)
 
         (new WalletTransactionModel())->insert([
             'user_id'   => $userId,
@@ -75,14 +76,14 @@ class WalletService
     {
         if (! in_array($wallet, self::WALLETS, true)) return false;
         if ($amount <= 0) return false;
-        $col = self::column($wallet);
+        $col = self::column($wallet);   // whitelisted column name — safe to interpolate.
 
-        $users = new UserModel();
-        $u = $users->find($userId);
-        if (! $u) return false;
-        $current = (float) ($u[$col] ?? 0);
-        if ($current < $amount) return false;
-        $users->update($userId, [$col => $current - $amount]);
+        // Atomic conditional decrement: the `>= ?` guard makes the balance check
+        // and the debit one indivisible statement, so concurrent debits can't both
+        // pass a stale check and overdraw. 0 affected rows = insufficient balance.
+        $db = \Config\Database::connect();
+        $db->query("UPDATE users SET {$col} = {$col} - ? WHERE id = ? AND {$col} >= ?", [$amount, $userId, $amount]);
+        if ($db->affectedRows() < 1) return false;   // insufficient balance or no such user
 
         (new WalletTransactionModel())->insert([
             'user_id'   => $userId,
@@ -95,12 +96,26 @@ class WalletService
         return true;
     }
 
-    /** Move money from one wallet to another (same user). */
+    /** Move money from one wallet to another (same user) — all-or-nothing. */
     public function transfer(int $userId, string $from, string $to, float $amount): bool
     {
         if ($from === $to) return false;
-        if (! $this->debit($userId, $from, $amount, 'debit', "transfer:{$from}->{$to}", 'transfer out')) return false;
-        $this->credit($userId, $to, $amount, 'credit', "transfer:{$from}->{$to}", 'transfer in');
+
+        $db = \Config\Database::connect();
+        $db->transBegin();
+        if (! $this->debit($userId, $from, $amount, 'debit', "transfer:{$from}->{$to}", 'transfer out')) {
+            $db->transRollback();
+            return false;
+        }
+        if (! $this->credit($userId, $to, $amount, 'credit', "transfer:{$from}->{$to}", 'transfer in')) {
+            $db->transRollback();
+            return false;
+        }
+        if ($db->transStatus() === false) {
+            $db->transRollback();
+            return false;
+        }
+        $db->transCommit();
         return true;
     }
 }

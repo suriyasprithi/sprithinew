@@ -35,6 +35,7 @@ type OrderRow = {
   driver_name?: string | null;
   product_names?: string | null;
   delivered_at?: string | null;
+  delivery_fee?: number | string | null;
   return_window_days?: number;
   return_eligible_until?: string | null;
   can_return?: boolean;
@@ -491,6 +492,23 @@ export default function OrdersPage() {
                             ) : (
                               <p className="text-xs text-muted-foreground">No item details.</p>
                             )}
+                            {/* Price breakdown — items + delivery = total. */}
+                            {(() => {
+                              const itemsSub = (detailById[o.id]?.items ?? []).reduce((s, it) => s + (Number(it.subtotal) || Number(it.price) * Number(it.qty)), 0);
+                              const fee = Number(o.delivery_fee) || 0;
+                              return (
+                                <div className="space-y-1 border-t border-border/60 pt-3 text-sm">
+                                  {itemsSub > 0 && (
+                                    <div className="flex justify-between text-muted-foreground"><span>Items</span><span>{fmtINR(itemsSub)}</span></div>
+                                  )}
+                                  <div className="flex justify-between text-muted-foreground">
+                                    <span>Delivery fee</span>
+                                    <span>{fee > 0 ? fmtINR(fee) : "Free"}</span>
+                                  </div>
+                                  <div className="flex justify-between font-semibold"><span>Total</span><span className="text-brand">{fmtINR(Number(o.total))}</span></div>
+                                </div>
+                              );
+                            })()}
                             {detailById[o.id]?.prescriptionUrl ? (
                               <div className="border-t border-border/60 pt-3">
                                 <p className="mb-1 text-xs text-muted-foreground">Prescription</p>

@@ -80,23 +80,29 @@ class TokenService
             );
         }
 
-        $db    = Database::connect();
-        $users = new UserModel();
-        $db->transStart();
+        $db = Database::connect();
+        $db->transBegin();
 
-        // Giver pays the full credited amount; its margin pot drops by the bonus
-        // it passes down (admin is the infinite source — not debited).
+        // Giver pays the full credited amount atomically; its bonus pot drops by
+        // the bonus passed down (admin is the infinite source — not debited). The
+        // `wallet_balance >= ?` guard makes the funds-check and debit one
+        // indivisible statement, so concurrent distributes / a double-click can't
+        // both pass a stale check and overdraw.
         if (! $giverIsAdmin) {
-            $users->update((int) $giver['id'], [
-                'wallet_balance' => round($giverWallet - $credited, 2),
-                'bonus_balance'  => round(max(0.0, (float) ($giver['bonus_balance'] ?? 0) - $bonus), 2),
-            ]);
+            $db->query(
+                "UPDATE users SET wallet_balance = wallet_balance - ?, bonus_balance = GREATEST(0, bonus_balance - ?) WHERE id = ? AND wallet_balance >= ?",
+                [$credited, $bonus, (int) $giver['id'], $credited]
+            );
+            if ($db->affectedRows() < 1) {
+                $db->transRollback();
+                throw new \DomainException(($giver['name'] ?? 'You') . ' has insufficient balance. Request more tokens from upstream.');
+            }
         }
-        // Recipient receives base + bonus into the wallet; its margin pot rises.
-        $users->update((int) $recipient['id'], [
-            'wallet_balance' => round((float) ($recipient['wallet_balance'] ?? 0) + $credited, 2),
-            'bonus_balance'  => round((float) ($recipient['bonus_balance'] ?? 0) + $bonus, 2),
-        ]);
+        // Recipient receives base + bonus atomically.
+        $db->query(
+            "UPDATE users SET wallet_balance = wallet_balance + ?, bonus_balance = bonus_balance + ? WHERE id = ?",
+            [$credited, $bonus, (int) $recipient['id']]
+        );
 
         $pct  = round($rate * 100, 4);
         $note = ($notes ?? '') . ($bonus > 0 ? " (+{$bonus} bonus @ {$pct}%)" : '');
@@ -109,8 +115,8 @@ class TokenService
             'notes'        => $note,
         ], true);
 
-        $db->transComplete();
-        if ($db->transStatus() === false) throw new \RuntimeException('Token transfer failed');
+        if ($db->transStatus() === false) { $db->transRollback(); throw new \RuntimeException('Token transfer failed'); }
+        $db->transCommit();
 
         return ['ledger_id' => (int) $id, 'base' => $baseTokens, 'bonus' => $bonus, 'bonus_pct' => $pct, 'credited' => $credited];
     }

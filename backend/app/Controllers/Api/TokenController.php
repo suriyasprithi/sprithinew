@@ -354,24 +354,33 @@ class TokenController extends BaseApiController
             return $this->fail("This request is waiting on a {$row['current_level']} approver", 403);
         }
 
+        // Atomic claim BEFORE minting: only one concurrent approve (or a
+        // double-clicked Approve) flips pending->approved for this level; the
+        // loser gets 0 rows and never mints. Released back to pending if the
+        // mint below fails so it can be retried.
+        $db = \Config\Database::connect();
+        $db->query(
+            "UPDATE token_requests SET status = 'approved', current_level = 'done', processed_by = ? WHERE id = ? AND status = 'pending' AND current_level = ?",
+            [(int) $auth->id, $id, $auth->role]
+        );
+        if ($db->affectedRows() < 1) return $this->fail('Already processed', 409);
+        $releaseClaim = fn () => $reqModel->update($id, ['status' => 'pending', 'current_level' => $auth->role, 'processed_by' => null]);
+
         $users    = new UserModel();
         $approver = $users->find($auth->id);
         $vendor   = $users->find((int) $row['requester_id']);
-        if (! $vendor) return $this->fail('Requester not found', 404);
+        if (! $vendor) { $releaseClaim(); return $this->fail('Requester not found', 404); }
 
         try {
             $result = (new TokenService())->fulfillRequest($approver, $vendor, (float) $row['tokens'], "request#{$id}");
         } catch (\DomainException $e) {
+            $releaseClaim();
             return $this->fail($e->getMessage(), 422);
         } catch (\RuntimeException $e) {
+            $releaseClaim();
             return $this->fail($e->getMessage(), 500);
         }
 
-        $reqModel->update($id, [
-            'status'        => 'approved',
-            'current_level' => 'done',
-            'processed_by'  => $auth->id,
-        ]);
         $this->logEvent($id, (int) $auth->id, 'approve', $auth->role, 'done', null);
 
         try {
@@ -614,7 +623,11 @@ class TokenController extends BaseApiController
         if ($row['status'] !== 'pending') return $this->fail('Already processed', 409);
 
         $status = $action === 'approve' ? 'approved' : 'rejected';
-        $model->update($id, ['status' => $status, 'processed_by' => $auth->id]);
+        // Atomic claim: only one concurrent process (or a double-click) flips
+        // pending->approved/rejected; the loser bails before the ledger insert.
+        $db = \Config\Database::connect();
+        $db->query("UPDATE token_requests SET status = ?, processed_by = ? WHERE id = ? AND status = 'pending'", [$status, (int) $auth->id, $id]);
+        if ($db->affectedRows() < 1) return $this->fail('Already processed', 409);
 
         if ($status === 'approved') {
             // Auto-distribute tokens upon approval

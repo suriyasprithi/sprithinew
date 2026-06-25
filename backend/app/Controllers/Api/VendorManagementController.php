@@ -292,6 +292,10 @@ class VendorManagementController extends BaseApiController
     public function block(int $id): ResponseInterface
     {
         if ($r = $this->requireRole(['admin', 'vmanager', 'taluk', 'district', 'state'])) return $r;
+        // Target must actually be a vendor — without this a staff user could pass
+        // any user id and block an admin / another staff / a customer (IDOR + DoS).
+        $u = (new UserModel())->find($id);
+        if (! $u || ($u['role'] ?? '') !== 'vendor') return $this->fail('Vendor not found', 404);
         (new UserModel())->update($id, ['status' => 'blocked']);
         return $this->ok(null, 'Blocked');
     }
@@ -299,6 +303,8 @@ class VendorManagementController extends BaseApiController
     public function unblock(int $id): ResponseInterface
     {
         if ($r = $this->requireRole(['admin', 'vmanager', 'taluk', 'district', 'state'])) return $r;
+        $u = (new UserModel())->find($id);
+        if (! $u || ($u['role'] ?? '') !== 'vendor') return $this->fail('Vendor not found', 404);
         (new UserModel())->update($id, ['status' => 'active']);
         return $this->ok(null, 'Unblocked');
     }
