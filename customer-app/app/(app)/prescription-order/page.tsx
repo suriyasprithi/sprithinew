@@ -261,7 +261,7 @@ function PrescriptionOrderInner() {
           {quote && !quote.free && quote.reason === "sum" && (
             <p className="text-[11px] text-muted-foreground">Schedule 4+ hours ahead for free delivery.</p>
           )}
-          <p className="text-[11px] text-muted-foreground">The shop adds the medicine total to this — you pay on delivery.</p>
+          <p className="text-[11px] text-muted-foreground">The shop adds the medicine total + its delivery charge when it bills — you pay on delivery.</p>
         </LuxuryCard>
 
         {/* Delivery address */}

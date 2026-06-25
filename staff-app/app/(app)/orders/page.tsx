@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
-import { ShoppingBag, Search, Hourglass, Check, Banknote, ChevronDown, Loader2, XCircle, FileText, Plus, Trash2 } from "lucide-react";
+import { ShoppingBag, Search, Hourglass, Check, Banknote, ChevronDown, Loader2, XCircle, FileText, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -15,6 +15,7 @@ import { Pagination } from "@/components/data-table/pagination";
 import { MobileHeader } from "@/components/layout/mobile-nav";
 import { PageHeader } from "@/components/layout/page-header";
 import { ProductImage } from "@/components/ui/custom/product-image";
+import { ImageUpload } from "@/components/ui/custom/image-upload";
 import { api, apiErrorMessage, fileUrl } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { mock, type VendorOrder } from "@/lib/mock";
@@ -62,9 +63,13 @@ export default function StaffOrdersPage() {
   const [cancelTarget, setCancelTarget] = useState<OrderRow | null>(null);
   const [cancelReason, setCancelReason] = useState("");
   const [cancelBusy, setCancelBusy] = useState(false);
-  // Prescription order "purchase bill": vendor adds the medicines + prices.
+  // Prescription order "purchase bill": vendor enters the medicine total + an
+  // optional photo of the pharmacy bill. The category delivery charge is added
+  // server-side from the shop's vendor category.
   const [billTarget, setBillTarget] = useState<OrderRow | null>(null);
-  const [billLines, setBillLines] = useState<{ name: string; qty: string; price: string }[]>([]);
+  const [billAmount, setBillAmount] = useState("");
+  const [billPhotoPath, setBillPhotoPath] = useState<string | null>(null);
+  const [billPhotoUrl, setBillPhotoUrl] = useState<string | null>(null);
   const [billBusy, setBillBusy] = useState(false);
   const [page, setPage] = useState(1);
   // On-demand item details, loaded when an order row is expanded.
@@ -214,25 +219,24 @@ export default function StaffOrdersPage() {
 
   function openBill(o: OrderRow) {
     setBillTarget(o);
-    setBillLines([{ name: "", qty: "1", price: "" }]);
+    setBillAmount("");
+    setBillPhotoPath(null);
+    setBillPhotoUrl(null);
   }
-  const billTotal = billLines.reduce((s, l) => s + (Number(l.qty) || 0) * (Number(l.price) || 0), 0);
+  function closeBill() { setBillTarget(null); setBillAmount(""); setBillPhotoPath(null); setBillPhotoUrl(null); }
 
   async function submitBill() {
     if (!billTarget) return;
-    const items = billLines
-      .map((l) => ({ name: l.name.trim(), qty: Number(l.qty) || 0, price: Number(l.price) || 0 }))
-      .filter((l) => l.name && l.qty > 0 && l.price >= 0);
-    if (!items.length) { toast.error("Add at least one item with a price"); return; }
+    const amount = Number(billAmount);
+    if (!amount || amount <= 0) { toast.error("Enter the medicine bill total"); return; }
     const o = billTarget;
     setBillBusy(true);
     try {
-      const res = await api.post(`/orders/${o.id}/bill`, { items });
+      const res = await api.post(`/orders/${o.id}/bill`, { total: amount, bill_path: billPhotoPath });
       const total = Number(res.data.data?.total ?? 0);
       setItems((cur) => cur.map((x) => (x.id === o.id ? { ...x, status: "confirmed" as VendorOrder["status"], total } : x)));
       toast.success(`Bill added — order #${o.id} confirmed (₹${total.toFixed(2)})`);
-      setBillTarget(null);
-      setBillLines([]);
+      closeBill();
     } catch (e) {
       toast.error(apiErrorMessage(e));
     } finally {
@@ -520,12 +524,12 @@ export default function StaffOrdersPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Prescription order: vendor adds the medicines + prices ("purchase bill"). */}
-      <Dialog open={!!billTarget} onOpenChange={(o) => { if (!o) { setBillTarget(null); setBillLines([]); } }}>
+      {/* Prescription order: vendor enters the medicine total + an optional bill photo. */}
+      <Dialog open={!!billTarget} onOpenChange={(o) => { if (!o) closeBill(); }}>
         <DialogContent className="max-h-[85vh] overflow-y-auto rounded-2xl border-border bg-popover">
           <DialogHeader>
             <DialogTitle>Bill for order #{billTarget?.id}</DialogTitle>
-            <DialogDescription>Add the medicines and prices. The customer pays this total (+ any delivery fee) on delivery.</DialogDescription>
+            <DialogDescription>Enter the medicine total and attach the bill. Your shop&apos;s delivery charge is added automatically; the customer pays on delivery.</DialogDescription>
           </DialogHeader>
 
           {billTarget?.prescription_path ? (
@@ -534,46 +538,22 @@ export default function StaffOrdersPage() {
             </a>
           ) : null}
 
-          <div className="space-y-2">
-            {billLines.map((l, idx) => (
-              <div key={idx} className="flex items-center gap-2">
-                <input
-                  value={l.name}
-                  onChange={(e) => setBillLines((cur) => cur.map((x, i) => (i === idx ? { ...x, name: e.target.value } : x)))}
-                  placeholder="Medicine name"
-                  className="h-9 flex-1 rounded-lg border border-input bg-surface-2/60 px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
-                />
-                <input
-                  value={l.qty}
-                  onChange={(e) => setBillLines((cur) => cur.map((x, i) => (i === idx ? { ...x, qty: e.target.value.replace(/\D/g, "") } : x)))}
-                  inputMode="numeric"
-                  placeholder="Qty"
-                  className="h-9 w-14 rounded-lg border border-input bg-surface-2/60 px-2 text-center text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
-                />
-                <input
-                  value={l.price}
-                  onChange={(e) => setBillLines((cur) => cur.map((x, i) => (i === idx ? { ...x, price: e.target.value.replace(/[^0-9.]/g, "") } : x)))}
-                  inputMode="decimal"
-                  placeholder="Price"
-                  className="h-9 w-20 rounded-lg border border-input bg-surface-2/60 px-2 text-right text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
-                />
-                <button type="button" onClick={() => setBillLines((cur) => (cur.length > 1 ? cur.filter((_, i) => i !== idx) : cur))} className="text-muted-foreground hover:text-rose-500" aria-label="Remove line">
-                  <Trash2 className="h-4 w-4" />
-                </button>
-              </div>
-            ))}
-            <Button size="sm" variant="ghost" className="h-8 gap-1 text-xs" onClick={() => setBillLines((cur) => [...cur, { name: "", qty: "1", price: "" }])}>
-              <Plus className="h-3.5 w-3.5" /> Add item
-            </Button>
+          <div className="space-y-1.5">
+            <label className="text-[10px] uppercase tracking-wider text-muted-foreground">Medicine total (₹)</label>
+            <input
+              value={billAmount}
+              onChange={(e) => setBillAmount(e.target.value.replace(/[^0-9.]/g, ""))}
+              inputMode="decimal"
+              placeholder="0.00"
+              className="h-10 w-full rounded-lg border border-input bg-surface-2/60 px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+            />
           </div>
 
-          <div className="flex items-center justify-between border-t border-border pt-2 text-sm font-semibold">
-            <span>Items total</span><span className="text-brand">₹{billTotal.toFixed(2)}</span>
-          </div>
+          <ImageUpload label="Bill photo (optional)" url={billPhotoUrl} onChange={(p, u) => { setBillPhotoPath(p); setBillPhotoUrl(u); }} disabled={billBusy} />
 
           <DialogFooter>
-            <Button variant="ghost" onClick={() => { setBillTarget(null); setBillLines([]); }} disabled={billBusy}>Cancel</Button>
-            <Button onClick={() => void submitBill()} disabled={billBusy || billTotal <= 0}>
+            <Button variant="ghost" onClick={closeBill} disabled={billBusy}>Cancel</Button>
+            <Button onClick={() => void submitBill()} disabled={billBusy || !(Number(billAmount) > 0)}>
               {billBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} Confirm bill
             </Button>
           </DialogFooter>

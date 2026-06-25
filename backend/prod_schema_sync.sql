@@ -80,6 +80,7 @@ ALTER TABLE `order_items` ADD COLUMN IF NOT EXISTS `commission_amount` decimal(1
 ALTER TABLE `order_items` MODIFY COLUMN `product_id` bigint(20) unsigned NULL;
 ALTER TABLE `orders` ADD COLUMN IF NOT EXISTS `sale_mode` varchar(20) DEFAULT NULL AFTER `delivery_at`;
 ALTER TABLE `orders` ADD COLUMN IF NOT EXISTS `order_group` varchar(40) DEFAULT NULL AFTER `id`;
+ALTER TABLE `orders` ADD COLUMN IF NOT EXISTS `bill_path` varchar(255) DEFAULT NULL AFTER `prescription_path`;
 ALTER TABLE `orders` ADD COLUMN IF NOT EXISTS `cancel_reason` text DEFAULT NULL AFTER `sale_mode`;
 ALTER TABLE `orders` ADD COLUMN IF NOT EXISTS `cancelled_by` varchar(20) DEFAULT NULL AFTER `cancel_reason`;
 -- [NEW TABLE] otp_codes

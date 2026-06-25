@@ -59,7 +59,7 @@ type OrderItem = {
   subtotal: number | string;
   variation_label?: string | null;
 };
-type OrderDetail = { items: OrderItem[]; driver: DriverInfo | null; prescriptionUrl: string | null };
+type OrderDetail = { items: OrderItem[]; driver: DriverInfo | null; prescriptionUrl: string | null; billUrl: string | null };
 
 const STATUS_STYLE: Record<OrderStatus, string> = {
   pending:   "bg-amber-500/10 text-amber-400 border-amber-500/30",
@@ -180,10 +180,11 @@ export default function OrdersPage() {
         items: (d.items ?? []) as OrderItem[],
         driver: (d.driver ?? null) as DriverInfo | null,
         prescriptionUrl: fileUrl(d.order?.prescription_path ?? null),
+        billUrl: fileUrl(d.order?.bill_path ?? null),
       } }));
     } catch (e) {
       toast.error(apiErrorMessage(e));
-      setDetailById((m) => ({ ...m, [id]: { items: [], driver: null, prescriptionUrl: null } }));
+      setDetailById((m) => ({ ...m, [id]: { items: [], driver: null, prescriptionUrl: null, billUrl: null } }));
     } finally {
       setLoadingId((cur) => (cur === id ? null : cur));
     }
@@ -507,6 +508,28 @@ export default function OrdersPage() {
                                   <img
                                     src={detailById[o.id]!.prescriptionUrl!}
                                     alt="Prescription"
+                                    className="w-full rounded-xl border border-border object-contain"
+                                  />
+                                )}
+                              </div>
+                            ) : null}
+                            {detailById[o.id]?.billUrl ? (
+                              <div className="border-t border-border/60 pt-3">
+                                <p className="mb-1 text-xs text-muted-foreground">Pharmacy bill</p>
+                                {detailById[o.id]!.billUrl!.toLowerCase().endsWith(".pdf") ? (
+                                  <a
+                                    href={detailById[o.id]!.billUrl!}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="text-sm font-medium text-brand underline"
+                                  >
+                                    View bill (PDF)
+                                  </a>
+                                ) : (
+                                  // eslint-disable-next-line @next/next/no-img-element
+                                  <img
+                                    src={detailById[o.id]!.billUrl!}
+                                    alt="Pharmacy bill"
                                     className="w-full rounded-xl border border-border object-contain"
                                   />
                                 )}

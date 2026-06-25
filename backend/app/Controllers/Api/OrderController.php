@@ -11,6 +11,7 @@ use App\Models\OrderReturnModel;
 use App\Models\ProductModel;
 use App\Models\ProductVariantModel;
 use App\Models\UserModel;
+use App\Models\VendorCategoryModel;
 use App\Models\VendorProfileModel;
 use App\Models\WalletTransactionModel;
 use App\Services\CommissionService;
@@ -435,10 +436,11 @@ class OrderController extends BaseApiController
     }
 
     /**
-     * Vendor: add the items + price ("purchase bill") to a prescription order.
-     * Inserts free-form line items, recomputes the total (items + the delivery
-     * fee fixed at placement) and moves the order pending → confirmed. The
-     * customer is notified of the amount (paid on delivery).
+     * Vendor: bill a prescription order with the medicine total + an optional
+     * photo/PDF of the pharmacy bill. The shop's vendor-category delivery charge
+     * is auto-added (when the medicine total is below that category's free-
+     * delivery threshold), on top of the order-level fee fixed at placement.
+     * Moves the order pending → confirmed; the customer is notified of the total.
      */
     public function bill(int $id): ResponseInterface
     {
@@ -453,31 +455,50 @@ class OrderController extends BaseApiController
         if (($order['sale_mode'] ?? '') !== 'prescription') return $this->fail('This is not a prescription order', 422);
         if (($order['status'] ?? '') !== 'pending') return $this->fail('This order has already been billed', 422);
 
-        $body  = $this->request->getJSON(true) ?? $this->request->getPost() ?? [];
-        $lines = is_array($body['items'] ?? null) ? $body['items'] : [];
-        $clean = []; $subtotal = 0.0;
-        foreach ($lines as $ln) {
-            $name  = trim((string) ($ln['name'] ?? ''));
-            $qty   = (int) ($ln['qty'] ?? 0);
-            $price = (float) ($ln['price'] ?? 0);
-            if ($name === '' || $qty <= 0 || $price < 0) continue;
-            $line  = round($price * $qty, 2);
-            $subtotal += $line;
-            $clean[] = ['order_id' => $id, 'product_id' => null, 'name' => mb_substr($name, 0, 200), 'qty' => $qty, 'price' => $price, 'subtotal' => $line];
+        $body     = $this->request->getJSON(true) ?? $this->request->getPost() ?? [];
+        $medTotal = round((float) ($body['total'] ?? 0), 2);
+        if ($medTotal <= 0) return $this->fail('Enter the medicine bill total', 422);
+
+        // Optional bill photo/PDF — must be a path we issued + still on disk.
+        $billPath = trim((string) ($body['bill_path'] ?? ''));
+        if ($billPath !== '' && (! str_starts_with($billPath, 'uploads/') || ! is_file(FCPATH . $billPath))) {
+            $billPath = '';
         }
-        if (! $clean) return $this->fail('Add at least one item with a price', 422);
 
-        $im = new OrderItemModel();
-        foreach ($clean as $c) $im->insert($c);
+        // Vendor-category delivery charge (A): added when the medicine total is
+        // below this shop category's free-delivery threshold.
+        $catCharge = 0.0;
+        $vp   = (new VendorProfileModel())->where('user_id', (int) $auth->id)->first();
+        $vcId = (int) ($vp['vendor_category_id'] ?? 0);
+        if ($vcId) {
+            $vc = (new VendorCategoryModel())->find($vcId);
+            if ($vc && $medTotal < (float) ($vc['free_delivery_min'] ?? 0)) {
+                $catCharge = (float) ($vc['delivery_charge'] ?? 0);
+            }
+        }
 
-        $total = round($subtotal + (float) ($order['delivery_fee'] ?? 0), 2);
-        $om->update($id, ['total' => $total, 'status' => 'confirmed']);
+        // A single summary line so the order lists with a product name + count.
+        (new OrderItemModel())->insert([
+            'order_id' => $id, 'product_id' => null,
+            'name' => 'Medicines (as per prescription)', 'qty' => 1,
+            'price' => $medTotal, 'subtotal' => $medTotal,
+        ]);
+
+        $orderLevelFee = (float) ($order['delivery_fee'] ?? 0);   // B + C, fixed at placement
+        $deliveryFee   = round($orderLevelFee + $catCharge, 2);
+        $grand         = round($medTotal + $deliveryFee, 2);
+        $om->update($id, [
+            'total'        => $grand,
+            'delivery_fee' => $deliveryFee,
+            'bill_path'    => $billPath ?: null,
+            'status'       => 'confirmed',
+        ]);
 
         try {
-            (new NotificationService())->sendTyped((int) $order['customer_id'], 'order_update', $id, '/orders', 'Prescription order ready', "Order #{$id} is ready — total ₹{$total} (pay on delivery).");
+            (new NotificationService())->sendTyped((int) $order['customer_id'], 'order_update', $id, '/orders', 'Prescription order ready', "Order #{$id} is ready — total ₹{$grand} (pay on delivery).");
         } catch (\Throwable $e) { log_message('error', 'bill notify failed: ' . $e->getMessage()); }
 
-        return $this->ok(['order_id' => $id, 'total' => $total], 'Bill added');
+        return $this->ok(['order_id' => $id, 'total' => $grand, 'delivery_fee' => $deliveryFee], 'Bill added');
     }
 
     /**
@@ -685,6 +706,9 @@ class OrderController extends BaseApiController
                 // Prescription attached at checkout for medical orders (raw path
                 // kept too; the frontend builds the display URL from it).
                 'prescription_url' => ! empty($order['prescription_path']) ? base_url($order['prescription_path']) : null,
+                // Photo/PDF of the pharmacy bill the shop attached when billing a
+                // prescription order.
+                'bill_url'         => ! empty($order['bill_path']) ? base_url($order['bill_path']) : null,
             ]
         );
 
