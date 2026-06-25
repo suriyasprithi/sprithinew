@@ -587,6 +587,7 @@ class OrderController extends BaseApiController
 
         $rows = $db->query(
             "SELECT o.id, o.customer_id, o.vendor_id, o.driver_id, o.total, o.status, o.notes, o.created_at,
+                    o.cancel_reason, o.cancelled_by,
                     cu.name AS customer_name,
                     ve.name AS vendor_name,
                     vp.shop_name AS shop_name,
@@ -986,9 +987,12 @@ class OrderController extends BaseApiController
         ]);
 
         try {
-            (new NotificationService())->sendTypedToRole('admin', 'order_update', $id, '/orders', 'Return requested', "Order #{$id} — a customer requested a return");
+            // The return now goes to the SHOP that fulfilled the order (not admin).
+            if (! empty($order['vendor_id'])) {
+                (new NotificationService())->sendTyped((int) $order['vendor_id'], 'order_update', $id, '/orders', 'Return requested', "Order #{$id} — the customer requested a return: " . mb_substr($reason, 0, 120));
+            }
         } catch (\Throwable $e) {
-            log_message('error', 'Return request admin notify failed: ' . $e->getMessage());
+            log_message('error', 'Return request vendor notify failed: ' . $e->getMessage());
         }
 
         return $this->ok(null, 'Return requested');
@@ -1008,7 +1012,11 @@ class OrderController extends BaseApiController
         $om    = new OrderModel();
         $order = $om->find($id);
         if (! $order) return $this->fail('Not found', 404);
-        if ((int) $order['customer_id'] !== (int) $auth->id) return $this->fail('Forbidden', 403);
+        // Either the customer who placed it OR the shop it belongs to may cancel.
+        $isCustomer = (int) $order['customer_id'] === (int) $auth->id;
+        $isVendor   = ! empty($order['vendor_id']) && (int) $order['vendor_id'] === (int) $auth->id;
+        if (! $isCustomer && ! $isVendor) return $this->fail('Forbidden', 403);
+        $cancelledBy = $isVendor ? 'vendor' : 'customer';
 
         // Only un-settled orders qualify. COD orders are 'pending' until delivered;
         // wallet orders settle (vendor + commission paid) at placement → 'paid'.
@@ -1022,24 +1030,32 @@ class OrderController extends BaseApiController
             return $this->fail('A driver is already assigned, so this order can no longer be cancelled', 422);
         }
 
-        $svc   = new SystemSettingsService();
-        $hours = (int) $svc->get('cancel.window_hours', '24');
-        if ($hours <= 0) return $this->fail('Cancellation is disabled', 422);
-        if (! empty($order['created_at']) && time() > strtotime($order['created_at'] . ' +' . $hours . ' hours')) {
-            return $this->fail('Cancellation window has closed', 422);
+        $svc = new SystemSettingsService();
+        // The cancellation window + penalty apply only to the CUSTOMER. A shop can
+        // decline a still-pending, undispatched order at any time with a reason.
+        if ($isCustomer) {
+            $hours = (int) $svc->get('cancel.window_hours', '24');
+            if ($hours <= 0) return $this->fail('Cancellation is disabled', 422);
+            if (! empty($order['created_at']) && time() > strtotime($order['created_at'] . ' +' . $hours . ' hours')) {
+                return $this->fail('Cancellation window has closed', 422);
+            }
         }
 
         $d      = $this->request->getJSON(true) ?? $this->request->getPost() ?? [];
         $reason = trim((string) ($d['reason'] ?? ''));
+        if ($isVendor && $reason === '') return $this->fail('Please enter a reason for cancelling this order', 422);
 
-        // Penalty applies when the reason doesn't match any admin-configured valid
-        // reason (comma-separated). An empty list = cancellations never penalised.
-        $valids  = array_values(array_filter(array_map('trim', explode(',', (string) $svc->get('cancel.valid_reasons', '')))));
-        $isValid = empty($valids);
-        foreach ($valids as $vr) {
-            if ($vr !== '' && $reason !== '' && mb_stripos($reason, $vr) !== false) { $isValid = true; break; }
+        // Penalty applies only to CUSTOMER cancellations whose reason doesn't match
+        // an admin-configured valid reason. Vendor (shop) cancellations never penalise.
+        $penalty = 0.0;
+        if ($isCustomer) {
+            $valids  = array_values(array_filter(array_map('trim', explode(',', (string) $svc->get('cancel.valid_reasons', '')))));
+            $isValid = empty($valids);
+            foreach ($valids as $vr) {
+                if ($vr !== '' && $reason !== '' && mb_stripos($reason, $vr) !== false) { $isValid = true; break; }
+            }
+            $penalty = $isValid ? 0.0 : (float) $svc->get('cancel.penalty', '0');
         }
-        $penalty = $isValid ? 0.0 : (float) $svc->get('cancel.penalty', '0');
 
         // Restore inventory for every line (mirror of the decrement in place()).
         $items = (new OrderItemModel())->where('order_id', $id)->findAll();
@@ -1059,29 +1075,35 @@ class OrderController extends BaseApiController
         // (never blocks the cancellation, never goes negative).
         $charged = 0.0;
         if ($penalty > 0) {
-            $u   = (new UserModel())->find((int) $auth->id);
+            $cid = (int) $order['customer_id'];
+            $u   = (new UserModel())->find($cid);
             $bal = (float) ($u['wallet_balance'] ?? 0);
             $charged = round(min($penalty, $bal), 2);
             if ($charged > 0) {
-                (new WalletService())->debit((int) $auth->id, 'wallet', $charged, 'penalty', 'order#' . $id, 'Cancellation penalty');
+                (new WalletService())->debit($cid, 'wallet', $charged, 'penalty', 'order#' . $id, 'Cancellation penalty');
             }
         }
 
         $om->update($id, [
             'status'        => 'cancelled',
             'cancel_reason' => $reason !== '' ? mb_substr($reason, 0, 255) : null,
+            'cancelled_by'  => $cancelledBy,
             'cancelled_at'  => date('Y-m-d H:i:s'),
             'penalty'       => $charged,
         ]);
 
         try {
-            $n    = new NotificationService();
-            $body = $charged > 0 ? "Order #{$id} cancelled. ₹{$charged} penalty applied." : "Order #{$id} cancelled.";
-            $n->sendTyped((int) $auth->id, 'order_update', $id, '/orders', 'Order cancelled', $body);
-            if (! empty($order['vendor_id'])) {
-                $n->sendTyped((int) $order['vendor_id'], 'order_update', $id, '/orders', 'Order cancelled', "Order #{$id} was cancelled by the customer");
+            $n = new NotificationService();
+            if ($isCustomer) {
+                $body = $charged > 0 ? "Order #{$id} cancelled. ₹{$charged} penalty applied." : "Order #{$id} cancelled.";
+                $n->sendTyped((int) $order['customer_id'], 'order_update', $id, '/orders', 'Order cancelled', $body);
+                if (! empty($order['vendor_id'])) {
+                    $n->sendTyped((int) $order['vendor_id'], 'order_update', $id, '/orders', 'Order cancelled', "Order #{$id} cancelled by the customer" . ($reason !== '' ? ": {$reason}" : ''));
+                }
+            } else {
+                // Vendor (shop) cancelled — notify the customer with the shop's reason.
+                $n->sendTyped((int) $order['customer_id'], 'order_update', $id, '/orders', 'Order cancelled by shop', "Order #{$id} was cancelled by the shop" . ($reason !== '' ? ": {$reason}" : ''));
             }
-            $n->sendTypedToRole('admin', 'order_update', $id, '/orders', 'Order cancelled', "Order #{$id} cancelled by customer");
         } catch (\Throwable $e) {
             log_message('error', 'cancel notify failed: ' . $e->getMessage());
         }

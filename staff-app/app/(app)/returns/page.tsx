@@ -8,6 +8,7 @@ import { EmptyState } from "@/components/data-table/empty-state";
 import { MobileHeader } from "@/components/layout/mobile-nav";
 import { PageHeader } from "@/components/layout/page-header";
 import { api, apiErrorMessage } from "@/lib/api";
+import { useAuth } from "@/stores/auth";
 
 type Status = "pending" | "approved" | "rejected";
 type Row = {
@@ -32,14 +33,19 @@ const PILL: Record<Status, string> = {
 const fmtINR = (n: number) => new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
 
 export default function ReturnsPage() {
+  const user = useAuth((s) => s.user);
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<number | null>(null);
 
+  // Returns are now reviewed by the SHOP that fulfilled the order. A vendor sees
+  // only their own orders' returns; admin (legacy) still sees all.
+  const base = user?.role === "vendor" ? "/vendor/returns" : "/admin/returns";
+
   async function refresh() {
     setLoading(true);
     try {
-      const res = await api.get("/admin/returns");
+      const res = await api.get(base);
       setRows((res.data.data?.items ?? []) as Row[]);
     } catch (e) {
       toast.error(apiErrorMessage(e));
@@ -47,12 +53,12 @@ export default function ReturnsPage() {
       setLoading(false);
     }
   }
-  useEffect(() => { void refresh(); }, []);
+  useEffect(() => { if (user) void refresh(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [user?.role]);
 
   async function decide(id: number, action: "approve" | "reject") {
     setBusy(id);
     try {
-      await api.post(`/admin/returns/${id}/${action}`);
+      await api.post(`${base}/${id}/${action}`);
       toast.success(action === "approve" ? "Return approved — customer notified" : "Return rejected — customer notified");
       await refresh();
     } catch (e) {

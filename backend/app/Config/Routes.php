@@ -124,6 +124,11 @@ $routes->group('api/v1', ['filter' => 'cors'], static function ($routes) {
         $routes->post('(:num)/return', 'Api\OrderController::requestReturn/$1');
         $routes->post('(:num)/cancel', 'Api\OrderController::cancel/$1');
     });
+    // Vendor: review return requests on their OWN orders (replaces admin-only flow).
+    $routes->get('vendor/returns',                 'Api\VendorReturnController::index',      ['filter' => 'auth']);
+    $routes->post('vendor/returns/(:num)/approve', 'Api\VendorReturnController::approve/$1', ['filter' => 'auth']);
+    $routes->post('vendor/returns/(:num)/reject',  'Api\VendorReturnController::reject/$1',  ['filter' => 'auth']);
+
     // Driver-scoped: orders for the current driver's assigned vendor (awaiting delivery).
     $routes->get('driver/orders', 'Api\OrderController::driverOrders', ['filter' => 'auth']);
     // Driver scans the shop QR to confirm pickup → order goes out for delivery.

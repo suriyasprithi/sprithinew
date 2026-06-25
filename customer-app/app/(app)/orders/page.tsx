@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { BadgeCheck, Check, ChevronDown, Loader2, MapPin, RotateCcw, ShoppingBag, Store, XCircle } from "lucide-react";
+import { BadgeCheck, Check, ChevronDown, Loader2, MapPin, RotateCcw, Search, ShoppingBag, Store, XCircle } from "lucide-react";
 import { toast } from "sonner";
 import { AppHeader } from "@/components/layout/app-header";
 import { LuxuryCard } from "@/components/ui/custom/luxury-card";
@@ -113,6 +113,26 @@ function StatusStepper({ status }: { status: OrderStatus }) {
   );
 }
 
+const STATUS_LABEL: Record<OrderStatus, string> = {
+  pending: "Pending", confirmed: "Confirmed", packed: "Packed", shipped: "Out for Delivery",
+  delivered: "Delivered", paid: "Paid", completed: "Completed", cancelled: "Cancelled",
+};
+
+function FilterPill({ active, onClick, label }: { active: boolean; onClick: () => void; label: string }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "shrink-0 rounded-full border px-3 py-1.5 text-xs font-semibold transition",
+        active ? "border-brand bg-brand text-brand-foreground" : "border-border bg-surface-2/60 text-muted-foreground hover:border-brand/40",
+      )}
+    >
+      {label}
+    </button>
+  );
+}
+
 export default function OrdersPage() {
   const [items, setItems] = useState<OrderRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -127,6 +147,8 @@ export default function OrdersPage() {
   const [cancelReason, setCancelReason] = useState("");
   const [cancellingId, setCancellingId] = useState<number | null>(null);
   const [idPreview, setIdPreview] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState<OrderStatus | "all">("all");
 
   async function toggleDetail(id: number) {
     if (openId === id) { setOpenId(null); return; }
@@ -195,10 +217,41 @@ export default function OrdersPage() {
     }
   }
 
+  const statusesPresent = Array.from(new Set(items.map((o) => o.status)));
+  const filtered = items.filter((o) => {
+    if (statusFilter !== "all" && o.status !== statusFilter) return false;
+    if (search.trim()) {
+      const q = search.trim().toLowerCase();
+      const hay = [String(o.id), o.shop_name, o.vendor_name, o.product_names, o.area, o.taluk_name, o.pincode]
+        .filter(Boolean).join(" ").toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    return true;
+  });
+
   return (
     <>
       <AppHeader title="Orders" />
       <section className="mx-auto max-w-md space-y-3 p-4 pb-24 md:max-w-3xl md:p-8">
+        {!loading && items.length > 0 && (
+          <div className="space-y-2.5">
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search order #, shop, product…"
+                className="h-11 w-full rounded-xl border border-border bg-surface-2/60 pl-9 pr-3 text-sm outline-none focus:border-brand/50"
+              />
+            </div>
+            <div className="flex gap-2 overflow-x-auto pb-1">
+              <FilterPill active={statusFilter === "all"} onClick={() => setStatusFilter("all")} label={`All (${items.length})`} />
+              {statusesPresent.map((s) => (
+                <FilterPill key={s} active={statusFilter === s} onClick={() => setStatusFilter(s)} label={STATUS_LABEL[s] ?? s} />
+              ))}
+            </div>
+          </div>
+        )}
         {loading ? (
           <div className="flex items-center justify-center py-10 text-muted-foreground"><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Loading…</div>
         ) : items.length === 0 ? (
@@ -207,8 +260,14 @@ export default function OrdersPage() {
             <p className="text-sm font-medium">No orders yet</p>
             <p className="mt-1 text-xs text-muted-foreground">Orders you place will show up here.</p>
           </LuxuryCard>
+        ) : filtered.length === 0 ? (
+          <LuxuryCard hoverLift={false} className="p-10 text-center">
+            <Search className="mx-auto mb-3 h-10 w-10 text-muted-foreground" />
+            <p className="text-sm font-medium">No orders match</p>
+            <p className="mt-1 text-xs text-muted-foreground">Try a different search or status filter.</p>
+          </LuxuryCard>
         ) : (
-          items.map((o, i) => {
+          filtered.map((o, i) => {
             // A multi-vendor order has no single vendor_id, so no shop name —
             // the per-item shop names below show who sells what.
             const vendorLabel = o.shop_name || o.vendor_name || "Multiple shops";

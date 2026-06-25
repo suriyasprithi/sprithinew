@@ -2,9 +2,11 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
-import { ShoppingBag, Search, Hourglass, Check, Banknote, ChevronDown, Loader2 } from "lucide-react";
+import { ShoppingBag, Search, Hourglass, Check, Banknote, ChevronDown, Loader2, XCircle } from "lucide-react";
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { StatCard } from "@/components/dashboard/stat-card";
 import { EmptyState } from "@/components/data-table/empty-state";
@@ -57,6 +59,9 @@ export default function StaffOrdersPage() {
   // Includes legacy-import statuses (assigned/picked) that live alongside the
   // app's own pending/paid/shipped/delivered so they can be filtered too.
   const [status, setStatus] = useState<"all" | VendorOrder["status"] | "assigned" | "picked">("all");
+  const [cancelTarget, setCancelTarget] = useState<OrderRow | null>(null);
+  const [cancelReason, setCancelReason] = useState("");
+  const [cancelBusy, setCancelBusy] = useState(false);
   const [page, setPage] = useState(1);
   // On-demand item details, loaded when an order row is expanded.
   const [openId, setOpenId] = useState<number | null>(null);
@@ -165,12 +170,33 @@ export default function StaffOrdersPage() {
 
   async function changeStatus(o: OrderRow, next: string) {
     if (!next || next === o.status) return;
+    // Cancelling needs a reason the customer will see — capture it via a dialog
+    // and hit the dedicated /cancel endpoint (restocks + notifies the customer).
+    if (next === "cancelled") { setCancelTarget(o); setCancelReason(""); return; }
     try {
       await api.patch(`/orders/${o.id}/status`, { status: next });
       setItems((cur) => cur.map((x) => (x.id === o.id ? { ...x, status: next as VendorOrder["status"] } : x)));
       toast.success(`Order #${o.id} → ${STATUS_LABELS[next] ?? next}`);
     } catch (e) {
       toast.error(apiErrorMessage(e));
+    }
+  }
+
+  async function submitVendorCancel() {
+    if (!cancelTarget) return;
+    if (!cancelReason.trim()) { toast.error("Please enter a reason for cancelling"); return; }
+    const o = cancelTarget;
+    setCancelBusy(true);
+    try {
+      await api.post(`/orders/${o.id}/cancel`, { reason: cancelReason.trim() });
+      setItems((cur) => cur.map((x) => (x.id === o.id ? { ...x, status: "cancelled" as VendorOrder["status"] } : x)));
+      toast.success(`Order #${o.id} cancelled — customer notified`);
+      setCancelTarget(null);
+      setCancelReason("");
+    } catch (e) {
+      toast.error(apiErrorMessage(e));
+    } finally {
+      setCancelBusy(false);
     }
   }
 
@@ -412,6 +438,29 @@ export default function StaffOrdersPage() {
           )}
         </div>
       </section>
+
+      {/* Vendor cancel — captures a reason the customer will see. */}
+      <Dialog open={!!cancelTarget} onOpenChange={(o) => { if (!o) { setCancelTarget(null); setCancelReason(""); } }}>
+        <DialogContent className="rounded-2xl border-border bg-popover">
+          <DialogHeader>
+            <DialogTitle>Cancel order #{cancelTarget?.id}</DialogTitle>
+            <DialogDescription>The customer will see this reason. Stock is restored and the customer is notified.</DialogDescription>
+          </DialogHeader>
+          <textarea
+            value={cancelReason}
+            onChange={(e) => setCancelReason(e.target.value)}
+            rows={3}
+            placeholder="Reason for cancelling (e.g. out of stock)"
+            className="w-full rounded-xl border border-input bg-surface-2/60 p-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+          />
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => { setCancelTarget(null); setCancelReason(""); }} disabled={cancelBusy}>Keep order</Button>
+            <Button variant="destructive" onClick={() => void submitVendorCancel()} disabled={cancelBusy || !cancelReason.trim()}>
+              {cancelBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <XCircle className="h-4 w-4" />} Cancel order
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

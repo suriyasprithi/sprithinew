@@ -163,7 +163,7 @@ export function CategoryNavBar() {
           href="/vendors-public"
           className="ml-auto hidden items-center gap-1.5 rounded-lg border border-[var(--mk-brand)] px-3 py-2 text-xs font-semibold text-[var(--mk-brand-deep)] hover:bg-[var(--mk-brand-soft)] md:inline-flex"
         >
-          Become a vendor
+          Vendor
         </Link>
       </div>
 

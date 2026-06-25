@@ -1,2 +1,2 @@
-:HL["/vendor/_next/static/css/088ecf64b1018e46.css","style"]
-0:{"tree":{"name":"","param":null,"prefetchHints":16,"slots":{"children":{"name":"(app)","param":null,"prefetchHints":0,"slots":{"children":{"name":"wallet","param":null,"prefetchHints":0,"slots":{"children":{"name":"withdraw","param":null,"prefetchHints":0,"slots":{"children":{"name":"__PAGE__","param":null,"prefetchHints":0,"slots":null}}}}}}}}},"staleTime":300,"buildId":"RY_LNUU80hiCKtWBa47Yf"}
+:HL["/vendor/_next/static/css/285c7d47739917cf.css","style"]
+0:{"tree":{"name":"","param":null,"prefetchHints":16,"slots":{"children":{"name":"(app)","param":null,"prefetchHints":0,"slots":{"children":{"name":"wallet","param":null,"prefetchHints":0,"slots":{"children":{"name":"withdraw","param":null,"prefetchHints":0,"slots":{"children":{"name":"__PAGE__","param":null,"prefetchHints":0,"slots":null}}}}}}}}},"staleTime":300,"buildId":"oZ8wNrseFIXkA6YwZQ04c"}

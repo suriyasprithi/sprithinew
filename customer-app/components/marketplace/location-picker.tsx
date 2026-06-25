@@ -202,40 +202,6 @@ export function LocationPicker({ open, onClose }: { open: boolean; onClose: () =
 
           {/* Body — form fields */}
           <div className="space-y-4 px-5 py-5">
-            {/* Quick: pincode search + current-location (manual dropdowns below). */}
-            <div className="space-y-2">
-              <div className="flex gap-2">
-                <input
-                  value={pincode}
-                  onChange={(e) => setPincode(e.target.value.replace(/\D/g, "").slice(0, 6))}
-                  onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); void resolvePincode(pincode); } }}
-                  inputMode="numeric"
-                  placeholder="Search by pincode (e.g. 605110)"
-                  className="h-11 flex-1 rounded-xl border border-[var(--mk-border)] bg-white px-3 text-sm outline-none transition-colors focus:border-[var(--mk-brand)] focus:ring-2 focus:ring-[var(--mk-brand)]/20"
-                />
-                <button
-                  type="button"
-                  onClick={() => void resolvePincode(pincode)}
-                  disabled={pinBusy || pincode.length !== 6}
-                  className="flex h-11 shrink-0 items-center gap-1.5 rounded-xl bg-[var(--mk-brand)] px-4 text-sm font-semibold text-white transition-colors hover:bg-[var(--mk-brand-deep)] disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {pinBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />} Go
-                </button>
-              </div>
-              <button
-                type="button"
-                onClick={useCurrentLocation}
-                disabled={geoBusy}
-                className="flex w-full items-center justify-center gap-2 rounded-xl border border-[var(--mk-border)] bg-white px-3 py-2.5 text-sm font-medium text-[var(--mk-brand-deep)] transition-colors hover:border-[var(--mk-brand)]/50 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {geoBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <LocateFixed className="h-4 w-4" />} Use my current location
-              </button>
-            </div>
-
-            <div className="flex items-center gap-3 text-[10px] font-bold uppercase tracking-wider text-[var(--mk-text-muted)]">
-              <span className="h-px flex-1 bg-[var(--mk-border)]" /> or select manually <span className="h-px flex-1 bg-[var(--mk-border)]" />
-            </div>
-
             <Field label="State">
               <select
                 value={stateId ?? ""}
