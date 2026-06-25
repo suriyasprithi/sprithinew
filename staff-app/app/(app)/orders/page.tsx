@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
-import { ShoppingBag, Search, Hourglass, Check, Banknote, ChevronDown, Loader2, XCircle, FileText, Plus } from "lucide-react";
+import { ShoppingBag, Search, Hourglass, Check, Banknote, ChevronDown, Loader2, XCircle, FileText, Plus, Eye, EyeOff, QrCode } from "lucide-react";
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -71,6 +71,8 @@ export default function StaffOrdersPage() {
   const [billPhotoPath, setBillPhotoPath] = useState<string | null>(null);
   const [billPhotoUrl, setBillPhotoUrl] = useState<string | null>(null);
   const [billBusy, setBillBusy] = useState(false);
+  // Prescription image opened in an in-page lightbox (instead of a new tab).
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [page, setPage] = useState(1);
   // On-demand item details, loaded when an order row is expanded.
   const [openId, setOpenId] = useState<number | null>(null);
@@ -131,6 +133,8 @@ export default function StaffOrdersPage() {
           cancelled_by?: string | null;
           sale_mode?: string | null;
           prescription_path?: string | null;
+          qr_visible_to_driver?: number | string | null;
+          paid_via?: string | null;
         };
         const rows = ((res.data.data?.items ?? []) as ApiRow[]).map((r): OrderRow => ({
           id: Number(r.id),
@@ -145,6 +149,8 @@ export default function StaffOrdersPage() {
           cancelled_by: r.cancelled_by ?? null,
           sale_mode: r.sale_mode ?? null,
           prescription_path: r.prescription_path ?? null,
+          qr_visible_to_driver: r.qr_visible_to_driver != null ? Number(r.qr_visible_to_driver) : 1,
+          paid_via: r.paid_via ?? null,
         }));
         setItems(rows);
       } catch (e) {
@@ -216,6 +222,33 @@ export default function StaffOrdersPage() {
       setCancelBusy(false);
     }
   }
+
+  async function toggleQrVisibility(o: OrderRow) {
+    const next = (o.qr_visible_to_driver ?? 1) === 1 ? 0 : 1;
+    setItems((cur) => cur.map((x) => (x.id === o.id ? { ...x, qr_visible_to_driver: next } : x)));
+    try {
+      await api.post(`/orders/${o.id}/qr-visibility`, { visible: next === 1 });
+      toast.success(next === 1 ? "Pickup QR shown to driver" : "Pickup QR hidden from driver");
+    } catch (e) {
+      setItems((cur) => cur.map((x) => (x.id === o.id ? { ...x, qr_visible_to_driver: next === 1 ? 0 : 1 } : x)));
+      toast.error(apiErrorMessage(e));
+    }
+  }
+  // Small per-order toggle that shows/hides the pickup QR for the driver.
+  const qrToggle = (o: OrderRow) => {
+    const on = (o.qr_visible_to_driver ?? 1) === 1;
+    return (
+      <button
+        type="button"
+        onClick={() => void toggleQrVisibility(o)}
+        className={cn("inline-flex items-center gap-1 text-[10px] font-medium", on ? "text-emerald-600" : "text-muted-foreground")}
+        title={on ? "Driver can see the pickup QR — tap to hide" : "Pickup QR hidden from driver — tap to show"}
+      >
+        {on ? <Eye className="h-3 w-3" /> : <EyeOff className="h-3 w-3" />}
+        Driver QR {on ? "on" : "off"}
+      </button>
+    );
+  };
 
   function openBill(o: OrderRow) {
     setBillTarget(o);
@@ -357,6 +390,11 @@ export default function StaffOrdersPage() {
                         <p className="truncate text-sm font-semibold">
                           <span className="md:hidden">Order #{o.id} · </span>
                           {o.customer_name}
+                          {o.paid_via === "qr" && (
+                            <span className="ml-1.5 inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-1.5 py-0.5 align-middle text-[10px] font-semibold text-emerald-600">
+                              <QrCode className="h-3 w-3" /> Paid · QR
+                            </span>
+                          )}
                         </p>
                         <p className="flex items-center gap-1 truncate text-xs text-muted-foreground">
                           {o.product_names || `${o.item_count} items`} · {o.created_at}
@@ -378,13 +416,16 @@ export default function StaffOrdersPage() {
                       {isFinished(o) ? (
                         <span className="text-xs text-muted-foreground">{o.driver_name || "—"}</span>
                       ) : (
-                        <Select value={String(o.driver_id ?? 0)} onValueChange={(v) => void changeDriver(o, v)} items={driverItems}>
-                          <SelectTrigger className="h-8 w-full rounded-lg bg-surface-2/60 text-xs"><SelectValue /></SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="0">Unassigned</SelectItem>
-                            {driverOptionsFor(o).map((d) => <SelectItem key={d.id} value={String(d.id)}>{d.name}{d.busy && d.id !== o.driver_id ? " · busy" : ""}</SelectItem>)}
-                          </SelectContent>
-                        </Select>
+                        <div className="space-y-1">
+                          <Select value={String(o.driver_id ?? 0)} onValueChange={(v) => void changeDriver(o, v)} items={driverItems}>
+                            <SelectTrigger className="h-8 w-full rounded-lg bg-surface-2/60 text-xs"><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="0">Unassigned</SelectItem>
+                              {driverOptionsFor(o).map((d) => <SelectItem key={d.id} value={String(d.id)}>{d.name}{d.busy && d.id !== o.driver_id ? " · busy" : ""}</SelectItem>)}
+                            </SelectContent>
+                          </Select>
+                          {qrToggle(o)}
+                        </div>
                       )}
                     </div>
                     {/* Mobile: amount + status on one line, driver below */}
@@ -410,6 +451,7 @@ export default function StaffOrdersPage() {
                           </SelectContent>
                         </Select>
                       )}
+                      {!isFinished(o) && qrToggle(o)}
                     </div>
                   </div>
                   {o.status === "cancelled" && o.cancel_reason ? (
@@ -533,9 +575,19 @@ export default function StaffOrdersPage() {
           </DialogHeader>
 
           {billTarget?.prescription_path ? (
-            <a href={fileUrl(billTarget.prescription_path) ?? "#"} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 text-xs font-medium text-brand underline">
-              <FileText className="h-3.5 w-3.5" /> View prescription
-            </a>
+            billTarget.prescription_path.toLowerCase().endsWith(".pdf") ? (
+              <a href={fileUrl(billTarget.prescription_path) ?? "#"} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 text-xs font-medium text-brand underline">
+                <FileText className="h-3.5 w-3.5" /> View prescription (PDF)
+              </a>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setPreviewUrl(fileUrl(billTarget!.prescription_path) ?? null)}
+                className="inline-flex items-center gap-1.5 text-xs font-medium text-brand underline"
+              >
+                <FileText className="h-3.5 w-3.5" /> View prescription
+              </button>
+            )
           ) : null}
 
           <div className="space-y-1.5">
@@ -559,6 +611,30 @@ export default function StaffOrdersPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* In-page prescription image preview (lightbox). */}
+      {previewUrl ? (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 p-4"
+          onClick={() => setPreviewUrl(null)}
+        >
+          <button
+            type="button"
+            onClick={() => setPreviewUrl(null)}
+            className="absolute right-4 top-4 inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/10 text-white hover:bg-white/20"
+            aria-label="Close preview"
+          >
+            <XCircle className="h-5 w-5" />
+          </button>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={previewUrl}
+            alt="Prescription"
+            onClick={(e) => e.stopPropagation()}
+            className="max-h-[90vh] max-w-full rounded-xl object-contain"
+          />
+        </div>
+      ) : null}
     </>
   );
 }

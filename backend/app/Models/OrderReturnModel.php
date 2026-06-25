@@ -9,7 +9,7 @@ class OrderReturnModel extends Model
     protected $table         = 'order_returns';
     protected $primaryKey    = 'id';
     protected $returnType    = 'array';
-    protected $allowedFields = ['order_id', 'customer_id', 'reason', 'status'];
+    protected $allowedFields = ['order_id', 'customer_id', 'reason', 'images', 'status'];
 
     protected $useTimestamps = true;
     protected $dateFormat    = 'datetime';

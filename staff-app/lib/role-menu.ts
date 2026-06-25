@@ -57,6 +57,7 @@ export const ROLE_MENU: Record<StaffRole, MenuItem[]> = {
     { href: "/returns",       label: "Returns",     icon: RotateCcw },
     { href: "/my-drivers",    label: "Drivers",     icon: Truck },
     { href: "/qr-scanner",    label: "QR Scanner",  icon: QrCode },
+    { href: "/qr-payments",   label: "QR Payments", icon: Banknote },
     { href: "/customer-purchase", label: "Customer purchase", icon: CreditCard },
     { href: "/tokens",        label: "Tokens",      icon: Coins },
     { href: "/wallet",        label: "Wallet",      icon: Wallet },

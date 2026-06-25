@@ -519,6 +519,135 @@ class OrderController extends BaseApiController
         return $this->ok(['order_id' => $id, 'total' => $grand, 'delivery_fee' => $deliveryFee], 'Bill added');
     }
 
+    /** Vendor: show/hide this order's pickup QR for the assigned driver. */
+    public function setQrVisibility(int $id): ResponseInterface
+    {
+        $auth = $this->authUser();
+        if (! $auth) return $this->fail('Unauthorized', 401);
+        if (($auth->role ?? '') !== 'vendor') return $this->fail('Forbidden', 403);
+        $om    = new OrderModel();
+        $order = $om->find($id);
+        if (! $order) return $this->fail('Not found', 404);
+        if ((int) ($order['vendor_id'] ?? 0) !== (int) $auth->id) return $this->fail('Forbidden', 403);
+        $d       = $this->request->getJSON(true) ?? $this->request->getPost() ?? [];
+        $visible = ! empty($d['visible']) ? 1 : 0;
+        $om->update($id, ['qr_visible_to_driver' => $visible]);
+        return $this->ok(['qr_visible_to_driver' => $visible], $visible ? 'QR shown to driver' : 'QR hidden from driver');
+    }
+
+    /**
+     * Customer: the order payable by scanning a vendor's QR — an unsettled COD
+     * order with that vendor. Drives the "Pay for Order #X" prompt on the scan
+     * page. Returns null (not an error) when there's nothing to pay.
+     */
+    public function qrPayable(): ResponseInterface
+    {
+        $auth = $this->authUser();
+        if (! $auth) return $this->fail('Unauthorized', 401);
+        $mobile = preg_replace('/\D/', '', (string) $this->request->getGet('vendor_mobile'));
+        if (strlen($mobile) !== 10) return $this->ok(['order' => null]);
+        $vendor = (new UserModel())->where('mobile_number', $mobile)->where('role', 'vendor')->first();
+        if (! $vendor) return $this->ok(['order' => null]);
+        $order = (new OrderModel())
+            ->where('customer_id', (int) $auth->id)
+            ->where('vendor_id', (int) $vendor['id'])
+            ->where('payment_method', 'cod')
+            ->where('paid_via', null)
+            ->whereIn('status', ['pending', 'confirmed', 'packed', 'shipped', 'delivered'])
+            ->orderBy('id', 'DESC')->first();
+        if (! $order) return $this->ok(['order' => null]);
+        return $this->ok(['order' => [
+            'id'          => (int) $order['id'],
+            'total'       => (float) $order['total'],
+            'status'      => $order['status'],
+            'vendor_name' => $vendor['name'],
+        ]]);
+    }
+
+    /**
+     * Customer: pay a COD order from the wallet by scanning the vendor's QR at
+     * delivery. Same economics as PurchaseController::fromQr but tied to the
+     * existing order — debit the customer's main wallet, credit the vendor, run
+     * the commission cascade, and mark the order paid (via QR). Number mismatch
+     * and insufficient balance return a clean message the client shows as a toast.
+     */
+    public function qrPay(int $id): ResponseInterface
+    {
+        $auth = $this->authUser();
+        if (! $auth) return $this->fail('Unauthorized', 401);
+        $om    = new OrderModel();
+        $order = $om->find($id);
+        if (! $order) return $this->fail('Order not found', 404);
+        // Number match — only the customer who placed this order can pay it.
+        if ((int) $order['customer_id'] !== (int) $auth->id) {
+            return $this->fail("This QR doesn't match your order", 422);
+        }
+        if (($order['payment_method'] ?? '') !== 'cod' || ! empty($order['paid_via'])
+            || in_array($order['status'] ?? '', ['paid', 'completed', 'cancelled'], true)) {
+            return $this->fail('This order is not awaiting payment', 422);
+        }
+        $vendorId = (int) ($order['vendor_id'] ?? 0);
+        if (! $vendorId) return $this->fail('Order has no shop', 422);
+
+        // Cross-check the scanned vendor mobile against the order's vendor.
+        $body       = $this->request->getJSON(true) ?? $this->request->getPost() ?? [];
+        $scanMobile = preg_replace('/\D/', '', (string) ($body['vendor_mobile'] ?? ''));
+        $v          = (new UserModel())->find($vendorId);
+        if ($scanMobile !== '' && (! $v || preg_replace('/\D/', '', (string) ($v['mobile_number'] ?? '')) !== $scanMobile)) {
+            return $this->fail("This QR doesn't match your order", 422);
+        }
+
+        $amount = (float) $order['total'];
+        $db     = \Config\Database::connect();
+        // Atomic guarded debit on the main wallet — 0 rows = insufficient.
+        $db->query('UPDATE users SET wallet_balance = wallet_balance - ? WHERE id = ? AND wallet_balance >= ?', [$amount, (int) $auth->id, $amount]);
+        if ($db->affectedRows() < 1) return $this->fail('Insufficient wallet balance', 402);
+
+        (new WalletTransactionModel())->insert([
+            'user_id' => (int) $auth->id, 'peer_user_id' => $vendorId, 'amount' => $amount,
+            'type' => 'payment', 'reference' => 'order#' . $id, 'notes' => 'Order QR payment',
+        ]);
+        // Vendor share to qr wallet + the commission pool (same split as fromQr).
+        $poolPct     = CommissionService::poolPctForVendor($vendorId);
+        $sharePct    = rtrim(rtrim(number_format(100 - $poolPct, 2, '.', ''), '0'), '.');
+        $vendorShare = round($amount * (1 - $poolPct / 100), 2);
+        (new WalletService())->credit($vendorId, 'qr', $vendorShare, 'receive', 'order#' . $id, "Sale ({$sharePct}% of QR payment)");
+        (new CommissionService())->distributeForOrder($id, (int) $auth->id, $amount, $vendorId);
+
+        $om->update($id, [
+            'paid_via'     => 'qr',
+            'status'       => 'paid',
+            'delivered_at' => $order['delivered_at'] ?: date('Y-m-d H:i:s'),
+        ]);
+
+        try {
+            $n = new NotificationService();
+            $n->sendTyped((int) $auth->id, 'order_update', $id, '/orders', 'Payment successful', "Order #{$id} — ₹{$amount} paid via QR.");
+            $n->sendTyped($vendorId, 'order_update', $id, '/orders', 'Order paid (QR)', "Order #{$id} — ₹{$amount} received via QR.");
+        } catch (\Throwable $e) { log_message('error', 'qrPay notify failed: ' . $e->getMessage()); }
+
+        return $this->ok(['order_id' => $id, 'amount' => $amount], 'Payment successful');
+    }
+
+    /** Vendor: orders the customer paid by scanning the QR (the QR Payments table). */
+    public function qrPayments(): ResponseInterface
+    {
+        $auth = $this->authUser();
+        if (! $auth) return $this->fail('Unauthorized', 401);
+        if (($auth->role ?? '') !== 'vendor') return $this->fail('Forbidden', 403);
+        $rows = \Config\Database::connect()->query(
+            "SELECT o.id, o.total, o.status, o.updated_at, o.created_at,
+                    cu.name AS customer_name, cu.mobile_number AS customer_mobile,
+                    (SELECT GROUP_CONCAT(NULLIF(oi.name, 'Item') ORDER BY oi.id SEPARATOR ', ') FROM order_items oi WHERE oi.order_id = o.id) AS product_names
+             FROM orders o
+             LEFT JOIN users cu ON cu.id = o.customer_id
+             WHERE o.vendor_id = ? AND o.paid_via = 'qr'
+             ORDER BY o.id DESC LIMIT 300",
+            [(int) $auth->id]
+        )->getResultArray();
+        return $this->ok(['items' => $rows]);
+    }
+
     /**
      * Send the response to the client immediately and keep PHP running so
      * post-response work (notifications, commission cascade) doesn't block
@@ -761,6 +890,7 @@ class OrderController extends BaseApiController
         $rows = $db->query(
             "SELECT o.id, o.customer_id, o.vendor_id, o.driver_id, o.total, o.status, o.notes, o.created_at,
                     o.cancel_reason, o.cancelled_by, o.sale_mode, o.prescription_path,
+                    o.qr_visible_to_driver, o.paid_via,
                     cu.name AS customer_name,
                     ve.name AS vendor_name,
                     vp.shop_name AS shop_name,
@@ -1006,7 +1136,9 @@ class OrderController extends BaseApiController
                 'total'           => (float) $o['total'],
                 'delivery_fee'    => (float) ($o['delivery_fee'] ?? 0),
                 'pickup_address'  => $pickup ?: ($vendorById[$vid]['name'] ?? 'Vendor'),
-                'vendor_mobile'   => $vendorById[$vid]['mobile_number'] ?? '',
+                // Vendor can hide the pickup QR per order; when off, the driver
+                // gets no vendor_mobile so the QR doesn't render.
+                'vendor_mobile'   => ((int) ($o['qr_visible_to_driver'] ?? 1) === 1) ? ($vendorById[$vid]['mobile_number'] ?? '') : '',
                 'drop_address'    => $drop ?: 'Customer',
                 'customer_name'   => $c['name']          ?? '',
                 'customer_mobile' => $c['mobile_number'] ?? '',
@@ -1152,10 +1284,17 @@ class OrderController extends BaseApiController
         $d      = $this->request->getJSON(true) ?? $this->request->getPost() ?? [];
         $reason = trim((string) ($d['reason'] ?? ''));
         if ($reason === '') return $this->fail('A return reason is required', 422);
+        // Optional photos — keep only paths we issued that are still on disk.
+        $images = [];
+        foreach ((is_array($d['images'] ?? null) ? $d['images'] : []) as $p) {
+            $p = trim((string) $p);
+            if ($p !== '' && str_starts_with($p, 'uploads/') && is_file(FCPATH . $p)) $images[] = $p;
+        }
         $rrm->insert([
             'order_id'    => $id,
             'customer_id' => (int) $auth->id,
             'reason'      => mb_substr($reason, 0, 255),
+            'images'      => $images ? json_encode(array_slice($images, 0, 6)) : null,
             'status'      => 'pending',
         ]);
 

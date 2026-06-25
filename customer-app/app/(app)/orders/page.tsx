@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { BadgeCheck, Check, ChevronDown, Loader2, MapPin, RotateCcw, Search, ShoppingBag, Store, XCircle } from "lucide-react";
+import { BadgeCheck, Check, ChevronDown, ImagePlus, Loader2, MapPin, RotateCcw, Search, ShoppingBag, Store, X, XCircle } from "lucide-react";
 import { toast } from "sonner";
 import { AppHeader } from "@/components/layout/app-header";
 import { LuxuryCard } from "@/components/ui/custom/luxury-card";
@@ -162,6 +162,9 @@ export default function OrdersPage() {
   const [returningId, setReturningId] = useState<number | null>(null);
   const [returnOpenId, setReturnOpenId] = useState<number | null>(null);
   const [returnReason, setReturnReason] = useState("");
+  // Photos the customer attaches to a return (shown to the vendor as thumbnails).
+  const [returnImages, setReturnImages] = useState<{ path: string; url: string }[]>([]);
+  const [returnUploading, setReturnUploading] = useState(false);
   const [cancelOpenId, setCancelOpenId] = useState<number | null>(null);
   const [cancelReason, setCancelReason] = useState("");
   const [cancellingId, setCancellingId] = useState<number | null>(null);
@@ -205,14 +208,35 @@ export default function OrdersPage() {
 
   useEffect(() => { void load(); }, []);
 
+  function closeReturn() { setReturnOpenId(null); setReturnReason(""); setReturnImages([]); }
+
+  async function uploadReturnImages(files: FileList) {
+    const room = 6 - returnImages.length;
+    const list = Array.from(files).slice(0, Math.max(0, room));
+    if (!list.length) { if (room <= 0) toast.error("Up to 6 photos"); return; }
+    setReturnUploading(true);
+    try {
+      for (const file of list) {
+        const fd = new FormData();
+        fd.append("file", file);
+        const res = await api.post("/orders/prescription-upload", fd, { headers: { "Content-Type": "multipart/form-data" } });
+        const d = res.data.data as { path: string };
+        setReturnImages((cur) => [...cur, { path: d.path, url: fileUrl(d.path) ?? "" }]);
+      }
+    } catch (e) {
+      toast.error(apiErrorMessage(e));
+    } finally {
+      setReturnUploading(false);
+    }
+  }
+
   async function requestReturn(id: number) {
     if (!returnReason.trim()) { toast.error("Please enter a reason for the return"); return; }
     setReturningId(id);
     try {
-      await api.post(`/orders/${id}/return`, { reason: returnReason.trim() });
-      toast.success("Return requested — our team will reach out.");
-      setReturnOpenId(null);
-      setReturnReason("");
+      await api.post(`/orders/${id}/return`, { reason: returnReason.trim(), images: returnImages.map((i) => i.path) });
+      toast.success("Return requested — the shop will review it.");
+      closeReturn();
       await load();
     } catch (e) {
       toast.error(apiErrorMessage(e));
@@ -403,11 +427,42 @@ export default function OrdersPage() {
                               placeholder="Reason for return (required)"
                               className="w-full rounded-xl border border-border bg-surface-2/60 p-2.5 text-sm outline-none focus:border-brand/50"
                             />
+                            {/* Optional photos (up to 6) — shown to the shop. */}
+                            <div className="flex flex-wrap items-center gap-2">
+                              {returnImages.map((img, idx) => (
+                                <div key={img.path} className="relative h-14 w-14 overflow-hidden rounded-lg border border-border">
+                                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                                  <img src={img.url} alt="Return photo" className="h-full w-full object-cover" />
+                                  <button
+                                    type="button"
+                                    onClick={() => setReturnImages((cur) => cur.filter((_, i) => i !== idx))}
+                                    className="absolute right-0 top-0 flex h-5 w-5 items-center justify-center rounded-bl-lg bg-black/60 text-white"
+                                    aria-label="Remove photo"
+                                  >
+                                    <X className="h-3 w-3" />
+                                  </button>
+                                </div>
+                              ))}
+                              {returnImages.length < 6 && (
+                                <label className="flex h-14 w-14 cursor-pointer flex-col items-center justify-center gap-0.5 rounded-lg border border-dashed border-border text-[9px] text-muted-foreground hover:border-brand/40 hover:text-brand">
+                                  {returnUploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <ImagePlus className="h-4 w-4" />}
+                                  Photo
+                                  <input
+                                    type="file"
+                                    accept="image/*"
+                                    multiple
+                                    className="hidden"
+                                    disabled={returnUploading}
+                                    onChange={(e) => { if (e.target.files?.length) void uploadReturnImages(e.target.files); e.target.value = ""; }}
+                                  />
+                                </label>
+                              )}
+                            </div>
                             <div className="flex items-center justify-end gap-2">
-                              <button type="button" onClick={() => { setReturnOpenId(null); setReturnReason(""); }} className="rounded-full px-3 py-1.5 text-xs font-medium text-muted-foreground hover:bg-surface-2">Cancel</button>
+                              <button type="button" onClick={closeReturn} className="rounded-full px-3 py-1.5 text-xs font-medium text-muted-foreground hover:bg-surface-2">Cancel</button>
                               <button
                                 type="button"
-                                disabled={returningId === o.id || !returnReason.trim()}
+                                disabled={returningId === o.id || !returnReason.trim() || returnUploading}
                                 onClick={() => void requestReturn(o.id)}
                                 className="inline-flex items-center gap-1.5 rounded-full border border-brand/40 px-3 py-1.5 text-xs font-semibold text-brand hover:bg-brand/10 disabled:opacity-50"
                               >
@@ -422,7 +477,7 @@ export default function OrdersPage() {
                             </p>
                             <button
                               type="button"
-                              onClick={() => { setReturnOpenId(o.id); setReturnReason(""); }}
+                              onClick={() => { setReturnOpenId(o.id); setReturnReason(""); setReturnImages([]); }}
                               className="inline-flex items-center gap-1.5 rounded-full border border-brand/40 px-3 py-1.5 text-xs font-semibold text-brand hover:bg-brand/10"
                             >
                               <RotateCcw className="h-3.5 w-3.5" /> Request Return

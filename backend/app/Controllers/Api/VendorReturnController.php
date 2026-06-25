@@ -22,7 +22,7 @@ class VendorReturnController extends BaseApiController
         if ($auth->role !== 'vendor') return $this->fail('Forbidden', 403);
 
         $rows = \Config\Database::connect()->query(
-            "SELECT r.id, r.order_id, r.customer_id, r.reason, r.status, r.created_at,
+            "SELECT r.id, r.order_id, r.customer_id, r.reason, r.images, r.status, r.created_at,
                     o.total, o.status AS order_status, o.delivered_at,
                     cu.name AS customer_name, cu.mobile_number AS customer_mobile
              FROM order_returns r
@@ -32,6 +32,14 @@ class VendorReturnController extends BaseApiController
              LIMIT 300",
             [(int) $auth->id]
         )->getResultArray();
+
+        // Decode the stored image paths into absolute URLs for the thumbnails.
+        foreach ($rows as &$r) {
+            $paths = json_decode((string) ($r['images'] ?? ''), true);
+            $r['image_urls'] = is_array($paths) ? array_map(static fn ($p) => base_url($p), $paths) : [];
+            unset($r['images']);
+        }
+        unset($r);
 
         return $this->ok(['items' => $rows]);
     }

@@ -16,6 +16,7 @@ type Row = {
   order_id: number;
   customer_id: number;
   reason: string | null;
+  image_urls?: string[];
   status: Status;
   created_at: string | null;
   total: number | string | null;
@@ -37,6 +38,7 @@ export default function ReturnsPage() {
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<number | null>(null);
+  const [preview, setPreview] = useState<string | null>(null);
   const [filter, setFilter] = useState<"all" | Status>("all");
   const [search, setSearch] = useState("");
   const [fromDate, setFromDate] = useState("");
@@ -151,8 +153,34 @@ export default function ReturnsPage() {
                     <p className="truncate text-xs text-muted-foreground">
                       {r.customer_name || "—"}{r.customer_mobile ? ` · ${r.customer_mobile}` : ""}{r.shop_name ? ` · ${r.shop_name}` : ""}
                     </p>
+                    {/* Mobile: reason + photos under the customer line. */}
+                    <div className="md:hidden">
+                      {r.reason && <p className="mt-1 text-xs text-muted-foreground">{r.reason}</p>}
+                      {(r.image_urls?.length ?? 0) > 0 && (
+                        <div className="mt-1 flex flex-wrap gap-1">
+                          {r.image_urls!.map((u, i) => (
+                            <button key={i} type="button" onClick={() => setPreview(u)} className="h-9 w-9 overflow-hidden rounded border border-border" aria-label="View return photo">
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img src={u} alt="Return photo" className="h-full w-full object-cover" />
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   </div>
-                  <p className="hidden truncate text-xs text-muted-foreground md:block">{r.reason || "—"}</p>
+                  <div className="hidden min-w-0 md:block">
+                    <p className="truncate text-xs text-muted-foreground">{r.reason || "—"}</p>
+                    {(r.image_urls?.length ?? 0) > 0 && (
+                      <div className="mt-1 flex flex-wrap gap-1">
+                        {r.image_urls!.map((u, i) => (
+                          <button key={i} type="button" onClick={() => setPreview(u)} className="h-9 w-9 overflow-hidden rounded border border-border" aria-label="View return photo">
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img src={u} alt="Return photo" className="h-full w-full object-cover" />
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                   <div className="hidden md:block">
                     <span className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium capitalize ${PILL[r.status]}`}>{r.status}</span>
                   </div>
@@ -176,6 +204,19 @@ export default function ReturnsPage() {
           )}
         </div>
       </section>
+
+      {/* In-app photo preview (no new window). Tap anywhere to close. */}
+      {preview && (
+        <button
+          type="button"
+          onClick={() => setPreview(null)}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm"
+          aria-label="Close preview"
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={preview} alt="Return photo" className="max-h-[85vh] max-w-full rounded-xl border border-border object-contain" />
+        </button>
+      )}
     </>
   );
 }

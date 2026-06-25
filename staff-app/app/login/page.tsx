@@ -33,10 +33,17 @@ export default function LoginPage() {
   const [mobile, setMobile] = useState("");
   const [password, setPassword] = useState("");
 
-  // Forgot-password dialog state
+  // Forgot-password dialog state — mobile OTP (staff sign in by mobile too)
   const [forgotOpen, setForgotOpen] = useState(false);
-  const [forgotEmail, setForgotEmail] = useState("");
-  const [forgotSending, setForgotSending] = useState(false);
+  const [fMobile, setFMobile] = useState("");
+  const [fOtp, setFOtp] = useState("");
+  const [fPassword, setFPassword] = useState("");
+  const [fOtpSent, setFOtpSent] = useState(false);
+  const [fBusy, setFBusy] = useState(false);
+
+  function resetForgot() {
+    setFMobile(""); setFOtp(""); setFPassword(""); setFOtpSent(false);
+  }
 
   const onSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -53,18 +60,35 @@ export default function LoginPage() {
     }
   };
 
-  async function sendForgot() {
-    if (!forgotEmail) return toast.error("Enter your email");
-    setForgotSending(true);
+  async function sendForgotOtp() {
+    if (!isMobile(fMobile)) return toast.error("Enter a valid 10-digit mobile number");
+    setFBusy(true);
     try {
-      const res = await api.post("/auth/forgot-password", { email: forgotEmail.trim() });
-      toast.success(res.data?.message || "If that email exists, a reset link is on its way");
-      setForgotOpen(false);
-      setForgotEmail("");
+      await api.post("/auth/staff/forgot-password-otp", { mobile_number: fMobile.trim() });
+      setFOtpSent(true);
+      toast.success("If a staff account exists, an OTP has been sent");
     } catch (err) {
-      toast.error(apiErrorMessage(err, "Could not send reset email"));
+      toast.error(apiErrorMessage(err, "Could not send OTP"));
     } finally {
-      setForgotSending(false);
+      setFBusy(false);
+    }
+  }
+
+  async function resetWithOtp() {
+    if (!/^[0-9]{6}$/.test(fOtp)) return toast.error("Enter the 6-digit OTP");
+    if (fPassword.length < 6) return toast.error("Password must be at least 6 characters");
+    setFBusy(true);
+    try {
+      await api.post("/auth/staff/reset-password-otp", {
+        mobile_number: fMobile.trim(), otp: fOtp.trim(), password: fPassword,
+      });
+      toast.success("Password reset successful. Please sign in.");
+      setForgotOpen(false);
+      resetForgot();
+    } catch (err) {
+      toast.error(apiErrorMessage(err, "Reset failed"));
+    } finally {
+      setFBusy(false);
     }
   }
 
@@ -148,35 +172,78 @@ export default function LoginPage() {
         </Card>
       </main>
 
-      <Dialog open={forgotOpen} onOpenChange={setForgotOpen}>
+      <Dialog open={forgotOpen} onOpenChange={(o) => { setForgotOpen(o); if (!o) resetForgot(); }}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Reset your password</DialogTitle>
             <DialogDescription>
-              Enter the email on your account. We&apos;ll send a reset link that expires in 1 hour.
+              Enter your registered mobile number. We&apos;ll text a 6-digit OTP to reset your password.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-2">
-            <Label htmlFor="forgot-email">Email</Label>
-            <Input
-              id="forgot-email"
-              type="email"
-              autoComplete="email"
-              placeholder="you@example.com"
-              value={forgotEmail}
-              onChange={(e) => setForgotEmail(e.target.value)}
-              disabled={forgotSending}
-            />
+          <div className="space-y-3">
+            <div className="space-y-2">
+              <Label htmlFor="forgot-mobile">Mobile number</Label>
+              <Input
+                id="forgot-mobile"
+                type="tel"
+                inputMode="numeric"
+                maxLength={10}
+                autoComplete="tel"
+                placeholder="9999999999"
+                value={fMobile}
+                onChange={(e) => setFMobile(cleanMobile(e.target.value))}
+                disabled={fBusy || fOtpSent}
+              />
+            </div>
+            {fOtpSent && (
+              <>
+                <div className="space-y-2">
+                  <Label htmlFor="forgot-otp">OTP</Label>
+                  <Input
+                    id="forgot-otp"
+                    inputMode="numeric"
+                    maxLength={6}
+                    autoComplete="one-time-code"
+                    placeholder="6-digit OTP"
+                    value={fOtp}
+                    onChange={(e) => setFOtp(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                    disabled={fBusy}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="forgot-pass">New password</Label>
+                  <PasswordInput
+                    id="forgot-pass"
+                    type="password"
+                    autoComplete="new-password"
+                    placeholder="Min 6 characters"
+                    value={fPassword}
+                    onChange={(e) => setFPassword(e.target.value)}
+                    disabled={fBusy}
+                  />
+                </div>
+              </>
+            )}
           </div>
           <DialogFooter>
-            <Button variant="ghost" onClick={() => setForgotOpen(false)} disabled={forgotSending}>Cancel</Button>
-            <Button
-              onClick={() => void sendForgot()}
-              disabled={forgotSending}
-              className="bg-brand text-brand-foreground hover:bg-brand/90"
-            >
-              {forgotSending ? "Sending..." : "Send reset link"}
-            </Button>
+            <Button variant="ghost" onClick={() => setForgotOpen(false)} disabled={fBusy}>Cancel</Button>
+            {!fOtpSent ? (
+              <Button
+                onClick={() => void sendForgotOtp()}
+                disabled={fBusy}
+                className="bg-brand text-brand-foreground hover:bg-brand/90"
+              >
+                {fBusy ? "Sending..." : "Send OTP"}
+              </Button>
+            ) : (
+              <Button
+                onClick={() => void resetWithOtp()}
+                disabled={fBusy}
+                className="bg-brand text-brand-foreground hover:bg-brand/90"
+              >
+                {fBusy ? "Resetting..." : "Reset password"}
+              </Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>

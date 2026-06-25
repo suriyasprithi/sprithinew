@@ -30,6 +30,9 @@ $routes->group('api/v1', ['filter' => 'cors'], static function ($routes) {
         $routes->post('reset-password',  'Api\AuthController::resetPassword',  ['filter' => 'rate_limit:reset,20,3600']);
         $routes->post('forgot-password-otp', 'Api\AuthController::sendResetOtp',     ['filter' => 'rate_limit:otp,30,3600,mobile_number,5,3600']);
         $routes->post('reset-password-otp',  'Api\AuthController::resetPasswordOtp', ['filter' => 'rate_limit:reset,20,3600']);
+        // Staff/admin password reset by mobile OTP (they sign in by mobile too).
+        $routes->post('staff/forgot-password-otp', 'Api\AuthController::sendStaffResetOtp',     ['filter' => 'rate_limit:otp,30,3600,mobile_number,5,3600']);
+        $routes->post('staff/reset-password-otp',  'Api\AuthController::resetStaffPasswordOtp', ['filter' => 'rate_limit:reset,20,3600']);
         $routes->post('refresh',         'Api\AuthController::refresh');
     });
     $routes->group('auth', ['filter' => 'auth'], static function ($routes) {
@@ -121,6 +124,10 @@ $routes->group('api/v1', ['filter' => 'cors'], static function ($routes) {
         $routes->post('place-prescription', 'Api\OrderController::placePrescription');   // customer: Rx-only order
         $routes->post('(:num)/bill',   'Api\OrderController::bill/$1');                    // vendor: add items/price to an Rx order
         $routes->post('prescription-upload', 'Api\OrderController::uploadPrescription');
+        $routes->get('qr-payable',     'Api\OrderController::qrPayable');                  // customer: order payable by scanning a vendor QR
+        $routes->get('qr-payments',    'Api\OrderController::qrPayments');                 // vendor: QR-paid orders table
+        $routes->post('(:num)/qr-pay', 'Api\OrderController::qrPay/$1');                   // customer: pay a COD order via QR (wallet)
+        $routes->post('(:num)/qr-visibility', 'Api\OrderController::setQrVisibility/$1');  // vendor: show/hide pickup QR for driver
         $routes->get('mine',           'Api\OrderController::mine');
         $routes->get('list',           'Api\OrderController::listForRole');
         $routes->get('(:num)',         'Api\OrderController::show/$1');

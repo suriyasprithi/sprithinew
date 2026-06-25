@@ -154,6 +154,69 @@ class AuthController extends BaseApiController
         return $this->ok(null, 'Password reset successful. Please sign in.');
     }
 
+    /**
+     * Staff/admin password reset — step 1: SMS a 6-digit OTP to a staff member's
+     * registered mobile (they sign in by mobile, same as customers). Generic
+     * response so the endpoint can't probe which mobiles are staff. Uses the
+     * 'rpotps' cache namespace (distinct from customer 'rpotp' / signup 'otp').
+     */
+    public function sendStaffResetOtp(): ResponseInterface
+    {
+        $body   = $this->request->getJSON(true) ?? $this->request->getPost();
+        $mobile = trim((string) ($body['mobile_number'] ?? ''));
+        if (! preg_match('/^[0-9]{10}$/', $mobile)) {
+            return $this->fail('Enter a valid 10-digit mobile number', 422);
+        }
+
+        $cache = service('cache');
+        if ($cache->get("rpotps_cd_{$mobile}")) {
+            return $this->fail('Please wait a moment before requesting another OTP', 429);
+        }
+
+        // Only send when EXACTLY ONE active staff account uses this mobile. A
+        // mobile shared across staff roles is left for an admin manual reset.
+        $matches = (new UserModel())->findActiveStaffByMobile($mobile);
+        if (count($matches) === 1) {
+            $otp  = (string) random_int(100000, 999999);
+            // Same approved DLT template as registration — fixed text must match.
+            $text = "Your login OTP for Loyal Wings ERP is {$otp} - Sprithi Digital Mart";
+            if ((new SmsAlertService())->send($mobile, $text)) {
+                $cache->save("rpotps_{$mobile}", ['otp' => $otp, 'tries' => 0], self::OTP_TTL);
+                $cache->save("rpotps_cd_{$mobile}", 1, self::OTP_COOLDOWN);
+            }
+        }
+
+        return $this->ok(['sent' => true], 'If a staff account exists, an OTP has been sent');
+    }
+
+    /**
+     * Staff/admin password reset — step 2: verify the SMS OTP and set the new
+     * password (uses the 'rpotps' OTP namespace).
+     */
+    public function resetStaffPasswordOtp(): ResponseInterface
+    {
+        if (! $this->validate([
+            'mobile_number' => 'required|regex_match[/^[0-9]{10}$/]',
+            'otp'           => 'required|regex_match[/^[0-9]{6}$/]',
+            'password'      => 'required|string|min_length[6]|max_length[64]',
+        ])) {
+            return $this->fail('Validation failed', 422, $this->validator->getErrors());
+        }
+
+        $d      = $this->request->getJSON(true) ?? $this->request->getPost();
+        $mobile = trim((string) $d['mobile_number']);
+        if (! $this->consumeOtp($mobile, (string) $d['otp'], 'rpotps')) {
+            return $this->fail('Invalid or expired OTP. Please resend.', 422);
+        }
+
+        $users   = new UserModel();
+        $matches = $users->findActiveStaffByMobile($mobile);
+        if (count($matches) !== 1) return $this->fail('Account not found', 404);
+        $users->update($matches[0]['id'], ['password_hash' => password_hash($d['password'], PASSWORD_BCRYPT)]);
+
+        return $this->ok(null, 'Password reset successful. Please sign in.');
+    }
+
     public function register(): ResponseInterface
     {
         $rules = [

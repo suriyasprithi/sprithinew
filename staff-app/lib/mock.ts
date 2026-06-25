@@ -136,6 +136,7 @@ export type VendorOrder = {
   total: number; created_at: string; item_count: number; product_names?: string | null;
   cancel_reason?: string | null; cancelled_by?: string | null;
   sale_mode?: string | null; prescription_path?: string | null;
+  qr_visible_to_driver?: number | null; paid_via?: string | null;
 };
 const vendorOrders: VendorOrder[] = [
   { id: 1062, customer_name: "Asha M.",     status: "paid",      total: 1149, created_at: "2026-05-13 09:14", item_count: 2 },

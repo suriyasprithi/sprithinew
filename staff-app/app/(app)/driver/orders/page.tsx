@@ -168,29 +168,27 @@ export default function DriverOrdersPage() {
             </span>
           </div>
 
+          {/* Vendor pickup QR — stays visible until the order is delivered, so a
+              vendor advancing the status (paid → shipped) doesn't hide it before
+              the driver reaches the shop to collect. */}
+          {o.status !== "delivered" && o.vendor_mobile && (
+            <div className="flex flex-col items-center gap-1.5 rounded-lg border border-border/60 bg-muted/30 p-3">
+              <p className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                <QrCode className="h-3.5 w-3.5" /> Vendor QR
+              </p>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={`https://api.qrserver.com/v1/create-qr-code/?size=220x220&qzone=2&data=${encodeURIComponent(o.vendor_mobile)}`}
+                alt="Vendor QR"
+                className="h-40 w-40 rounded bg-white p-1"
+                referrerPolicy="no-referrer"
+              />
+            </div>
+          )}
           {o.status === "shipped" && (
             <Button size="sm" className="w-full" disabled={actingId === o.id} onClick={() => setConfirmId(o.id)}>
               {actingId === o.id ? "Saving…" : "Mark delivered"}
             </Button>
-          )}
-          {o.status === "paid" && (
-            o.vendor_mobile ? (
-              <div className="flex flex-col items-center gap-1.5 rounded-lg border border-border/60 bg-muted/30 p-3">
-                <p className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-                  <QrCode className="h-3.5 w-3.5" /> Vendor QR — pickup
-                </p>
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={`https://api.qrserver.com/v1/create-qr-code/?size=220x220&qzone=2&data=${encodeURIComponent(o.vendor_mobile)}`}
-                  alt="Vendor QR"
-                  className="h-40 w-40 rounded bg-white p-1"
-                  referrerPolicy="no-referrer"
-                />
-                <p className="text-[11px] text-muted-foreground">Waiting for vendor to ship.</p>
-              </div>
-            ) : (
-              <p className="text-xs text-muted-foreground">Waiting for vendor to ship.</p>
-            )
           )}
         </CardContent></Card>
       ))}

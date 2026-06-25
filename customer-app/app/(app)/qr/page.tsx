@@ -24,6 +24,9 @@ export default function QrPurchasePage() {
   const [vendorMobile, setVendorMobile] = useState("");
   const [amount, setAmount] = useState("");
   const [busy, setBusy] = useState(false);
+  // An unpaid order with the scanned vendor — pay it directly (wallet) instead
+  // of entering an amount. Resolved whenever the vendor mobile is a valid number.
+  const [payableOrder, setPayableOrder] = useState<{ id: number; total: number; vendor_name?: string } | null>(null);
   const [scannerOpen, setScannerOpen] = useState(false);
   const [scannerError, setScannerError] = useState<string | null>(null);
 
@@ -41,6 +44,35 @@ export default function QrPurchasePage() {
     }
   };
   useEffect(() => () => stopCamera(), []);
+
+  // When the vendor mobile is a full 10-digit number (scanned or typed), look up
+  // an unpaid order with that shop so we can offer to pay it directly.
+  useEffect(() => {
+    if (!isMobile(vendorMobile)) { setPayableOrder(null); return; }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await api.get(`/orders/qr-payable?vendor_mobile=${vendorMobile}`);
+        if (!cancelled) setPayableOrder((res.data.data?.order as { id: number; total: number; vendor_name?: string } | null) ?? null);
+      } catch { if (!cancelled) setPayableOrder(null); }
+    })();
+    return () => { cancelled = true; };
+  }, [vendorMobile]);
+
+  async function payOrder() {
+    if (!payableOrder) return;
+    setBusy(true);
+    try {
+      await api.post(`/orders/${payableOrder.id}/qr-pay`, { vendor_mobile: vendorMobile });
+      toast.success(`Paid ₹${payableOrder.total} for Order #${payableOrder.id}`);
+      router.push("/orders");
+    } catch (e) {
+      // Insufficient balance / number mismatch surface as a friendly toast.
+      toast.error(apiErrorMessage(e));
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function openScanner() {
     setScannerError(null);
@@ -158,6 +190,23 @@ export default function QrPurchasePage() {
         {scannerError && (
           <LuxuryCard hoverLift={false} className="border-amber-500/40 bg-amber-500/5 p-3 text-xs text-amber-700">
             {scannerError}
+          </LuxuryCard>
+        )}
+
+        {/* An unpaid order with the scanned shop — pay it directly from wallet. */}
+        {payableOrder && (
+          <LuxuryCard hoverLift={false} className="space-y-3 border-brand/30 bg-brand/5 p-5">
+            <div className="flex items-center justify-between gap-2">
+              <div className="min-w-0">
+                <p className="text-xs uppercase tracking-wider text-muted-foreground">Order payment</p>
+                <p className="truncate text-sm font-semibold">Order #{payableOrder.id}{payableOrder.vendor_name ? ` · ${payableOrder.vendor_name}` : ""}</p>
+              </div>
+              <p className="shrink-0 text-lg font-bold text-brand">₹{payableOrder.total}</p>
+            </div>
+            <GradientButton size="lg" className="w-full" disabled={busy} onClick={() => void payOrder()}>
+              {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : `Pay ₹${payableOrder.total} from wallet`}
+            </GradientButton>
+            <p className="text-[11px] text-muted-foreground">Pays this order from your wallet and confirms it with the shop.</p>
           </LuxuryCard>
         )}
 

@@ -81,6 +81,9 @@ ALTER TABLE `order_items` MODIFY COLUMN `product_id` bigint(20) unsigned NULL;
 ALTER TABLE `orders` ADD COLUMN IF NOT EXISTS `sale_mode` varchar(20) DEFAULT NULL AFTER `delivery_at`;
 ALTER TABLE `orders` ADD COLUMN IF NOT EXISTS `order_group` varchar(40) DEFAULT NULL AFTER `id`;
 ALTER TABLE `orders` ADD COLUMN IF NOT EXISTS `bill_path` varchar(255) DEFAULT NULL AFTER `prescription_path`;
+ALTER TABLE `orders` ADD COLUMN IF NOT EXISTS `qr_visible_to_driver` tinyint(1) DEFAULT 1 AFTER `driver_id`;
+ALTER TABLE `orders` ADD COLUMN IF NOT EXISTS `paid_via` varchar(20) DEFAULT NULL AFTER `payment_method`;
+ALTER TABLE `order_returns` ADD COLUMN IF NOT EXISTS `images` text DEFAULT NULL AFTER `reason`;
 ALTER TABLE `orders` ADD COLUMN IF NOT EXISTS `cancel_reason` text DEFAULT NULL AFTER `sale_mode`;
 ALTER TABLE `orders` ADD COLUMN IF NOT EXISTS `cancelled_by` varchar(20) DEFAULT NULL AFTER `cancel_reason`;
 -- [NEW TABLE] otp_codes
