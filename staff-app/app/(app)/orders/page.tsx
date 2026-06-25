@@ -63,6 +63,8 @@ export default function StaffOrdersPage() {
   const [cancelTarget, setCancelTarget] = useState<OrderRow | null>(null);
   const [cancelReason, setCancelReason] = useState("");
   const [cancelBusy, setCancelBusy] = useState(false);
+  const [cancelErr, setCancelErr] = useState(false);   // inline "reason required" on submit
+  const [billErr, setBillErr] = useState(false);       // inline "total required" on submit
   // Prescription order "purchase bill": vendor enters the medicine total + an
   // optional photo of the pharmacy bill. The category delivery charge is added
   // server-side from the shop's vendor category.
@@ -195,7 +197,7 @@ export default function StaffOrdersPage() {
     if (!next || next === o.status) return;
     // Cancelling needs a reason the customer will see — capture it via a dialog
     // and hit the dedicated /cancel endpoint (restocks + notifies the customer).
-    if (next === "cancelled") { setCancelTarget(o); setCancelReason(""); return; }
+    if (next === "cancelled") { setCancelTarget(o); setCancelReason(""); setCancelErr(false); return; }
     try {
       await api.patch(`/orders/${o.id}/status`, { status: next });
       setItems((cur) => cur.map((x) => (x.id === o.id ? { ...x, status: next as VendorOrder["status"] } : x)));
@@ -207,7 +209,7 @@ export default function StaffOrdersPage() {
 
   async function submitVendorCancel() {
     if (!cancelTarget) return;
-    if (!cancelReason.trim()) { toast.error("Please enter a reason for cancelling"); return; }
+    if (!cancelReason.trim()) { setCancelErr(true); return; }
     const o = cancelTarget;
     setCancelBusy(true);
     try {
@@ -255,13 +257,14 @@ export default function StaffOrdersPage() {
     setBillAmount("");
     setBillPhotoPath(null);
     setBillPhotoUrl(null);
+    setBillErr(false);
   }
-  function closeBill() { setBillTarget(null); setBillAmount(""); setBillPhotoPath(null); setBillPhotoUrl(null); }
+  function closeBill() { setBillTarget(null); setBillAmount(""); setBillPhotoPath(null); setBillPhotoUrl(null); setBillErr(false); }
 
   async function submitBill() {
     if (!billTarget) return;
     const amount = Number(billAmount);
-    if (!amount || amount <= 0) { toast.error("Enter the medicine bill total"); return; }
+    if (!amount || amount <= 0) { setBillErr(true); return; }
     const o = billTarget;
     setBillBusy(true);
     try {
@@ -552,14 +555,15 @@ export default function StaffOrdersPage() {
           </DialogHeader>
           <textarea
             value={cancelReason}
-            onChange={(e) => setCancelReason(e.target.value)}
+            onChange={(e) => { setCancelReason(e.target.value); if (e.target.value.trim()) setCancelErr(false); }}
             rows={3}
             placeholder="Reason for cancelling (e.g. out of stock)"
-            className="w-full rounded-xl border border-input bg-surface-2/60 p-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+            className={cn("w-full rounded-xl border bg-surface-2/60 p-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/50", cancelErr ? "border-rose-500" : "border-input")}
           />
+          {cancelErr && <p className="text-xs font-medium text-rose-500">Please enter a reason for cancelling.</p>}
           <DialogFooter>
-            <Button variant="ghost" onClick={() => { setCancelTarget(null); setCancelReason(""); }} disabled={cancelBusy}>Keep order</Button>
-            <Button variant="destructive" onClick={() => void submitVendorCancel()} disabled={cancelBusy || !cancelReason.trim()}>
+            <Button variant="ghost" onClick={() => { setCancelTarget(null); setCancelReason(""); setCancelErr(false); }} disabled={cancelBusy}>Keep order</Button>
+            <Button variant="destructive" onClick={() => void submitVendorCancel()} disabled={cancelBusy}>
               {cancelBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <XCircle className="h-4 w-4" />} Cancel order
             </Button>
           </DialogFooter>
@@ -594,18 +598,19 @@ export default function StaffOrdersPage() {
             <label className="text-[10px] uppercase tracking-wider text-muted-foreground">Medicine total (₹)</label>
             <input
               value={billAmount}
-              onChange={(e) => setBillAmount(e.target.value.replace(/[^0-9.]/g, ""))}
+              onChange={(e) => { setBillAmount(e.target.value.replace(/[^0-9.]/g, "")); if (Number(e.target.value) > 0) setBillErr(false); }}
               inputMode="decimal"
               placeholder="0.00"
-              className="h-10 w-full rounded-lg border border-input bg-surface-2/60 px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+              className={cn("h-10 w-full rounded-lg border bg-surface-2/60 px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/50", billErr ? "border-rose-500" : "border-input")}
             />
+            {billErr && <p className="text-xs font-medium text-rose-500">Enter the medicine bill total.</p>}
           </div>
 
           <ImageUpload label="Bill photo (optional)" url={billPhotoUrl} onChange={(p, u) => { setBillPhotoPath(p); setBillPhotoUrl(u); }} disabled={billBusy} />
 
           <DialogFooter>
             <Button variant="ghost" onClick={closeBill} disabled={billBusy}>Cancel</Button>
-            <Button onClick={() => void submitBill()} disabled={billBusy || !(Number(billAmount) > 0)}>
+            <Button onClick={() => void submitBill()} disabled={billBusy}>
               {billBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} Confirm bill
             </Button>
           </DialogFooter>

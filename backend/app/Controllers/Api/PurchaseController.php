@@ -69,9 +69,14 @@ class PurchaseController extends BaseApiController
         // 9-way commission pool distribution (L1/L2/L3 + buyback x4 + global + admin)
         (new CommissionService())->distributeForOrder((int) $orderId, (int) $auth->id, $amount, (int) $vendor['id']);
 
-        $svc = new NotificationService();
-        $svc->sendToUser((int) $auth->id,        'Purchase complete', "₹{$amount} paid to {$vendor['name']}");
-        $svc->sendToUser((int) $vendor['id'],    'New sale',         "₹{$amount} from {$buyer['name']}");
+        // A push failure must NEVER fail the request — the money already moved.
+        try {
+            $svc = new NotificationService();
+            $svc->sendToUser((int) $auth->id,     'Purchase complete', "₹{$amount} paid to {$vendor['name']}");
+            $svc->sendToUser((int) $vendor['id'], 'New sale',          "₹{$amount} from {$buyer['name']}");
+        } catch (\Throwable $e) {
+            log_message('error', 'QR purchase push failed: ' . $e->getMessage());
+        }
 
         return $this->ok(['order_id' => (int) $orderId], 'Purchase complete');
     }
@@ -186,16 +191,25 @@ class PurchaseController extends BaseApiController
 
         (new CommissionService())->distributeForOrder((int) $orderId, (int) $customer['id'], $amount, (int) $auth->id);
 
-        $svc = new NotificationService();
-        if ($saleMode === 'online') {
-            $svc->sendToUser((int) $customer['id'], 'Order marked paid', "Your order #{$linkOrderId} at {$vendor['name']} was marked paid.");
-            $svc->sendToUser((int) $auth->id,       'Online sale recorded', "Order #{$linkOrderId} — {$poolLabel}% commission (₹{$poolAmt}) charged.");
-            return $this->ok(['order_id' => (int) $orderId, 'linked_order_id' => $linkOrderId], 'Order marked paid');
+        // A push failure must NEVER fail the request — the money already moved.
+        try {
+            $svc = new NotificationService();
+            if ($saleMode === 'online') {
+                $svc->sendToUser((int) $customer['id'], 'Order marked paid', "Your order #{$linkOrderId} at {$vendor['name']} was marked paid.");
+                $svc->sendToUser((int) $auth->id,       'Online sale recorded', "Order #{$linkOrderId} — {$poolLabel}% commission (₹{$poolAmt}) charged.");
+            } else {
+                $svc->sendToUser((int) $customer['id'], 'Purchase recorded', "Your ₹{$amount} purchase at {$vendor['name']} was recorded.");
+                $svc->sendToUser((int) $auth->id,       'New sale',          "₹{$amount} from {$customer['name']}");
+            }
+        } catch (\Throwable $e) {
+            log_message('error', 'Customer-purchase push failed: ' . $e->getMessage());
         }
-        $svc->sendToUser((int) $customer['id'], 'Purchase recorded', "Your ₹{$amount} purchase at {$vendor['name']} was recorded.");
-        $svc->sendToUser((int) $auth->id,       'New sale',          "₹{$amount} from {$customer['name']}");
-
-        return $this->ok(['order_id' => (int) $orderId], 'Purchase recorded');
+        return $this->ok(
+            $saleMode === 'online'
+                ? ['order_id' => (int) $orderId, 'linked_order_id' => $linkOrderId]
+                : ['order_id' => (int) $orderId],
+            $saleMode === 'online' ? 'Order marked paid' : 'Purchase recorded'
+        );
     }
 
     /**

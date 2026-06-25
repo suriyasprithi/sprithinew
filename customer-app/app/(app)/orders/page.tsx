@@ -165,6 +165,7 @@ export default function OrdersPage() {
   // Photos the customer attaches to a return (shown to the vendor as thumbnails).
   const [returnImages, setReturnImages] = useState<{ path: string; url: string }[]>([]);
   const [returnUploading, setReturnUploading] = useState(false);
+  const [returnErr, setReturnErr] = useState(false);   // inline "reason required" on submit
   const [cancelOpenId, setCancelOpenId] = useState<number | null>(null);
   const [cancelReason, setCancelReason] = useState("");
   const [cancellingId, setCancellingId] = useState<number | null>(null);
@@ -208,7 +209,7 @@ export default function OrdersPage() {
 
   useEffect(() => { void load(); }, []);
 
-  function closeReturn() { setReturnOpenId(null); setReturnReason(""); setReturnImages([]); }
+  function closeReturn() { setReturnOpenId(null); setReturnReason(""); setReturnImages([]); setReturnErr(false); }
 
   async function uploadReturnImages(files: FileList) {
     const room = 6 - returnImages.length;
@@ -231,7 +232,7 @@ export default function OrdersPage() {
   }
 
   async function requestReturn(id: number) {
-    if (!returnReason.trim()) { toast.error("Please enter a reason for the return"); return; }
+    if (!returnReason.trim()) { setReturnErr(true); return; }
     setReturningId(id);
     try {
       await api.post(`/orders/${id}/return`, { reason: returnReason.trim(), images: returnImages.map((i) => i.path) });
@@ -422,11 +423,12 @@ export default function OrdersPage() {
                           <div className="space-y-2">
                             <textarea
                               value={returnReason}
-                              onChange={(e) => setReturnReason(e.target.value)}
+                              onChange={(e) => { setReturnReason(e.target.value); if (e.target.value.trim()) setReturnErr(false); }}
                               rows={2}
                               placeholder="Reason for return (required)"
-                              className="w-full rounded-xl border border-border bg-surface-2/60 p-2.5 text-sm outline-none focus:border-brand/50"
+                              className={cn("w-full rounded-xl border bg-surface-2/60 p-2.5 text-sm outline-none focus:border-brand/50", returnErr ? "border-rose-500" : "border-border")}
                             />
+                            {returnErr && <p className="text-xs font-medium text-rose-500">Please enter a reason for the return.</p>}
                             {/* Optional photos (up to 6) — shown to the shop. */}
                             <div className="flex flex-wrap items-center gap-2">
                               {returnImages.map((img, idx) => (
@@ -462,7 +464,7 @@ export default function OrdersPage() {
                               <button type="button" onClick={closeReturn} className="rounded-full px-3 py-1.5 text-xs font-medium text-muted-foreground hover:bg-surface-2">Cancel</button>
                               <button
                                 type="button"
-                                disabled={returningId === o.id || !returnReason.trim() || returnUploading}
+                                disabled={returningId === o.id || returnUploading}
                                 onClick={() => void requestReturn(o.id)}
                                 className="inline-flex items-center gap-1.5 rounded-full border border-brand/40 px-3 py-1.5 text-xs font-semibold text-brand hover:bg-brand/10 disabled:opacity-50"
                               >
@@ -477,7 +479,7 @@ export default function OrdersPage() {
                             </p>
                             <button
                               type="button"
-                              onClick={() => { setReturnOpenId(o.id); setReturnReason(""); setReturnImages([]); }}
+                              onClick={() => { setReturnOpenId(o.id); setReturnReason(""); setReturnImages([]); setReturnErr(false); }}
                               className="inline-flex items-center gap-1.5 rounded-full border border-brand/40 px-3 py-1.5 text-xs font-semibold text-brand hover:bg-brand/10"
                             >
                               <RotateCcw className="h-3.5 w-3.5" /> Request Return
