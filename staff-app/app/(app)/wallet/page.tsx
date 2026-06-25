@@ -10,6 +10,7 @@ import { AnimatedCounter } from "@/components/ui/custom/animated-counter";
 import { EmptyState } from "@/components/data-table/empty-state";
 import { MobileHeader } from "@/components/layout/mobile-nav";
 import { PageHeader } from "@/components/layout/page-header";
+import { QrTransferButton } from "@/components/qr-transfer-button";
 import { useAuth } from "@/stores/auth";
 import { api, apiErrorMessage } from "@/lib/api";
 
@@ -53,8 +54,8 @@ export default function StaffWalletPage() {
   const [pool, setPool] = useState<PoolPayload | null>(null);
   const [loadingPool, setLoadingPool] = useState(false);
 
-  // Vendor QR wallet balance. Per-purchase transfers to the main wallet happen
-  // on the QR Scanner page (one Transfer button per sale).
+  // Vendor QR wallet balance. One Transfer button moves the whole QR wallet to
+  // the main wallet (no more per-purchase transfers).
   const qrBalance = user?.qr_wallet ?? 0;
 
   // Refresh balances from /auth/me on mount — the auth store can be stale after
@@ -154,7 +155,7 @@ export default function StaffWalletPage() {
                   </span>
                   <div>
                     <p className="text-[15px] font-bold">QR wallet</p>
-                    <p className="text-xs text-muted-foreground">In-store QR sales land here. Move each sale to your main wallet from the <span className="font-medium text-foreground">QR Scanner</span> page (one Transfer button per purchase).</p>
+                    <p className="text-xs text-muted-foreground">In-store QR sales land here. Tap <span className="font-medium text-foreground">Transfer</span> to move the whole balance to your main wallet to spend or withdraw.</p>
                   </div>
                 </div>
                 <div className="text-right">
@@ -162,6 +163,9 @@ export default function StaffWalletPage() {
                     <AnimatedCounter value={qrBalance} format={fmtINR} />
                   </p>
                 </div>
+              </div>
+              <div className="flex justify-end">
+                <QrTransferButton balance={qrBalance} />
               </div>
             </LuxuryCard>
           </motion.div>

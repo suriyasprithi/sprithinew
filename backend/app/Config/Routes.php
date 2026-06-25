@@ -95,6 +95,8 @@ $routes->group('api/v1', ['filter' => 'cors'], static function ($routes) {
     $routes->get('purchase/mine', 'Api\PurchaseController::mine', ['filter' => 'auth']);
     // Vendor: move one QR purchase's share from the QR wallet to the main wallet.
     $routes->post('purchase/(:num)/transfer', 'Api\PurchaseController::transferOne/$1', ['filter' => 'auth']);
+    // Vendor: move the WHOLE QR wallet to the main wallet in one transfer.
+    $routes->post('purchase/transfer-all', 'Api\PurchaseController::transferAllQr', ['filter' => 'auth']);
 
     $routes->group('vendor/products', ['filter' => 'auth'], static function ($routes) {
         $routes->post('(:num)/variants',                 'Api\ProductVariantController::createVariant/$1');

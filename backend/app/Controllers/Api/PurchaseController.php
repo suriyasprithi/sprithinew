@@ -354,4 +354,66 @@ class PurchaseController extends BaseApiController
             'wallet_balance' => $bal['wallet'] ?? 0,
         ], 'Moved to main wallet');
     }
+
+    /**
+     * Vendor: move the ENTIRE QR wallet to the main wallet in one go. The QR
+     * wallet is the source of truth — it already holds the post-commission share
+     * of every QR sale (customer-scanned in-store AND order QR payments), so we
+     * move the actual balance rather than re-deriving it from rows (avoids drift
+     * if the commission % changed since a sale). Replaces the per-row button.
+     */
+    public function transferAllQr(): ResponseInterface
+    {
+        $auth = $this->authUser();
+        if (! $auth) return $this->fail('Unauthorized', 401);
+        if ($auth->role !== 'vendor') return $this->fail('Forbidden', 403);
+
+        $vid = (int) $auth->id;
+        $db  = \Config\Database::connect();
+
+        $u = $db->query("SELECT qr_wallet FROM users WHERE id = ?", [$vid])->getRowArray();
+        $amount = round((float) ($u['qr_wallet'] ?? 0), 2);
+        if ($amount <= 0) return $this->fail('Nothing to transfer', 422);
+
+        $db->transBegin();
+
+        // Atomic guarded move, all-or-nothing. The >= guard means a balance that
+        // shrank under us (a concurrent transfer) bails instead of overdrawing —
+        // no commission is taken here, money only moves QR wallet -> main wallet.
+        $db->query(
+            "UPDATE users SET qr_wallet = qr_wallet - ?, wallet_balance = wallet_balance + ?
+             WHERE id = ? AND qr_wallet >= ?",
+            [$amount, $amount, $vid, $amount]
+        );
+        if ($db->affectedRows() < 1) {
+            $db->transRollback();
+            return $this->fail('QR wallet balance changed, please try again', 409);
+        }
+
+        // Flag the QR sales as moved so the history shows "Transferred".
+        $db->query(
+            "UPDATE orders SET qr_transferred_at = ?
+             WHERE vendor_id = ? AND qr_transferred_at IS NULL
+                   AND (notes = 'In-store purchase via QR' OR paid_via = 'qr')",
+            [date('Y-m-d H:i:s'), $vid]
+        );
+
+        // Ledger rows mirror WalletService::transfer so history reads consistently.
+        $wt = new WalletTransactionModel();
+        $wt->insert(['user_id' => $vid, 'amount' => $amount, 'type' => 'debit',  'wallet' => 'qr',     'reference' => 'transfer:qr->wallet', 'notes' => 'QR wallet -> main (bulk) [-qr]']);
+        $wt->insert(['user_id' => $vid, 'amount' => $amount, 'type' => 'credit', 'wallet' => 'wallet', 'reference' => 'transfer:qr->wallet', 'notes' => 'QR wallet -> main (bulk) [+wallet]']);
+
+        if ($db->transStatus() === false) {
+            $db->transRollback();
+            return $this->fail('Could not transfer, please try again', 500);
+        }
+        $db->transCommit();
+
+        $bal = (new WalletService())->balances($vid);
+        return $this->ok([
+            'transferred'    => $amount,
+            'qr_balance'     => $bal['qr']     ?? 0,
+            'wallet_balance' => $bal['wallet'] ?? 0,
+        ], 'Moved to main wallet');
+    }
 }

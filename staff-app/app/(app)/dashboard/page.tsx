@@ -16,6 +16,7 @@ import { QuickActions, type QuickAction } from "@/components/dashboard/quick-act
 import { RecentOrders } from "@/components/dashboard/recent-orders";
 import { LatestVendors } from "@/components/dashboard/latest-vendors";
 import { MobileHeader } from "@/components/layout/mobile-nav";
+import { QrTransferButton } from "@/components/qr-transfer-button";
 import { useAuth } from "@/stores/auth";
 import { ROLE_LABEL } from "@/lib/role-menu";
 import { mock, type StaffStats, type ChartPoint, type ActivityRow } from "@/lib/mock";
@@ -419,6 +420,28 @@ export default function StaffDashboardPage() {
                 />
               ))}
             </div>
+
+            {/* Vendor: move the whole QR wallet to the main wallet in one tap. */}
+            {user?.role === "vendor" && (stats.qr_wallet ?? 0) > 0 && (
+              <div className="luxe-card flex flex-wrap items-center justify-between gap-3 p-5">
+                <div className="flex items-center gap-3">
+                  <span className="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-cyan-500/10 text-cyan-600">
+                    <QrCode className="h-5 w-5" />
+                  </span>
+                  <div>
+                    <p className="text-sm font-semibold">QR wallet</p>
+                    <p className="text-xs text-muted-foreground">In-store QR sales sit here — move the whole balance to your main wallet to spend or withdraw.</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <p className="text-xl font-bold">{fmtINR(stats.qr_wallet ?? 0)}</p>
+                  <QrTransferButton
+                    balance={stats.qr_wallet ?? 0}
+                    onDone={(moved) => setStats((s) => ({ ...s, qr_wallet: 0, wallet: (s.wallet ?? 0) + moved }))}
+                  />
+                </div>
+              </div>
+            )}
 
             {user?.role === "driver" && (
               <div className="luxe-card p-5">
