@@ -354,6 +354,133 @@ class OrderController extends BaseApiController
     }
 
     /**
+     * Customer: place a prescription-only order at a pharmacy. No cart items —
+     * the customer attaches a prescription, picks an address + delivery slot and
+     * places. The shop fills in the items/price later via bill(). Always COD,
+     * since the total is unknown until the shop bills it.
+     */
+    public function placePrescription(): ResponseInterface
+    {
+        $auth = $this->authUser();
+        if (! $auth) return $this->fail('Unauthorized', 401);
+        $body = $this->request->getJSON(true) ?? $this->request->getPost() ?? [];
+
+        $vendorId = (int) ($body['vendor_id'] ?? 0);
+        if ($vendorId <= 0) return $this->fail('Choose a pharmacy', 422);
+        $vendor = (new UserModel())->find($vendorId);
+        if (! $vendor || ($vendor['role'] ?? '') !== 'vendor') return $this->fail('Invalid pharmacy', 422);
+
+        // Prescription is mandatory and must be a path we issued + still on disk.
+        $rxPath = trim((string) ($body['prescription_path'] ?? ''));
+        if ($rxPath === '' || ! str_starts_with($rxPath, 'uploads/prescriptions/') || ! is_file(FCPATH . $rxPath)) {
+            return $this->fail('Attach a prescription to continue', 422);
+        }
+
+        // Delivery slot → order-level fee only (evening surcharge + slot price).
+        // No per-category charge here because there are no items yet.
+        $deliveryAt    = isset($body['delivery_at']) ? trim((string) $body['delivery_at']) : '';
+        $deliveryAt    = $deliveryAt !== '' ? $deliveryAt : null;
+        $deliveryAtSql = null; $deliveryMinutes = null;
+        if ($deliveryAt !== null) {
+            try {
+                $sel             = new \DateTime($deliveryAt, new \DateTimeZone('Asia/Kolkata'));
+                $deliveryAtSql   = $sel->format('Y-m-d H:i:s');
+                $deliveryMinutes = max(0, (int) round(($sel->getTimestamp() - time()) / 60));
+            } catch (\Throwable $e) { $deliveryAtSql = null; }
+        }
+        $rate      = ((int) ($body['delivery_rate_id'] ?? 0) > 0) ? (new DeliveryTimeRateModel())->find((int) $body['delivery_rate_id']) : null;
+        if ($rate) $deliveryMinutes = (int) $rate['time_min'];
+        $slotPrice   = $rate ? (float) $rate['price'] : 0.0;
+        $deliverySvc = new DeliveryChargeService();
+        $deliveryFee = $deliverySvc->isFreeByEta($deliveryAt) ? 0.0 : round($deliverySvc->eveningCharge($deliveryAt) + $slotPrice, 2);
+
+        // Delivery address snapshot (same resolution as place()).
+        $addrModel = new CustomerAddressModel();
+        $addrId    = (int) ($body['address_id'] ?? 0);
+        if ($addrId) {
+            $addrRow = $addrModel->ownedBy($addrId, (int) $auth->id);
+            if (! $addrRow) return $this->fail('Invalid delivery address', 422);
+        } else {
+            $addrRow = $addrModel->where('customer_id', (int) $auth->id)
+                ->orderBy('is_default', 'DESC')->orderBy('id', 'DESC')->first();
+        }
+        $u = (new UserModel())->find($auth->id);
+        $deliveryAddress = $addrRow ? CustomerAddressModel::formatLine($addrRow) : CustomerAddressModel::formatLine([
+            'address_line' => $u['address_line'] ?? null, 'landmark' => $u['landmark'] ?? null,
+            'city' => $u['city'] ?? null, 'pincode' => $u['pincode'] ?? null,
+        ]);
+        if ($deliveryAddress === '') return $this->fail('Add a delivery address before placing your order', 422);
+
+        $orderId = (new OrderModel())->insert([
+            'customer_id'       => $auth->id,
+            'order_group'       => 'G' . bin2hex(random_bytes(8)),
+            'vendor_id'         => $vendorId,
+            'total'             => $deliveryFee,            // items added by the shop later
+            'delivery_fee'      => $deliveryFee,
+            'delivery_minutes'  => $deliveryMinutes,
+            'delivery_at'       => $deliveryAtSql,
+            'payment_method'    => 'cod',
+            'status'            => 'pending',
+            'notes'             => trim((string) ($body['notes'] ?? '')) ?: null,
+            'delivery_address'  => $deliveryAddress,
+            'prescription_path' => $rxPath,
+            'sale_mode'         => 'prescription',
+        ], true);
+
+        try {
+            (new NotificationService())->sendTyped($vendorId, 'order_update', (int) $orderId, '/orders', 'New prescription order', "Order #{$orderId} — a customer sent a prescription. Add the items + bill to confirm.");
+        } catch (\Throwable $e) { log_message('error', 'prescription order notify failed: ' . $e->getMessage()); }
+
+        return $this->ok(['order_id' => (int) $orderId], 'Prescription order placed');
+    }
+
+    /**
+     * Vendor: add the items + price ("purchase bill") to a prescription order.
+     * Inserts free-form line items, recomputes the total (items + the delivery
+     * fee fixed at placement) and moves the order pending → confirmed. The
+     * customer is notified of the amount (paid on delivery).
+     */
+    public function bill(int $id): ResponseInterface
+    {
+        $auth = $this->authUser();
+        if (! $auth) return $this->fail('Unauthorized', 401);
+        if (($auth->role ?? '') !== 'vendor') return $this->fail('Forbidden', 403);
+
+        $om    = new OrderModel();
+        $order = $om->find($id);
+        if (! $order) return $this->fail('Not found', 404);
+        if ((int) ($order['vendor_id'] ?? 0) !== (int) $auth->id) return $this->fail('Forbidden', 403);
+        if (($order['sale_mode'] ?? '') !== 'prescription') return $this->fail('This is not a prescription order', 422);
+        if (($order['status'] ?? '') !== 'pending') return $this->fail('This order has already been billed', 422);
+
+        $body  = $this->request->getJSON(true) ?? $this->request->getPost() ?? [];
+        $lines = is_array($body['items'] ?? null) ? $body['items'] : [];
+        $clean = []; $subtotal = 0.0;
+        foreach ($lines as $ln) {
+            $name  = trim((string) ($ln['name'] ?? ''));
+            $qty   = (int) ($ln['qty'] ?? 0);
+            $price = (float) ($ln['price'] ?? 0);
+            if ($name === '' || $qty <= 0 || $price < 0) continue;
+            $line  = round($price * $qty, 2);
+            $subtotal += $line;
+            $clean[] = ['order_id' => $id, 'product_id' => null, 'name' => mb_substr($name, 0, 200), 'qty' => $qty, 'price' => $price, 'subtotal' => $line];
+        }
+        if (! $clean) return $this->fail('Add at least one item with a price', 422);
+
+        $im = new OrderItemModel();
+        foreach ($clean as $c) $im->insert($c);
+
+        $total = round($subtotal + (float) ($order['delivery_fee'] ?? 0), 2);
+        $om->update($id, ['total' => $total, 'status' => 'confirmed']);
+
+        try {
+            (new NotificationService())->sendTyped((int) $order['customer_id'], 'order_update', $id, '/orders', 'Prescription order ready', "Order #{$id} is ready — total ₹{$total} (pay on delivery).");
+        } catch (\Throwable $e) { log_message('error', 'bill notify failed: ' . $e->getMessage()); }
+
+        return $this->ok(['order_id' => $id, 'total' => $total], 'Bill added');
+    }
+
+    /**
      * Send the response to the client immediately and keep PHP running so
      * post-response work (notifications, commission cascade) doesn't block
      * the customer.
@@ -591,7 +718,7 @@ class OrderController extends BaseApiController
 
         $rows = $db->query(
             "SELECT o.id, o.customer_id, o.vendor_id, o.driver_id, o.total, o.status, o.notes, o.created_at,
-                    o.cancel_reason, o.cancelled_by,
+                    o.cancel_reason, o.cancelled_by, o.sale_mode, o.prescription_path,
                     cu.name AS customer_name,
                     ve.name AS vendor_name,
                     vp.shop_name AS shop_name,

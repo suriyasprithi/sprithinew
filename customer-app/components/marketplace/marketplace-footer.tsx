@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { Mail, Phone, MapPin, Smartphone, Globe, Camera, MessageCircle, Video } from "lucide-react";
+import { Mail, Phone, MapPin, Smartphone } from "lucide-react";
 import { toast } from "sonner";
 
 export function MarketplaceFooter() {
@@ -18,7 +18,7 @@ export function MarketplaceFooter() {
   return (
     <footer className="bg-[var(--mk-text)] text-white">
       <div className="mx-auto max-w-7xl px-4 py-12">
-        <div className="grid gap-8 md:grid-cols-2 lg:grid-cols-5">
+        <div className="grid gap-8 md:grid-cols-2 lg:grid-cols-4">
           {/* Brand + newsletter */}
           <div className="lg:col-span-2">
             <Link href="/home" className="inline-flex items-center gap-2">
@@ -61,15 +61,6 @@ export function MarketplaceFooter() {
             { label: "FAQ",           href: "/faq" },
           ]} />
 
-          {/* Partners */}
-          <Column title="Partners" items={[
-            { label: "Vendor registration",   href: "/coming-soon" },
-            { label: "Delivery partner",      href: "/coming-soon" },
-            { label: "Affiliate program",     href: "/refer" },
-            { label: "Sell on SPRITHI",       href: "/coming-soon" },
-            { label: "Vendor login",          href: "/coming-soon" },
-          ]} />
-
           {/* Contact + apps */}
           <div>
             <p className="text-sm font-bold text-white">Contact</p>
@@ -86,13 +77,6 @@ export function MarketplaceFooter() {
                 <span>
                   <span className="block text-[9px] uppercase tracking-wider text-white/50">Get it on</span>
                   <span className="block font-semibold">Google Play</span>
-                </span>
-              </Link>
-              <Link href="/coming-soon" className="inline-flex items-center gap-2 rounded-xl border border-white/20 bg-white/5 px-3 py-2 text-xs hover:border-[var(--mk-brand)]">
-                <Smartphone className="h-4 w-4" />
-                <span>
-                  <span className="block text-[9px] uppercase tracking-wider text-white/50">Download on</span>
-                  <span className="block font-semibold">App Store</span>
                 </span>
               </Link>
             </div>

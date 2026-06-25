@@ -12,6 +12,7 @@ use App\Models\TalukModel;
 use App\Models\UserModel;
 use App\Models\VariantTypeGroupModel;
 use App\Models\VendorProfileModel;
+use App\Services\PrescriptionPolicy;
 use CodeIgniter\HTTP\ResponseInterface;
 
 /**
@@ -242,7 +243,9 @@ class PublicController extends BaseApiController
         $profiles = $ids ? (new VendorProfileModel())->whereIn('user_id', $ids)->findAll() : [];
         $byId     = []; foreach ($profiles as $p) $byId[(int) $p['user_id']] = $p;
 
-        $items = array_map(static function ($u) use ($byId) {
+        // Pharmacy/medicine shops accept a prescription-only order (no item pick).
+        $rxCatIds = PrescriptionPolicy::categoryIds();
+        $items = array_map(static function ($u) use ($byId, $rxCatIds) {
             $p = $byId[(int) $u['id']] ?? [];
             return [
                 'id'        => (int) $u['id'],
@@ -254,6 +257,7 @@ class PublicController extends BaseApiController
                 'pincode'   => $p['pincode']   ?? null,
                 'image'     => (($p['image_status'] ?? '') === 'inactive') ? null : ($p['image'] ?? null),
                 'gst'       => $p['gst']       ?? null,
+                'requires_prescription' => in_array((int) ($p['vendor_category_id'] ?? 0), $rxCatIds, true),
             ];
         }, $rows);
         return $this->ok(['items' => $items]);

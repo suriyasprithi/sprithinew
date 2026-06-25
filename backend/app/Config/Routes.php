@@ -115,6 +115,8 @@ $routes->group('api/v1', ['filter' => 'cors'], static function ($routes) {
 
     $routes->group('orders', ['filter' => 'auth'], static function ($routes) {
         $routes->post('place',         'Api\OrderController::place');
+        $routes->post('place-prescription', 'Api\OrderController::placePrescription');   // customer: Rx-only order
+        $routes->post('(:num)/bill',   'Api\OrderController::bill/$1');                    // vendor: add items/price to an Rx order
         $routes->post('prescription-upload', 'Api\OrderController::uploadPrescription');
         $routes->get('mine',           'Api\OrderController::mine');
         $routes->get('list',           'Api\OrderController::listForRole');

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
-import { ShoppingBag, Search, Hourglass, Check, Banknote, ChevronDown, Loader2, XCircle } from "lucide-react";
+import { ShoppingBag, Search, Hourglass, Check, Banknote, ChevronDown, Loader2, XCircle, FileText, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -62,6 +62,10 @@ export default function StaffOrdersPage() {
   const [cancelTarget, setCancelTarget] = useState<OrderRow | null>(null);
   const [cancelReason, setCancelReason] = useState("");
   const [cancelBusy, setCancelBusy] = useState(false);
+  // Prescription order "purchase bill": vendor adds the medicines + prices.
+  const [billTarget, setBillTarget] = useState<OrderRow | null>(null);
+  const [billLines, setBillLines] = useState<{ name: string; qty: string; price: string }[]>([]);
+  const [billBusy, setBillBusy] = useState(false);
   const [page, setPage] = useState(1);
   // On-demand item details, loaded when an order row is expanded.
   const [openId, setOpenId] = useState<number | null>(null);
@@ -120,6 +124,8 @@ export default function StaffOrdersPage() {
           driver_name?: string | null;
           cancel_reason?: string | null;
           cancelled_by?: string | null;
+          sale_mode?: string | null;
+          prescription_path?: string | null;
         };
         const rows = ((res.data.data?.items ?? []) as ApiRow[]).map((r): OrderRow => ({
           id: Number(r.id),
@@ -132,6 +138,8 @@ export default function StaffOrdersPage() {
           driver_name: r.driver_name ?? null,
           cancel_reason: r.cancel_reason ?? null,
           cancelled_by: r.cancelled_by ?? null,
+          sale_mode: r.sale_mode ?? null,
+          prescription_path: r.prescription_path ?? null,
         }));
         setItems(rows);
       } catch (e) {
@@ -201,6 +209,34 @@ export default function StaffOrdersPage() {
       toast.error(apiErrorMessage(e));
     } finally {
       setCancelBusy(false);
+    }
+  }
+
+  function openBill(o: OrderRow) {
+    setBillTarget(o);
+    setBillLines([{ name: "", qty: "1", price: "" }]);
+  }
+  const billTotal = billLines.reduce((s, l) => s + (Number(l.qty) || 0) * (Number(l.price) || 0), 0);
+
+  async function submitBill() {
+    if (!billTarget) return;
+    const items = billLines
+      .map((l) => ({ name: l.name.trim(), qty: Number(l.qty) || 0, price: Number(l.price) || 0 }))
+      .filter((l) => l.name && l.qty > 0 && l.price >= 0);
+    if (!items.length) { toast.error("Add at least one item with a price"); return; }
+    const o = billTarget;
+    setBillBusy(true);
+    try {
+      const res = await api.post(`/orders/${o.id}/bill`, { items });
+      const total = Number(res.data.data?.total ?? 0);
+      setItems((cur) => cur.map((x) => (x.id === o.id ? { ...x, status: "confirmed" as VendorOrder["status"], total } : x)));
+      toast.success(`Bill added — order #${o.id} confirmed (₹${total.toFixed(2)})`);
+      setBillTarget(null);
+      setBillLines([]);
+    } catch (e) {
+      toast.error(apiErrorMessage(e));
+    } finally {
+      setBillBusy(false);
     }
   }
 
@@ -380,6 +416,16 @@ export default function StaffOrdersPage() {
                       </span>
                     </div>
                   ) : null}
+                  {o.sale_mode === "prescription" && o.status === "pending" ? (
+                    <div className="mt-2 flex flex-wrap items-center justify-between gap-2 rounded-lg bg-brand/10 px-3 py-2 text-xs">
+                      <span className="inline-flex items-center gap-1.5 font-medium text-brand">
+                        <FileText className="h-3.5 w-3.5" /> Prescription order — add the items + bill to confirm
+                      </span>
+                      <Button size="sm" className="h-7 gap-1 text-xs" onClick={() => openBill(o)}>
+                        <Plus className="h-3.5 w-3.5" /> Add bill
+                      </Button>
+                    </div>
+                  ) : null}
                   {openId === o.id && (
                     <div className="mt-3 border-t border-border/60 pt-3">
                       {loadingId === o.id ? (
@@ -469,6 +515,66 @@ export default function StaffOrdersPage() {
             <Button variant="ghost" onClick={() => { setCancelTarget(null); setCancelReason(""); }} disabled={cancelBusy}>Keep order</Button>
             <Button variant="destructive" onClick={() => void submitVendorCancel()} disabled={cancelBusy || !cancelReason.trim()}>
               {cancelBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <XCircle className="h-4 w-4" />} Cancel order
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Prescription order: vendor adds the medicines + prices ("purchase bill"). */}
+      <Dialog open={!!billTarget} onOpenChange={(o) => { if (!o) { setBillTarget(null); setBillLines([]); } }}>
+        <DialogContent className="max-h-[85vh] overflow-y-auto rounded-2xl border-border bg-popover">
+          <DialogHeader>
+            <DialogTitle>Bill for order #{billTarget?.id}</DialogTitle>
+            <DialogDescription>Add the medicines and prices. The customer pays this total (+ any delivery fee) on delivery.</DialogDescription>
+          </DialogHeader>
+
+          {billTarget?.prescription_path ? (
+            <a href={fileUrl(billTarget.prescription_path) ?? "#"} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 text-xs font-medium text-brand underline">
+              <FileText className="h-3.5 w-3.5" /> View prescription
+            </a>
+          ) : null}
+
+          <div className="space-y-2">
+            {billLines.map((l, idx) => (
+              <div key={idx} className="flex items-center gap-2">
+                <input
+                  value={l.name}
+                  onChange={(e) => setBillLines((cur) => cur.map((x, i) => (i === idx ? { ...x, name: e.target.value } : x)))}
+                  placeholder="Medicine name"
+                  className="h-9 flex-1 rounded-lg border border-input bg-surface-2/60 px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+                />
+                <input
+                  value={l.qty}
+                  onChange={(e) => setBillLines((cur) => cur.map((x, i) => (i === idx ? { ...x, qty: e.target.value.replace(/\D/g, "") } : x)))}
+                  inputMode="numeric"
+                  placeholder="Qty"
+                  className="h-9 w-14 rounded-lg border border-input bg-surface-2/60 px-2 text-center text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+                />
+                <input
+                  value={l.price}
+                  onChange={(e) => setBillLines((cur) => cur.map((x, i) => (i === idx ? { ...x, price: e.target.value.replace(/[^0-9.]/g, "") } : x)))}
+                  inputMode="decimal"
+                  placeholder="Price"
+                  className="h-9 w-20 rounded-lg border border-input bg-surface-2/60 px-2 text-right text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+                />
+                <button type="button" onClick={() => setBillLines((cur) => (cur.length > 1 ? cur.filter((_, i) => i !== idx) : cur))} className="text-muted-foreground hover:text-rose-500" aria-label="Remove line">
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              </div>
+            ))}
+            <Button size="sm" variant="ghost" className="h-8 gap-1 text-xs" onClick={() => setBillLines((cur) => [...cur, { name: "", qty: "1", price: "" }])}>
+              <Plus className="h-3.5 w-3.5" /> Add item
+            </Button>
+          </div>
+
+          <div className="flex items-center justify-between border-t border-border pt-2 text-sm font-semibold">
+            <span>Items total</span><span className="text-brand">₹{billTotal.toFixed(2)}</span>
+          </div>
+
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => { setBillTarget(null); setBillLines([]); }} disabled={billBusy}>Cancel</Button>
+            <Button onClick={() => void submitBill()} disabled={billBusy || billTotal <= 0}>
+              {billBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} Confirm bill
             </Button>
           </DialogFooter>
         </DialogContent>

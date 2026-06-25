@@ -23,7 +23,7 @@ type ApiProduct = {
 };
 type Category = { id: number; name: string };
 type VendorCategory = { id: number; name: string };
-type Vendor = { id: number; name: string; shop_name?: string | null };
+type Vendor = { id: number; name: string; shop_name?: string | null; requires_prescription?: boolean };
 
 function adapt(raw: ApiProduct): MarketplaceProduct {
   return {
@@ -92,6 +92,9 @@ function PublicShopInner() {
   const stateId    = sp?.get("state_id")    ? Number(sp.get("state_id"))    : null;
   // Vendor-category scope (Featured Categories click).
   const vendorCategoryId = sp?.get("vendor_category_id") ? Number(sp.get("vendor_category_id")) : null;
+  // The shop currently in view (when scoped to one). Pharmacies accept a
+  // prescription-only order, so we surface that entry below.
+  const selectedVendor = vendorId ? vendors.find((v) => v.id === vendorId) ?? null : null;
 
   async function load(overrideQ?: string) {
     setLoading(true);
@@ -265,6 +268,25 @@ function PublicShopInner() {
           )}
         </div>
       </section>
+
+      {/* Pharmacy: order with just a prescription, no item picking. */}
+      {selectedVendor?.requires_prescription && (
+        <section className="mx-auto max-w-7xl px-4 pt-4">
+          <div className="flex flex-col items-start gap-3 rounded-2xl border border-[var(--mk-brand)]/30 bg-[var(--mk-brand-soft)] p-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0">
+              <p className="text-sm font-bold">Have a prescription?</p>
+              <p className="text-xs text-[var(--mk-text-muted)]">Upload it and place the order — the shop adds the medicines and bill.</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => router.push(`/prescription-order?vendor_id=${selectedVendor.id}&shop=${encodeURIComponent(selectedVendor.shop_name || selectedVendor.name)}`)}
+              className="inline-flex h-11 shrink-0 items-center gap-1.5 rounded-xl bg-[var(--mk-brand)] px-4 text-sm font-semibold text-white shadow-[var(--mk-shadow-sm)] transition-colors hover:bg-[var(--mk-brand-deep)]"
+            >
+              Order with prescription
+            </button>
+          </div>
+        </section>
+      )}
 
       {/* Product grid */}
       <section className="mx-auto max-w-7xl px-4 pb-12 pt-4">

@@ -76,6 +76,8 @@ CREATE TABLE IF NOT EXISTS `lucky_draw_entries` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 ALTER TABLE `order_items` ADD COLUMN IF NOT EXISTS `commission_amount` decimal(11,2) DEFAULT 0.00 AFTER `subtotal`;
+-- Prescription orders carry free-form (non-catalog) line items → product_id must allow NULL.
+ALTER TABLE `order_items` MODIFY COLUMN `product_id` bigint(20) unsigned NULL;
 ALTER TABLE `orders` ADD COLUMN IF NOT EXISTS `sale_mode` varchar(20) DEFAULT NULL AFTER `delivery_at`;
 ALTER TABLE `orders` ADD COLUMN IF NOT EXISTS `order_group` varchar(40) DEFAULT NULL AFTER `id`;
 ALTER TABLE `orders` ADD COLUMN IF NOT EXISTS `cancel_reason` text DEFAULT NULL AFTER `sale_mode`;
