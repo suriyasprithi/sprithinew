@@ -191,12 +191,16 @@ class OrderController extends BaseApiController
         $tokenSvc   = new TokenService();
         $wallet     = new WalletService();
         $orderIds   = [];
+        // One ref shared by every sub-order of this checkout, so the customer app
+        // groups them into a single order with per-shop sub-cards.
+        $groupRef   = 'G' . bin2hex(random_bytes(8));
 
         foreach ($groups as $vk => &$g) {
             // Prescription only on the sub-order(s) that actually carry a medical item.
             $rxPath = ($prescriptionRequired && PrescriptionPolicy::requiresFor($g['products'])) ? ($prescriptionPath ?: null) : null;
             $orderId = $orderModel->insert([
                 'customer_id'       => $auth->id,
+                'order_group'       => $groupRef,
                 'vendor_id'         => $vk ?: null,
                 'total'             => $g['subtotal'] + $g['delivery_fee'] + ($g['gst'] ?? 0),
                 'delivery_fee'      => $g['delivery_fee'],

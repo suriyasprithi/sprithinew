@@ -17,10 +17,13 @@ type OrderStatus = "pending" | "confirmed" | "packed" | "shipped" | "delivered" 
 
 type OrderRow = {
   id: number;
+  order_group?: string | null;
   customer_id: number;
   vendor_id: number | null;
   total: number | string;
   status: OrderStatus;
+  cancel_reason?: string | null;
+  cancelled_by?: string | null;
   notes?: string | null;
   created_at?: string | null;
   vendor_name?: string | null;
@@ -131,6 +134,21 @@ function FilterPill({ active, onClick, label }: { active: boolean; onClick: () =
       {label}
     </button>
   );
+}
+
+// A single checkout becomes one order per shop. Orders sharing an order_group
+// are one customer order; legacy rows (no group) stand alone. repId = the
+// smallest id in the group, used as the human-facing "Order #".
+function groupOrders(rows: OrderRow[]): { key: string; repId: number; orders: OrderRow[] }[] {
+  const groups: { key: string; repId: number; orders: OrderRow[] }[] = [];
+  const idx = new Map<string, number>();
+  for (const o of rows) {
+    const key = o.order_group || `solo-${o.id}`;
+    if (idx.has(key)) groups[idx.get(key)!].orders.push(o);
+    else { idx.set(key, groups.length); groups.push({ key, repId: o.id, orders: [o] }); }
+  }
+  for (const g of groups) g.repId = Math.min(...g.orders.map((o) => o.id));
+  return groups;
 }
 
 export default function OrdersPage() {
@@ -267,44 +285,63 @@ export default function OrdersPage() {
             <p className="mt-1 text-xs text-muted-foreground">Try a different search or status filter.</p>
           </LuxuryCard>
         ) : (
-          filtered.map((o, i) => {
-            // A multi-vendor order has no single vendor_id, so no shop name —
-            // the per-item shop names below show who sells what.
-            const vendorLabel = o.shop_name || o.vendor_name || "Multiple shops";
-            const areaParts = [o.area, o.taluk_name, o.pincode].filter(Boolean) as string[];
+          groupOrders(filtered).map((g, i) => {
+            const multi = g.orders.length > 1;
+            const grand = g.orders.reduce((s, o) => s + Number(o.total), 0);
+            const date = (g.orders[0]?.created_at ?? "").replace("T", " ").slice(0, 16);
             return (
-              <motion.div key={o.id} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.03 }}>
+              <motion.div key={g.key} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.03 }}>
                 <LuxuryCard className="p-4">
-                  <div className="flex items-center justify-between">
-                    <p className="text-sm font-semibold">Order #{o.id}</p>
-                    <span className={cn("rounded-full border px-2 py-0.5 text-[10px] font-medium uppercase", STATUS_STYLE[o.status] ?? STATUS_STYLE.pending)}>{o.status}</span>
-                  </div>
-
-                  <div className="mt-2 flex items-center gap-2">
-                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand/10 text-brand">
-                      <Store className="h-4 w-4" />
-                    </span>
+                  <div className="flex items-end justify-between gap-2">
                     <div className="min-w-0">
-                      <p className="truncate text-sm font-semibold">{vendorLabel}</p>
-                      {areaParts.length > 0 && (
-                        <p className="inline-flex items-center gap-1 truncate text-xs text-muted-foreground">
-                          <MapPin className="h-3 w-3" /> {areaParts.join(" · ")}
-                        </p>
-                      )}
+                      <p className="text-sm font-semibold">Order #{g.repId}</p>
+                      <p className="text-[11px] text-muted-foreground">{date}{multi ? ` · ${g.orders.length} shops` : ""}</p>
                     </div>
+                    <p className="text-lg font-bold text-brand">{fmtINR(grand)}</p>
                   </div>
 
-                  {o.product_names && (
-                    <p className="mt-2 truncate text-xs text-muted-foreground">{o.product_names}</p>
-                  )}
+                  <div className="mt-3 space-y-3">
+                    {g.orders.map((o) => {
+                      const vendorLabel = o.shop_name || o.vendor_name || "Shop";
+                      const areaParts = [o.area, o.taluk_name, o.pincode].filter(Boolean) as string[];
+                      return (
+                        <div key={o.id} className={cn(multi && "rounded-xl border border-border/70 bg-surface-2/30 p-3")}>
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex min-w-0 items-center gap-2">
+                              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand/10 text-brand">
+                                <Store className="h-4 w-4" />
+                              </span>
+                              <div className="min-w-0">
+                                <p className="truncate text-sm font-semibold">{vendorLabel}</p>
+                                {areaParts.length > 0 && (
+                                  <p className="inline-flex items-center gap-1 truncate text-xs text-muted-foreground">
+                                    <MapPin className="h-3 w-3" /> {areaParts.join(" · ")}
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+                            <span className={cn("shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-medium uppercase", STATUS_STYLE[o.status] ?? STATUS_STYLE.pending)}>{o.status}</span>
+                          </div>
 
-                  {/* Delivery progress (BUG-033) */}
-                  <StatusStepper status={o.status} />
+                          {o.product_names && (
+                            <p className="mt-2 truncate text-xs text-muted-foreground">{o.product_names}</p>
+                          )}
 
-                  <div className="mt-3 flex items-end justify-between gap-2">
-                    <p className="text-[11px] text-muted-foreground">{(o.created_at ?? "").replace("T", " ").slice(0, 16)}</p>
-                    <p className="text-lg font-bold text-brand">{fmtINR(Number(o.total))}</p>
-                  </div>
+                          {/* Delivery progress (BUG-033) */}
+                          <StatusStepper status={o.status} />
+
+                          {o.status === "cancelled" && o.cancel_reason ? (
+                            <div className="mt-2 rounded-xl bg-rose-500/10 px-3 py-2 text-xs text-rose-500">
+                              <span className="font-semibold">{o.cancelled_by === "vendor" ? "Cancelled by shop" : "You cancelled"}:</span> {o.cancel_reason}
+                            </div>
+                          ) : null}
+
+                          {multi && (
+                            <div className="mt-2 flex items-center justify-between">
+                              <span className="text-[11px] text-muted-foreground">Shop total</span>
+                              <span className="text-sm font-bold text-brand">{fmtINR(Number(o.total))}</span>
+                            </div>
+                          )}
 
                   {o.status === "pending" && o.can_cancel && (
                     <div className="mt-3 border-t border-border/60 pt-3">
@@ -511,6 +548,10 @@ export default function OrdersPage() {
                         )}
                       </div>
                     )}
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 </LuxuryCard>
               </motion.div>

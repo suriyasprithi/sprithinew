@@ -77,6 +77,7 @@ CREATE TABLE IF NOT EXISTS `lucky_draw_entries` (
 
 ALTER TABLE `order_items` ADD COLUMN IF NOT EXISTS `commission_amount` decimal(11,2) DEFAULT 0.00 AFTER `subtotal`;
 ALTER TABLE `orders` ADD COLUMN IF NOT EXISTS `sale_mode` varchar(20) DEFAULT NULL AFTER `delivery_at`;
+ALTER TABLE `orders` ADD COLUMN IF NOT EXISTS `order_group` varchar(40) DEFAULT NULL AFTER `id`;
 ALTER TABLE `orders` ADD COLUMN IF NOT EXISTS `cancel_reason` text DEFAULT NULL AFTER `sale_mode`;
 ALTER TABLE `orders` ADD COLUMN IF NOT EXISTS `cancelled_by` varchar(20) DEFAULT NULL AFTER `cancel_reason`;
 -- [NEW TABLE] otp_codes
