@@ -118,6 +118,8 @@ export default function StaffOrdersPage() {
           created_at?: string | null;
           driver_id?: number | string | null;
           driver_name?: string | null;
+          cancel_reason?: string | null;
+          cancelled_by?: string | null;
         };
         const rows = ((res.data.data?.items ?? []) as ApiRow[]).map((r): OrderRow => ({
           id: Number(r.id),
@@ -128,6 +130,8 @@ export default function StaffOrdersPage() {
           created_at: (r.created_at ?? "").slice(0, 16),
           driver_id: r.driver_id ? Number(r.driver_id) : null,
           driver_name: r.driver_name ?? null,
+          cancel_reason: r.cancel_reason ?? null,
+          cancelled_by: r.cancelled_by ?? null,
         }));
         setItems(rows);
       } catch (e) {
@@ -368,6 +372,14 @@ export default function StaffOrdersPage() {
                       )}
                     </div>
                   </div>
+                  {o.status === "cancelled" && o.cancel_reason ? (
+                    <div className="mt-2 flex items-start gap-2 rounded-lg bg-rose-500/10 px-3 py-2 text-xs text-rose-500">
+                      <XCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                      <span>
+                        <span className="font-semibold">{o.cancelled_by === "vendor" ? "You cancelled" : "Cancelled by customer"}:</span> {o.cancel_reason}
+                      </span>
+                    </div>
+                  ) : null}
                   {openId === o.id && (
                     <div className="mt-3 border-t border-border/60 pt-3">
                       {loadingId === o.id ? (
