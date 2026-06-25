@@ -264,6 +264,27 @@ class PurchaseController extends BaseApiController
     }
 
     /**
+     * Vendor: is this mobile a registered customer? Drives the customer-purchase
+     * form — only registered customers' bills can be recorded.
+     */
+    public function customerLookup(): ResponseInterface
+    {
+        $auth = $this->authUser();
+        if (! $auth) return $this->fail('Unauthorized', 401);
+        if ($auth->role !== 'vendor') return $this->fail('Forbidden', 403);
+
+        $mobile = (string) ($this->request->getGet('mobile') ?? '');
+        if (! preg_match('/^[0-9]{10}$/', $mobile)) {
+            return $this->ok(['registered' => false, 'name' => null]);
+        }
+        $customer = (new UserModel())->findByMobileAndRole($mobile, 'customer');
+        return $this->ok([
+            'registered' => (bool) $customer,
+            'name'       => $customer['name'] ?? null,
+        ]);
+    }
+
+    /**
      * Vendor: move one customer-scanned QR purchase's share from the QR wallet
      * to the main wallet. Per-row transfer — only the vendor's share (gross minus
      * the commission pool, i.e. what actually landed in the QR wallet) moves.

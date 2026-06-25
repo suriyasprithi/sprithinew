@@ -59,6 +59,8 @@ type OrderOpt = {
 export default function CustomerPurchasePage() {
   const [open, setOpen] = useState(false);
   const [mobile, setMobile] = useState("");
+  const [custCheck, setCustCheck] = useState<{ registered: boolean; name: string | null } | null>(null);
+  const [checkingCust, setCheckingCust] = useState(false);
   const [amount, setAmount] = useState("");
   const [saleMode, setSaleMode] = useState<SaleMode | "">("");
   const [note, setNote] = useState("");
@@ -106,6 +108,24 @@ export default function CustomerPurchasePage() {
     })();
   }, []);
 
+  // Only registered customers can be billed — check the mobile (both modes).
+  useEffect(() => {
+    if (!isMobile(mobile)) { setCustCheck(null); return; }
+    let cancelled = false;
+    setCheckingCust(true);
+    void (async () => {
+      try {
+        const res = await api.get("/purchase/customer-lookup", { params: { mobile } });
+        if (!cancelled) setCustCheck(res.data.data as { registered: boolean; name: string | null });
+      } catch {
+        if (!cancelled) setCustCheck(null);
+      } finally {
+        if (!cancelled) setCheckingCust(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [mobile]);
+
   // When Online + a valid mobile, load that customer's real orders for linking.
   useEffect(() => {
     if (saleMode !== "online" || !isMobile(mobile)) { setOrders([]); setOrderId(""); return; }
@@ -151,11 +171,12 @@ export default function CustomerPurchasePage() {
 
   function resetForm() {
     setMobile(""); setAmount(""); setSaleMode(""); setNote("");
-    setOrders([]); setOrderId("");
+    setOrders([]); setOrderId(""); setCustCheck(null);
   }
 
   async function charge() {
     if (!isMobile(mobile)) { toast.error("Enter a valid 10-digit customer mobile"); return; }
+    if (!custCheck?.registered) { toast.error("This mobile is not a registered customer"); return; }
     if (!saleMode) { toast.error("Select Online or Offline"); return; }
     if (saleMode === "online" && !orderId) { toast.error("Select an order"); return; }
     const amt = effectiveAmount;
@@ -310,6 +331,15 @@ export default function CustomerPurchasePage() {
                 placeholder="9876543210"
                 className="h-11 rounded-xl bg-surface-2/60"
               />
+              {isMobile(mobile) && (
+                checkingCust ? (
+                  <p className="text-xs text-muted-foreground">Checking…</p>
+                ) : custCheck?.registered ? (
+                  <p className="text-xs font-medium text-emerald-500">✓ {custCheck.name || "Registered customer"}</p>
+                ) : (
+                  <p className="text-xs font-medium text-rose-500">Not registered — only registered customers can be billed.</p>
+                )
+              )}
             </div>
 
             <div className="space-y-1.5">
@@ -400,7 +430,7 @@ export default function CustomerPurchasePage() {
               </>
             )}
 
-            <GradientButton size="lg" className="w-full" disabled={busy} onClick={() => void charge()}>
+            <GradientButton size="lg" className="w-full" disabled={busy || !custCheck?.registered} onClick={() => void charge()}>
               {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : (saleMode === "online" ? "Mark order paid" : (effectiveAmount > 0 ? `Record ₹${effectiveAmount}` : "Record"))}
             </GradientButton>
           </div>

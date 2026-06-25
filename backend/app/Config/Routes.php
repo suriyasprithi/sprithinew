@@ -84,6 +84,7 @@ $routes->group('api/v1', ['filter' => 'cors'], static function ($routes) {
     $routes->post('purchase/from-customer', 'Api\PurchaseController::fromCustomer', ['filter' => 'auth']);
     // Vendor: a customer's real orders (by mobile) to link an ONLINE customer purchase to.
     $routes->get('purchase/customer-orders', 'Api\PurchaseController::customerOrders', ['filter' => 'auth']);
+    $routes->get('purchase/customer-lookup', 'Api\PurchaseController::customerLookup', ['filter' => 'auth']);
     // Vendor's own in-store/QR purchase history (shown on the QR scanner page).
     $routes->get('purchase/mine', 'Api\PurchaseController::mine', ['filter' => 'auth']);
     // Vendor: move one QR purchase's share from the QR wallet to the main wallet.
