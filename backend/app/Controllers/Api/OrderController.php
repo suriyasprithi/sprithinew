@@ -208,6 +208,11 @@ class OrderController extends BaseApiController
         // groups them into a single order with per-shop sub-cards.
         $groupRef   = 'G' . bin2hex(random_bytes(8));
 
+        // M2: wrap every money write (orders, items, stock, vendor credit, customer
+        // debit, pools) in ONE transaction so a mid-way failure can't leave partial
+        // state (vendor paid but customer not charged). Auto-mode rolls back on any
+        // query error; transStatus() reports the outcome.
+        $placeDb->transStart();
         foreach ($groups as $vk => &$g) {
             // Prescription only on the sub-order(s) that actually carry a medical item.
             $rxPath = ($prescriptionRequired && PrescriptionPolicy::requiresFor($g['products'])) ? ($prescriptionPath ?: null) : null;
@@ -291,6 +296,12 @@ class OrderController extends BaseApiController
                     ->set('balance', "balance + {$platformCut}", false)
                     ->update();
             }
+        }
+
+        $placeDb->transComplete();
+        if ($placeDb->transStatus() === false) {
+            $placeDb->query('SELECT RELEASE_LOCK(?)', [$lockName]);
+            return $this->fail('Could not place your order, please try again.', 500);
         }
 
         // Clear cart, then release the per-user placement lock — a waiting

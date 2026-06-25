@@ -630,14 +630,25 @@ class TokenController extends BaseApiController
         if ($db->affectedRows() < 1) return $this->fail('Already processed', 409);
 
         if ($status === 'approved') {
-            // Auto-distribute tokens upon approval
-            (new DistributeTokenModel())->insert([
-                'from_user_id' => $auth->id,
-                'to_user_id'   => (int) $row['requester_id'],
-                'amount'       => (float) $row['amount'],
-                'tokens'       => (int) $row['tokens'],
-                'notes'        => 'Auto-issued on request#' . $id,
-            ]);
+            // Actually credit the tokens (debit the admin source, credit the
+            // requester + ledger) via the same path requestApprove uses — the old
+            // code only inserted a ledger row and never credited the wallet, so the
+            // requester saw "approved" but got nothing (T1). On failure revert the
+            // claim to pending so it can be retried (never "approved" with no credit).
+            $users        = new UserModel();
+            $approver     = $users->find((int) $auth->id);
+            $requester    = $users->find((int) $row['requester_id']);
+            $releaseClaim = fn () => $model->update($id, ['status' => 'pending', 'processed_by' => null]);
+            if (! $requester) { $releaseClaim(); return $this->fail('Requester not found', 404); }
+            try {
+                (new TokenService())->fulfillRequest($approver, $requester, (float) $row['tokens'], 'request#' . $id);
+            } catch (\DomainException $e) {
+                $releaseClaim();
+                return $this->fail($e->getMessage(), 422);
+            } catch (\RuntimeException $e) {
+                $releaseClaim();
+                return $this->fail($e->getMessage(), 500);
+            }
         }
         try {
             (new NotificationService())->sendTyped(
