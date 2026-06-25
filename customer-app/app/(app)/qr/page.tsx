@@ -210,6 +210,9 @@ export default function QrPurchasePage() {
           </LuxuryCard>
         )}
 
+        {/* Manual vendor + amount — hidden when an order match is shown above,
+            so an order payment offers only the one-tap "Pay from wallet". */}
+        {!payableOrder && (
         <LuxuryCard hoverLift={false} className="space-y-4 p-5">
           <div className="space-y-1.5">
             <Label htmlFor="m">Vendor mobile</Label>
@@ -223,6 +226,7 @@ export default function QrPurchasePage() {
             {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Pay"}
           </GradientButton>
         </LuxuryCard>
+        )}
       </section>
 
       {/* Full-screen camera scanner overlay */}
