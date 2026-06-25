@@ -18,15 +18,18 @@ $routes->options('(:any)', static function () {
 $routes->group('api/v1', ['filter' => 'cors'], static function ($routes) {
     // ===== Auth =====
     $routes->group('auth', static function ($routes) {
-        $routes->post('register',    'Api\AuthController::register',   ['filter' => 'rate_limit:auth-register,10,3600']);
-        $routes->post('otp/send',    'Api\AuthController::sendOtp',    ['filter' => 'rate_limit:auth-otp,5,3600']);
-        $routes->get('check-mobile', 'Api\AuthController::checkMobile', ['filter' => 'rate_limit:auth-login,30,300']);
-        $routes->post('login',       'Api\AuthController::login',      ['filter' => 'rate_limit:auth-login,10,300']);
-        $routes->post('staff-login',     'Api\AuthController::staffLogin', ['filter' => 'rate_limit:auth-login,10,300']);
-        $routes->post('forgot-password', 'Api\AuthController::forgotPassword', ['filter' => 'rate_limit:auth-login,5,3600']);
-        $routes->post('reset-password',  'Api\AuthController::resetPassword',  ['filter' => 'rate_limit:auth-login,10,3600']);
-        $routes->post('forgot-password-otp', 'Api\AuthController::sendResetOtp',     ['filter' => 'rate_limit:auth-otp,5,3600']);
-        $routes->post('reset-password-otp',  'Api\AuthController::resetPasswordOtp', ['filter' => 'rate_limit:auth-login,10,3600']);
+        // Distinct buckets per endpoint (sharing a bucket would drain each other's
+        // quota). OTP/login/register also carry a per-mobile limit so users behind
+        // one shared carrier IP (CGNAT) aren't throttled together.
+        $routes->post('register',    'Api\AuthController::register',   ['filter' => 'rate_limit:register,20,3600,mobile_number,5,3600']);
+        $routes->post('otp/send',    'Api\AuthController::sendOtp',    ['filter' => 'rate_limit:otp,30,3600,mobile_number,5,3600']);
+        $routes->get('check-mobile', 'Api\AuthController::checkMobile', ['filter' => 'rate_limit:check-mobile,100,300']);
+        $routes->post('login',       'Api\AuthController::login',      ['filter' => 'rate_limit:login,30,300,mobile_number,8,900']);
+        $routes->post('staff-login',     'Api\AuthController::staffLogin', ['filter' => 'rate_limit:login,30,300,mobile_number,8,900']);
+        $routes->post('forgot-password', 'Api\AuthController::forgotPassword', ['filter' => 'rate_limit:forgot,15,3600']);
+        $routes->post('reset-password',  'Api\AuthController::resetPassword',  ['filter' => 'rate_limit:reset,20,3600']);
+        $routes->post('forgot-password-otp', 'Api\AuthController::sendResetOtp',     ['filter' => 'rate_limit:otp,30,3600,mobile_number,5,3600']);
+        $routes->post('reset-password-otp',  'Api\AuthController::resetPasswordOtp', ['filter' => 'rate_limit:reset,20,3600']);
         $routes->post('refresh',         'Api\AuthController::refresh');
     });
     $routes->group('auth', ['filter' => 'auth'], static function ($routes) {
@@ -173,11 +176,11 @@ $routes->group('api/v1', ['filter' => 'cors'], static function ($routes) {
         $routes->get('history',       'Api\WalletController::history');
         // Money-moving endpoints get an abuse throttle on top of auth (the array
         // form keeps the auth filter explicitly so it's never dropped).
-        $routes->post('send',        'Api\WalletController::send',     ['filter' => ['auth', 'rate_limit:wallet-send,20,3600']]);
-        $routes->post('transfer',    'Api\WalletController::transfer', ['filter' => ['auth', 'rate_limit:wallet-transfer,30,3600']]);
+        $routes->post('send',        'Api\WalletController::send',     ['filter' => ['auth', 'rate_limit:wallet-send,50,3600']]);
+        $routes->post('transfer',    'Api\WalletController::transfer', ['filter' => ['auth', 'rate_limit:wallet-transfer,60,3600']]);
     });
     $routes->group('withdrawals', ['filter' => 'auth'], static function ($routes) {
-        $routes->post('/',   'Api\WithdrawalController::create', ['filter' => ['auth', 'rate_limit:withdraw,10,3600']]);
+        $routes->post('/',   'Api\WithdrawalController::create', ['filter' => ['auth', 'rate_limit:withdraw,20,3600']]);
         $routes->get('mine', 'Api\WithdrawalController::mine');
     });
 
