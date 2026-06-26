@@ -24,6 +24,10 @@ class WalletService
 {
     public const WALLETS = ['wallet', 'monthly', 'level', 'level_1', 'level_2', 'level_3', 'welcome_1', 'welcome_2', 'welcome_3', 'global', 'buyback', 'qr'];
 
+    /** A customer must always keep this much in their main wallet — only the
+     *  amount ABOVE it is withdrawable or spendable via QR. */
+    public const CUSTOMER_MIN_BALANCE = 500.0;
+
     public static function column(string $key): string
     {
         return $key === 'wallet' ? 'wallet_balance' : $key . '_wallet';

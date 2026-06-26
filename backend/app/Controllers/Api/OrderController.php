@@ -615,9 +615,11 @@ class OrderController extends BaseApiController
 
         $amount = (float) $order['total'];
         $db     = \Config\Database::connect();
-        // Atomic guarded debit on the main wallet — 0 rows = insufficient.
-        $db->query('UPDATE users SET wallet_balance = wallet_balance - ? WHERE id = ? AND wallet_balance >= ?', [$amount, (int) $auth->id, $amount]);
-        if ($db->affectedRows() < 1) return $this->fail('Insufficient wallet balance', 402);
+        // Atomic guarded debit on the main wallet. The customer must keep the ₹500
+        // floor, so only the balance ABOVE it can pay. 0 rows = insufficient.
+        $floor  = WalletService::CUSTOMER_MIN_BALANCE;
+        $db->query('UPDATE users SET wallet_balance = wallet_balance - ? WHERE id = ? AND wallet_balance - ? >= ?', [$amount, (int) $auth->id, $amount, $floor]);
+        if ($db->affectedRows() < 1) return $this->fail('Insufficient balance — keep a minimum of ₹' . number_format($floor, 0) . ' in your wallet.', 402);
 
         (new WalletTransactionModel())->insert([
             'user_id' => (int) $auth->id, 'peer_user_id' => $vendorId, 'amount' => $amount,

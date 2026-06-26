@@ -38,7 +38,9 @@ class WithdrawalController extends BaseApiController
         // counts toward the withdrawable amount. Other roles have no floor.
         // (Token distribute/approve/accept is NOT limited by this minimum.)
         $combined = (float) ($u['token_balance'] ?? 0) + (float) ($u['wallet_balance'] ?? 0);
-        $floor    = in_array($u['role'] ?? '', ['state', 'district', 'taluk', 'vendor'], true) ? self::MIN_WALLET : 0.0;
+        $role     = $u['role'] ?? '';
+        $floor    = in_array($role, ['state', 'district', 'taluk', 'vendor'], true) ? self::MIN_WALLET
+                  : ($role === 'customer' ? \App\Services\WalletService::CUSTOMER_MIN_BALANCE : 0.0);
         $maxWithdrawable = max(0.0, $combined - $floor);
         if ($amount > $maxWithdrawable) {
             return $this->fail(

@@ -35,11 +35,16 @@ export default function WithdrawPage() {
   }, []);
 
   const verified = user?.kyc_status === "verified";
+  // A customer must keep a ₹500 minimum in the wallet — only the amount above it
+  // is withdrawable (the backend enforces this too).
+  const FLOOR = 500;
+  const balance = user?.wallet_balance ?? 0;
+  const available = Math.max(0, balance - FLOOR);
 
   async function submit() {
     const amt = Number(amount);
     if (!amt) { toast.error("Amount required"); return; }
-    if (amt > (user?.wallet_balance ?? 0)) { toast.error("Insufficient balance"); return; }
+    if (amt > available) { toast.error(`You can withdraw up to ₹${available.toFixed(2)} — keep a ₹${FLOOR} minimum.`); return; }
     setBusy(true);
     try {
       await api.post("/withdrawals", { amount: amt, method });
@@ -53,8 +58,12 @@ export default function WithdrawPage() {
       <AppHeader title="Withdraw" />
       <section className="mx-auto max-w-md space-y-4 p-4 pb-24 md:p-8">
         <LuxuryCard hoverLift={false} className="p-5">
-          <p className="text-xs text-muted-foreground">Available balance</p>
-          <p className="mt-1 text-2xl font-bold tracking-tight text-brand">₹{(user?.wallet_balance ?? 0).toFixed(2)}</p>
+          <p className="text-xs text-muted-foreground">Wallet balance</p>
+          <p className="mt-1 text-2xl font-bold tracking-tight text-brand">₹{balance.toFixed(2)}</p>
+          <div className="mt-2 flex items-center justify-between border-t border-border/60 pt-2 text-xs">
+            <span className="text-muted-foreground">Withdrawable (after ₹{FLOOR} minimum)</span>
+            <span className="font-semibold text-emerald-600">₹{available.toFixed(2)}</span>
+          </div>
         </LuxuryCard>
 
         {!verified ? (

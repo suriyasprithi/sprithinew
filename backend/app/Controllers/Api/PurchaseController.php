@@ -45,14 +45,15 @@ class PurchaseController extends BaseApiController
             'notes'       => 'In-store purchase via QR',
         ], true);
 
-        // Atomic guarded debit — the `wallet_balance >= ?` makes the balance check
-        // and the debit one indivisible statement, so a double-click / concurrent
-        // charge can't pass a stale check and overdraw. 0 rows = insufficient.
+        // Atomic guarded debit. A customer must keep the ₹500 floor, so the spend
+        // can only use the balance ABOVE it (others have no floor). The check +
+        // debit are one indivisible statement so a concurrent charge can't overdraw.
+        $floor = ($buyer['role'] ?? '') === 'customer' ? \App\Services\WalletService::CUSTOMER_MIN_BALANCE : 0.0;
         $db = \Config\Database::connect();
-        $db->query("UPDATE users SET wallet_balance = wallet_balance - ? WHERE id = ? AND wallet_balance >= ?", [$amount, (int) $auth->id, $amount]);
+        $db->query("UPDATE users SET wallet_balance = wallet_balance - ? WHERE id = ? AND wallet_balance - ? >= ?", [$amount, (int) $auth->id, $amount, $floor]);
         if ($db->affectedRows() < 1) {
             (new OrderModel())->delete($orderId);
-            return $this->fail('Insufficient wallet balance', 402);
+            return $this->fail($floor > 0 ? 'Insufficient balance — keep a minimum of ₹' . number_format($floor, 0) . ' in your wallet.' : 'Insufficient wallet balance', 402);
         }
         $tx = new WalletTransactionModel();
         $tx->insert(['user_id' => $auth->id, 'peer_user_id' => $vendor['id'], 'amount' => $amount, 'type' => 'payment', 'reference' => 'qr#' . $orderId, 'notes' => 'Vendor purchase']);
