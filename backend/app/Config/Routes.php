@@ -24,7 +24,7 @@ $routes->group('api/v1', ['filter' => 'cors'], static function ($routes) {
         $routes->post('register',    'Api\AuthController::register',   ['filter' => 'rate_limit:register,20,3600,mobile_number,5,3600']);
         $routes->post('otp/send',    'Api\AuthController::sendOtp',    ['filter' => 'rate_limit:otp,30,3600,mobile_number,5,3600']);
         $routes->get('check-mobile', 'Api\AuthController::checkMobile', ['filter' => 'rate_limit:check-mobile,100,300']);
-        $routes->post('login',       'Api\AuthController::login',      ['filter' => 'rate_limit:login,30,300,mobile_number,8,900']);
+        $routes->post('login',       'Api\AuthController::login',      ['filter' => 'rate_limit:login,120,300,mobile_number,60,900']);
         // Staff are a small, trusted group (not a public brute-force target like
         // customer login) — own bucket (won't drain customer login's per-IP quota)
         // with looser caps: 60/5min per IP, 20/15min per mobile.

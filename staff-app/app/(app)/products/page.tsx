@@ -248,6 +248,7 @@ export default function VendorProductsPage() {
   const [creatingCat, setCreatingCat] = useState(false);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
   const [status, setStatus] = useState<"all" | "active" | "inactive">("all");
   const [editing, setEditing] = useState<Draft | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<VendorProduct | null>(null);
@@ -317,6 +318,14 @@ export default function VendorProductsPage() {
     if (status !== "all" && p.status !== status) return false;
     return true;
   }), [items, search, status]);
+
+  // Table pagination (50/page). Search/status filter the FULL list first, then
+  // we slice — so searching looks across every product, not just the page.
+  const PAGE_SIZE = 50;
+  const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const safePage = Math.min(page, pageCount);
+  const paged = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+  useEffect(() => { setPage(1); }, [search, status]);
 
   const totalStock = items.reduce((s, p) => s + (Number(p.stock) || 0), 0);
   const totalValue = items.reduce((s, p) => s + p.price * p.stock, 0);
@@ -609,7 +618,7 @@ export default function VendorProductsPage() {
             />
           ) : (
             <div className="divide-y divide-border">
-              {filtered.map((p, i) => (
+              {paged.map((p, i) => (
                 <motion.div
                   key={p.id}
                   initial={{ opacity: 0, y: 4 }}
@@ -674,6 +683,16 @@ export default function VendorProductsPage() {
                   </div>
                 </motion.div>
               ))}
+            </div>
+          )}
+          {!loading && filtered.length > PAGE_SIZE && (
+            <div className="flex items-center justify-between border-t border-border px-3 py-2 text-xs text-muted-foreground">
+              <span>{filtered.length} products · showing {(safePage - 1) * PAGE_SIZE + 1}–{Math.min(safePage * PAGE_SIZE, filtered.length)}</span>
+              <div className="flex items-center gap-2">
+                <Button size="sm" variant="outline" className="h-7 rounded-lg" disabled={safePage <= 1} onClick={() => setPage(safePage - 1)}>Prev</Button>
+                <span>Page {safePage} / {pageCount}</span>
+                <Button size="sm" variant="outline" className="h-7 rounded-lg" disabled={safePage >= pageCount} onClick={() => setPage(safePage + 1)}>Next</Button>
+              </div>
             </div>
           )}
         </div>
