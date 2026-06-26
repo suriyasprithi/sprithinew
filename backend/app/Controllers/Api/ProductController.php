@@ -385,25 +385,42 @@ class ProductController extends BaseApiController
         // creating a duplicate or an unlinked (orphan) one.
         $vendorCatId = (int) ((new VendorProfileModel())->where('user_id', $vendorId)->first()['vendor_category_id'] ?? 0);
 
-        // Category resolver: find/create by (vendor_category, parent, name), cached.
+        // Category resolver: find/create by (parent, name). Category names are
+        // GLOBALLY UNIQUE on some deployments, so we must REUSE an existing
+        // category rather than insert a duplicate (which errors). When the matched
+        // category isn't linked to a vendor_category yet, adopt it into this
+        // vendor's so it shows in their picker. Cached for the run.
         $catMap = [];
         foreach ($catModel->findAll() as $c) {
             $pid = isset($c['parent_id']) && $c['parent_id'] !== null ? (int) $c['parent_id'] : 0;
             $vc  = isset($c['vendor_category_id']) && $c['vendor_category_id'] !== null ? (int) $c['vendor_category_id'] : 0;
-            $catMap[$vc . '|' . $pid . '|' . mb_strtolower(trim((string) $c['name']))] = (int) $c['id'];
+            $catMap[$pid . '|' . mb_strtolower(trim((string) $c['name']))] = ['id' => (int) $c['id'], 'vc' => $vc];
         }
         $resolveCat = static function (string $name, int $parentId) use (&$catMap, $catModel, $vendorCatId): ?int {
             $name = trim($name);
             if ($name === '') return null;
-            $key = $vendorCatId . '|' . $parentId . '|' . mb_strtolower($name);
-            if (isset($catMap[$key])) return $catMap[$key];
-            $id = (int) $catModel->insert([
-                'name'               => $name,
-                'parent_id'          => $parentId ?: null,
-                'vendor_category_id' => $vendorCatId ?: null,
-                'status'             => 'active',
-            ], true);
-            $catMap[$key] = $id;
+            $key = $parentId . '|' . mb_strtolower($name);
+            if (isset($catMap[$key])) {
+                $e = $catMap[$key];
+                if ($e['vc'] === 0 && $vendorCatId) {            // link an unowned category to this vendor's
+                    $catModel->update($e['id'], ['vendor_category_id' => $vendorCatId]);
+                    $catMap[$key]['vc'] = $vendorCatId;
+                }
+                return $e['id'];
+            }
+            try {
+                $id = (int) $catModel->insert([
+                    'name'               => $name,
+                    'parent_id'          => $parentId ?: null,
+                    'vendor_category_id' => $vendorCatId ?: null,
+                    'status'             => 'active',
+                ], true);
+            } catch (\Throwable $ex) {                            // unique(name) collision → reuse the existing row
+                $row = $catModel->where('name', $name)->first();
+                if (! $row) throw $ex;
+                $id = (int) $row['id'];
+            }
+            $catMap[$key] = ['id' => $id, 'vc' => $vendorCatId ?: 0];
             return $id;
         };
 
