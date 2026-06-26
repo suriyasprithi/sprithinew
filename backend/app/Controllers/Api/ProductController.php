@@ -379,18 +379,30 @@ class ProductController extends BaseApiController
         $pm       = new ProductModel();
         $catModel = new CategoryModel();
 
-        // Category resolver: find/create by (parent, name), cached for the run.
+        // The vendor's fixed vendor_category (set by admin). Imported categories
+        // and products link to it so they appear in the vendor's pickers, and the
+        // resolver is scoped to it so re-imports reuse the same category instead of
+        // creating a duplicate or an unlinked (orphan) one.
+        $vendorCatId = (int) ((new VendorProfileModel())->where('user_id', $vendorId)->first()['vendor_category_id'] ?? 0);
+
+        // Category resolver: find/create by (vendor_category, parent, name), cached.
         $catMap = [];
         foreach ($catModel->findAll() as $c) {
             $pid = isset($c['parent_id']) && $c['parent_id'] !== null ? (int) $c['parent_id'] : 0;
-            $catMap[$pid . '|' . mb_strtolower(trim((string) $c['name']))] = (int) $c['id'];
+            $vc  = isset($c['vendor_category_id']) && $c['vendor_category_id'] !== null ? (int) $c['vendor_category_id'] : 0;
+            $catMap[$vc . '|' . $pid . '|' . mb_strtolower(trim((string) $c['name']))] = (int) $c['id'];
         }
-        $resolveCat = static function (string $name, int $parentId) use (&$catMap, $catModel): ?int {
+        $resolveCat = static function (string $name, int $parentId) use (&$catMap, $catModel, $vendorCatId): ?int {
             $name = trim($name);
             if ($name === '') return null;
-            $key = $parentId . '|' . mb_strtolower($name);
+            $key = $vendorCatId . '|' . $parentId . '|' . mb_strtolower($name);
             if (isset($catMap[$key])) return $catMap[$key];
-            $id = (int) $catModel->insert(['name' => $name, 'parent_id' => $parentId ?: null, 'status' => 'active'], true);
+            $id = (int) $catModel->insert([
+                'name'               => $name,
+                'parent_id'          => $parentId ?: null,
+                'vendor_category_id' => $vendorCatId ?: null,
+                'status'             => 'active',
+            ], true);
             $catMap[$key] = $id;
             return $id;
         };
@@ -503,7 +515,7 @@ class ProductController extends BaseApiController
                     $prodUpdated++;
                 } else {
                     $full['vendor_id']          = $vendorId;
-                    $full['vendor_category_id'] = isset($item['vendor_category_id']) ? (int) $item['vendor_category_id'] : null;
+                    $full['vendor_category_id'] = $vendorCatId ?: (isset($item['vendor_category_id']) ? (int) $item['vendor_category_id'] : null);
                     $full['status'] = $full['status'] ?? 'active';
                     $productId = (int) $pm->insert($full, true);
                     $byCode[$cKey] = ['id' => $productId, 'variant_types' => null];

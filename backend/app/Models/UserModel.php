@@ -60,6 +60,7 @@ class UserModel extends Model
         'gpay','phonepe','paytm','upi','payment_link',
         'kyc_status','kyc_note',
         'monthly_wallet','lucky_wallet','gift','qr_wallet',
+        'buyback_reserve','level_reserve',
         'state_id','district_id',
         'bill_address','bill_landmark',
     ];

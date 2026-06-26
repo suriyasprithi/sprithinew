@@ -14,7 +14,7 @@ import { ImportSummaryCard } from "@/components/products/import-summary-card";
 import { TemplateBuilder } from "@/components/products/template-builder";
 import {
   type Group, type ImportSummary,
-  parseCsv, groupRows, isValidGroup, runChunkedImport,
+  fileToRows, groupRows, isValidGroup, runChunkedImport,
 } from "@/lib/catalog-import";
 
 type Vendor = { id: number; name: string };
@@ -42,18 +42,18 @@ export default function ImportProductsPage() {
   const valid = useMemo(() => groups.filter(isValidGroup), [groups]);
   const variantCount = useMemo(() => valid.reduce((n, g) => n + g.variants.length, 0), [valid]);
 
-  function pickFile(e: React.ChangeEvent<HTMLInputElement>) {
+  async function pickFile(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0];
     if (!f) return;
     setFileName(f.name);
     setResult(null);
-    const reader = new FileReader();
-    reader.onload = () => {
-      const gs = groupRows(parseCsv(String(reader.result ?? "")));
+    try {
+      const gs = groupRows(await fileToRows(f));
       setGroups(gs);
       if (!gs.length) toast.error("No products found — check the file has a header row + item_code column");
-    };
-    reader.readAsText(f);
+    } catch {
+      toast.error("Could not read that file");
+    }
   }
 
   async function runImport() {
@@ -108,10 +108,10 @@ export default function ImportProductsPage() {
           </div>
 
           <div className="space-y-1.5">
-            <Label>CSV file</Label>
-            <input ref={inputRef} type="file" accept=".csv,text/csv" onChange={pickFile} className="hidden" />
+            <Label>CSV / Excel file</Label>
+            <input ref={inputRef} type="file" accept=".csv,.xlsx,.xls" onChange={(e) => void pickFile(e)} className="hidden" />
             <Button variant="outline" className="w-full" onClick={() => inputRef.current?.click()} disabled={importing}>
-              <Upload className="h-4 w-4" /> {fileName || "Choose CSV"}
+              <Upload className="h-4 w-4" /> {fileName || "Choose CSV / Excel"}
             </Button>
           </div>
 

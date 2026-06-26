@@ -253,6 +253,28 @@ export default function StaffWalletPage() {
           );
         })()}
 
+        {/* Admin-only: earmarked reserves (held, not spendable) */}
+        {isAdmin && (
+          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
+            <LuxuryCard hoverLift={false} className="p-5">
+              <p className="mb-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Reserves (held)</p>
+              <p className="mb-3 text-[11px] text-muted-foreground">Earmarked — not part of your spendable balance.</p>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="rounded-xl bg-surface-2/50 p-3">
+                  <p className="truncate text-[11px] uppercase tracking-wider text-muted-foreground">Buyback reserve</p>
+                  <p className="mt-1 text-base font-bold tracking-tight">{fmtINR(user?.buyback_reserve ?? 0)}</p>
+                  <p className="mt-0.5 text-[10px] text-muted-foreground">Auto-fills future buyback cycles</p>
+                </div>
+                <div className="rounded-xl bg-surface-2/50 p-3">
+                  <p className="truncate text-[11px] uppercase tracking-wider text-muted-foreground">Level reserve</p>
+                  <p className="mt-1 text-base font-bold tracking-tight">{fmtINR(user?.level_reserve ?? 0)}</p>
+                  <p className="mt-0.5 text-[10px] text-muted-foreground">Orphan L1/L2/L3 (no upline)</p>
+                </div>
+              </div>
+            </LuxuryCard>
+          </motion.div>
+        )}
+
         {/* Admin-only: global pool snapshot + monthly history */}
         {isAdmin && (
           <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>

@@ -13,7 +13,7 @@ import { ImportSummaryCard } from "@/components/products/import-summary-card";
 import { TemplateBuilder } from "@/components/products/template-builder";
 import {
   type Group, type ImportSummary,
-  parseCsv, groupRows, isValidGroup, runChunkedImport,
+  fileToRows, groupRows, isValidGroup, runChunkedImport,
 } from "@/lib/catalog-import";
 
 type Props = { onImported: () => void | Promise<void> };
@@ -45,7 +45,7 @@ export function CatalogImportDialog({ onImported }: Props) {
     setFileName(file.name);
     setResult(null);
     try {
-      const gs = groupRows(parseCsv(await file.text()));
+      const gs = groupRows(await fileToRows(file));
       setGroups(gs);
       if (!gs.length) toast.error("No products found — check the file has a header row + item_code");
     } catch {
@@ -86,7 +86,7 @@ export function CatalogImportDialog({ onImported }: Props) {
       <Dialog open={open} onOpenChange={(o) => { setOpen(o); if (!o) reset(); }}>
         <DialogContent className="max-h-[92vh] sm:!max-w-xl overflow-y-auto rounded-2xl border-border bg-popover">
           <DialogHeader>
-            <DialogTitle>Import products from CSV</DialogTitle>
+            <DialogTitle>Import products from CSV / Excel</DialogTitle>
             <DialogDescription>
               Build a template for your category, fill it, and upload. Rows sharing an item_code become one product;
               each row is a SKU/variant. Any attribute column (Color, Size, RAM…) works automatically.
@@ -98,9 +98,9 @@ export function CatalogImportDialog({ onImported }: Props) {
 
             <div className="flex flex-wrap items-center gap-2 rounded-xl border border-dashed border-border bg-surface-2/30 p-3">
               <Button type="button" size="sm" variant="outline" className="rounded-lg" onClick={() => fileRef.current?.click()} disabled={importing}>
-                <FileUp className="h-3.5 w-3.5" /> {fileName || "Choose CSV file"}
+                <FileUp className="h-3.5 w-3.5" /> {fileName || "Choose CSV / Excel file"}
               </Button>
-              <input ref={fileRef} type="file" accept=".csv,text/csv" className="hidden" onChange={(e) => void onFile(e.target.files?.[0])} />
+              <input ref={fileRef} type="file" accept=".csv,.xlsx,.xls" className="hidden" onChange={(e) => void onFile(e.target.files?.[0])} />
             </div>
 
             {groups.length > 0 && (

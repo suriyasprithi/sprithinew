@@ -776,6 +776,8 @@ class AuthController extends BaseApiController
             'monthly_wallet' => (float) ($user['monthly_wallet'] ?? 0),
             'lucky_wallet'   => (float) ($user['lucky_wallet'] ?? 0),
             'qr_wallet'      => (float) ($user['qr_wallet'] ?? 0),
+            'buyback_reserve' => (float) ($user['buyback_reserve'] ?? 0),
+            'level_reserve'  => (float) ($user['level_reserve'] ?? 0),
             'token_balance'  => (float) ($user['token_balance'] ?? 0),
             'bonus_balance'  => (float) ($user['bonus_balance'] ?? 0),
             'level_1_count'  => (int) ($user['level_1_count'] ?? 0),

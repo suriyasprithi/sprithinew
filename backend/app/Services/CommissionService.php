@@ -136,12 +136,12 @@ class CommissionService
             3 => max(0.0, (float) $settingsModel->get('buyback.slot_3_pct', (string) self::SLOT_PCT['buyback_3'])),
             4 => max(0.0, (float) $settingsModel->get('buyback.slot_4_pct', (string) self::SLOT_PCT['buyback_4'])),
         ];
-        $applied       = [];
-        $adminPool     = 0.0;
-        $pendingNotifs = [];   // M4: collected during payouts, sent only AFTER commit
+        $applied         = [];
+        $levelReserveAdd = 0.0;   // empty-upline L1/L2/L3 → admin's level_reserve (NEVER main wallet)
+        $pendingNotifs   = [];   // M4: collected during payouts, sent only AFTER commit
 
-        $awardUser = function (?array $upline, string $walletKind, int $level, float $amt) use ($wallet, $log, $orderId, $purchaserUserId, $levelPct, &$applied, &$adminPool, &$pendingNotifs) {
-            if (! $upline) { $adminPool += $amt; return; }
+        $awardUser = function (?array $upline, string $walletKind, int $level, float $amt) use ($wallet, $log, $orderId, $purchaserUserId, $levelPct, &$applied, &$levelReserveAdd, &$pendingNotifs) {
+            if (! $upline) { $levelReserveAdd += $amt; return; }   // no upline → held in level_reserve
             $wallet->credit((int) $upline['id'], $walletKind, $amt, 'commission', 'order#' . $orderId, "L{$level} commission");
             $log->insert([
                 'order_id'       => $orderId,
@@ -162,6 +162,12 @@ class CommissionService
         // DB inserts must not flip transStatus and roll back real money).
         $db->transBegin();
 
+        // The main admin holds two EARMARKED reserves (NOT the spendable main
+        // wallet): buyback surplus (auto-draws to fill cycles) and orphan L1/L2/L3.
+        $mainAdminId       = (new UserModel())->mainAdminId();
+        $mainAdmin         = $mainAdminId ? (new UserModel())->find($mainAdminId) : null;
+        $buybackReserveBal = (float) ($mainAdmin['buyback_reserve'] ?? 0);
+
         // L1 / L2 / L3 referral slots (percentages admin-tunable; see $levelPct)
         $awardUser($l1, 'level_1', 1, round($pool * $levelPct[1] / 100, 2));
         $awardUser($l2, 'level_2', 2, round($pool * $levelPct[2] / 100, 2));
@@ -177,7 +183,10 @@ class CommissionService
         // before). Overflow cycles simply wait for the next purchase.
         $cycles        = new \App\Models\BuybackCycleModel();
         $allBuybackPct = $buybackPct[1] + $buybackPct[2] + $buybackPct[3] + $buybackPct[4];
-        $buybackBudget = round($pool * $allBuybackPct / 100, 2);  // hard cap for this order
+        $buybackBudget = round($pool * $allBuybackPct / 100, 2);  // this order's buyback slice
+        // Spendable = this order's slice + the carried buyback_reserve, so backed-
+        // up cycles get filled from the reserve instead of waiting.
+        $buybackAvail  = round($buybackBudget + $buybackReserveBal, 2);
         $buybackSpent  = 0.0;
 
         // Open cycles owned by someone else, oldest first, that THIS buyer has
@@ -200,9 +209,9 @@ class CommissionService
             $slotPct = $buybackPct[$slot] ?? self::SLOT_PCT["buyback_{$slot}"];
             $amt     = round($pool * $slotPct / 100, 2);
             if ($amt <= 0) continue;
-            // Cap: never spend more than this order's buyback slice. Overflow
-            // cycles wait for the next purchase; admin is never touched.
-            if (round($buybackSpent + $amt, 2) > $buybackBudget) break;
+            // Cap at this order's slice + carried reserve (auto-draw). Cycles
+            // beyond that wait for the next purchase; admin is never touched.
+            if (round($buybackSpent + $amt, 2) > $buybackAvail) break;
 
             $collectorId = (int) $cyc['user_id'];
             $wallet->credit($collectorId, 'buyback', $amt, 'commission', 'order#' . $orderId, "Buyback slot {$slot}");
@@ -227,8 +236,9 @@ class CommissionService
             }
         }
 
-        // Whatever of the buyback slice wasn't paid out falls to the admin pool.
-        $adminPool += round($buybackBudget - $buybackSpent, 2);
+        // Buyback NEVER touches admin. The reserve absorbs the surplus (few open
+        // cycles) and funds the deficit (drawn above when many cycles). Never < 0.
+        $newBuybackReserve = max(0.0, round($buybackReserveBal + $buybackBudget - $buybackSpent, 2));
 
         // Open a fresh cycle for the buyer if they have none currently open.
         $buyerRow = $users->find($purchaserUserId);
@@ -270,20 +280,27 @@ class CommissionService
             + (self::SLOT_PCT['level_3'] - $levelPct[3])
             + ((self::SLOT_PCT['buyback_1'] + self::SLOT_PCT['buyback_2'] + self::SLOT_PCT['buyback_3'] + self::SLOT_PCT['buyback_4']) - $allBuybackPct);
         $adminPctEffective = max(0.0, $adminPctEffective);
-        $adminAmt = round($pool * $adminPctEffective / 100, 2) + $adminPool;
+        $adminAmt = round($pool * $adminPctEffective / 100, 2);
 
-        // Every admin-bound rupee (global + lucky + token-share + admin + all
-        // fall-through) lands in the MAIN admin's spendable wallet as a single
-        // transaction, so it shows in the admin's wallet history / Activity. The
-        // global & lucky monthly rows above stay as display-only history; the
-        // admin distributes those by hand (debited from this same wallet).
-        $adminBound  = round($globalAmt + $luckyAmt + $tokenShareAmt + $adminAmt, 2);
-        $mainAdminId = (new UserModel())->mainAdminId();
+        // Admin's main wallet gets ONLY its legitimate slices: global + lucky +
+        // token-share + admin base + admin-tuning deltas — recorded as a single
+        // transaction in the admin's wallet history / Activity. Orphan L1/L2/L3
+        // and unused buyback go to the earmarked reserves below, never here.
+        $adminBound = round($globalAmt + $luckyAmt + $tokenShareAmt + $adminAmt, 2);
         if ($mainAdminId && $adminBound > 0) {
             $wallet->credit($mainAdminId, 'wallet', $adminBound, 'commission', 'order#' . $orderId, 'Commission (admin share)');
         } elseif ($adminBound > 0) {
             // No resolvable admin — never lose the money; fall back to the pool.
             $pools->add('admin_wallet', $adminBound);
+        }
+
+        // Persist the admin's earmarked reserves: the buyback auto-draw result and
+        // any orphan L1/L2/L3 this order produced. Held, NOT spendable main wallet.
+        if ($mainAdminId) {
+            (new UserModel())->update($mainAdminId, [
+                'buyback_reserve' => $newBuybackReserve,
+                'level_reserve'   => round((float) ($mainAdmin['level_reserve'] ?? 0) + $levelReserveAdd, 2),
+            ]);
         }
 
         $applied[] = ['slot' => 'global',      'pool' => 'monthly_global_pools:' . date('Y-m'),     'amount' => $globalAmt];

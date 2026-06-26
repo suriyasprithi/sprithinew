@@ -67,6 +67,27 @@ export function parseCsv(text: string): string[][] {
 }
 
 /**
+ * Read an uploaded catalog file into raw rows (header row first), supporting
+ * both CSV and Excel (.xlsx/.xls). The SheetJS parser is dynamic-imported so it
+ * stays out of the main bundle / APK — it only loads when an Excel file is
+ * actually picked. Output matches parseCsv (string[][]) so groupRows is unchanged.
+ */
+export async function fileToRows(file: File): Promise<string[][]> {
+  const name = file.name.toLowerCase();
+  if (name.endsWith(".xlsx") || name.endsWith(".xls")) {
+    const XLSX = await import("xlsx");
+    const wb = XLSX.read(await file.arrayBuffer(), { type: "array" });
+    const sheet = wb.Sheets[wb.SheetNames[0]];
+    if (!sheet) return [];
+    const rows = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: "", blankrows: false, raw: false });
+    return rows
+      .map((r) => (Array.isArray(r) ? r.map((c) => (c == null ? "" : String(c))) : []))
+      .filter((r) => r.some((c) => c.trim() !== ""));
+  }
+  return parseCsv(await file.text());
+}
+
+/**
  * Parse CSV rows into product groups (by item_code). Reserved headers map to fields;
  * any other header is a variant attribute (its label → variant.options[label]).
  */
