@@ -471,16 +471,10 @@ class ProductController extends BaseApiController
                 }
                 [$discPct, $discAmt] = $this->computeDiscount($mrp, $price);
 
-                // Category → Sub Category.
-                $catId      = null;
+                // Category is required (sub-category removed). Skip rows with none.
                 $parentName = trim((string) ($item['category'] ?? ''));
-                $subName    = trim((string) ($item['sub_category'] ?? ''));
-                if ($parentName !== '') {
-                    $catId = $resolveCat($parentName, 0);
-                    if ($subName !== '' && $catId) { $sid = $resolveCat($subName, $catId); if ($sid) $catId = $sid; }
-                } elseif ($subName !== '') {
-                    $catId = $resolveCat($subName, 0);
-                }
+                if ($parentName === '') { $failed[] = ['row' => $line, 'name' => $name, 'reason' => 'category required']; continue; }
+                $catId = $resolveCat($parentName, 0);
 
                 $statusRaw = mb_strtolower(trim((string) ($item['status'] ?? '')));
                 $status    = $statusRaw === '' ? null : (in_array($statusRaw, ['inactive', '0', 'no', 'disabled', 'off'], true) ? 'inactive' : 'active');
@@ -719,19 +713,10 @@ class ProductController extends BaseApiController
         return $urls ? json_encode($urls, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) : null;
     }
 
-    /**
-     * Effective category_id for a request: when a non-empty sub_category is given
-     * alongside a category_id, the product points at a (find-or-created) child
-     * category under that parent. Returns the leaf id, else the given category_id.
-     */
+    /** Effective category_id for a request (flat — sub-category removed). */
     private function applySubCategory(array $d): ?int
     {
-        $catId = isset($d['category_id']) && $d['category_id'] !== '' ? (int) $d['category_id'] : null;
-        $sub   = trim((string) ($d['sub_category'] ?? ''));
-        if ($catId && $sub !== '') {
-            return $this->resolveSubCategory($catId, $sub);
-        }
-        return $catId;
+        return isset($d['category_id']) && $d['category_id'] !== '' ? (int) $d['category_id'] : null;
     }
 
     /** Find or create a sub-category by name under a parent category; returns its id. */

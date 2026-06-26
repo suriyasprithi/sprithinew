@@ -131,7 +131,7 @@ export default function ImportProductsPage() {
           </GradientButton>
 
           <p className="text-[11px] text-muted-foreground">
-            Reserved columns: item_code, product_name, category, sub_category, brand, hsn_code, description, sku,
+            Reserved columns: item_code, product_name, category, brand, hsn_code, description, sku,
             barcode, mrp, offer_price, stock, status. Every other column is treated as a variant attribute.
             Discount % is auto-computed from MRP &amp; offer price.
           </p>

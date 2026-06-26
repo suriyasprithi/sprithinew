@@ -11,7 +11,7 @@ const RESERVED: Record<string, string> = {
   itemcode: "code", productcode: "code", code: "code",
   productname: "name", name: "name",
   sku: "sku", variantsku: "sku", variantname: "variant_name",
-  category: "category", subcategory: "sub_category", subcat: "sub_category",
+  category: "category",
   brand: "brand", description: "description", shortdescription: "short_description", tags: "tags",
   hsncode: "hsn_code", hsn: "hsn_code", barcode: "barcode",
   mrp: "mrp", offerprice: "price", price: "price", sellingprice: "price", salesprice: "price",
@@ -32,7 +32,7 @@ export type Variant = {
   price: string; mrp: string; stock: string; barcode: string;
 };
 export type Group = {
-  code: string; name: string; category: string; sub_category: string; brand: string;
+  code: string; name: string; category: string; brand: string;
   description: string; short_description: string; tags: string; hsn_code: string;
   status: string; featured: string; image: string; gallery_images: string;
   tax_type: string; tax_percentage: string;
@@ -42,7 +42,7 @@ export type Group = {
 };
 
 const blankGroup = (code: string): Group => ({
-  code, name: "", category: "", sub_category: "", brand: "", description: "", short_description: "",
+  code, name: "", category: "", brand: "", description: "", short_description: "",
   tags: "", hsn_code: "", status: "", featured: "", image: "", gallery_images: "", tax_type: "",
   tax_percentage: "", price: "", mrp: "", stock: "", barcode: "", variants: [],
 });
@@ -120,7 +120,7 @@ export function groupRows(rows: string[][]): Group[] {
     if (!g) {
       g = blankGroup(code);
       // product-level fields from the first row of this item_code
-      g.name = f.name ?? ""; g.category = f.category ?? ""; g.sub_category = f.sub_category ?? "";
+      g.name = f.name ?? ""; g.category = f.category ?? "";
       g.brand = f.brand ?? ""; g.description = f.description ?? ""; g.short_description = f.short_description ?? "";
       g.tags = f.tags ?? ""; g.hsn_code = f.hsn_code ?? ""; g.status = f.status ?? "";
       g.featured = f.featured ?? ""; g.image = f.image ?? ""; g.gallery_images = f.gallery_images ?? "";
@@ -145,7 +145,7 @@ export function groupRows(rows: string[][]): Group[] {
 /** A group is importable with an item_code + product_name + a price (variant or product-only). */
 export function isValidGroup(g: Group): boolean {
   const okNum = (s: string) => s.trim() !== "" && !Number.isNaN(Number(s));
-  if (!g.code.trim() || !g.name.trim()) return false;
+  if (!g.code.trim() || !g.name.trim() || !g.category.trim()) return false;
   return g.variants.length ? g.variants.some((v) => okNum(v.price)) : okNum(g.price);
 }
 
@@ -154,7 +154,7 @@ const num = (s: string) => (s.trim() !== "" && !Number.isNaN(Number(s)) ? Number
 /** Convert a Group to the API item (product + variants[]) the universal engine consumes. */
 export function groupToItem(g: Group): Record<string, unknown> {
   return {
-    code: g.code, name: g.name, category: g.category, sub_category: g.sub_category,
+    code: g.code, name: g.name, category: g.category,
     brand: g.brand, description: g.description, short_description: g.short_description, tags: g.tags,
     hsn_code: g.hsn_code, status: g.status, featured: g.featured, image: g.image,
     gallery_images: g.gallery_images, tax_type: g.tax_type, tax_percentage: num(g.tax_percentage),
@@ -172,13 +172,13 @@ const esc = (v: string) => (/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v)
 export function buildTemplateCsv(attributes: string[], category = ""): string {
   const attrs = attributes.map((a) => a.trim()).filter(Boolean);
   const headers = [
-    "item_code", "product_name", "category", "sub_category", "brand", "hsn_code", "description",
+    "item_code", "product_name", "category", "brand", "hsn_code", "description",
     ...attrs, "sku", "barcode", "mrp", "offer_price", "stock", "status",
   ];
   // Two sample variant rows for one product (or one plain row if no attributes selected).
   const sampleVals = (i: number): Record<string, string> => {
     const base: Record<string, string> = {
-      item_code: "P001", product_name: "Sample Product", category, sub_category: "", brand: "Acme",
+      item_code: "P001", product_name: "Sample Product", category, brand: "Acme",
       hsn_code: "1006", description: "Sample description",
       sku: `P001-${i + 1}`, barcode: "", mrp: "499", offer_price: "399", stock: String(50 - i * 10), status: "active",
     };
@@ -192,6 +192,46 @@ export function buildTemplateCsv(attributes: string[], category = ""): string {
     lines.push(headers.map((h) => esc(v[h] ?? "")).join(","));
   }
   return lines.join("\n") + "\n";
+}
+
+/** Minimal product shape needed to export to the import CSV format. */
+export type ExportProduct = {
+  id: number; name: string; category_name?: string; brand?: string | null; hsn_code?: string | null;
+  description?: string; code?: string | null; barcode?: string | null; mrp?: number | null;
+  price: number; stock: number; status: string;
+  variants?: { sku: string | null; options: Record<string, string>; price: number; stock: number }[];
+};
+
+/** Export products to a CSV string in the import template format (round-trippable). */
+export function productsToCsv(products: ExportProduct[]): string {
+  const attrSet = new Set<string>();
+  for (const p of products) for (const v of p.variants ?? []) for (const k of Object.keys(v.options ?? {})) attrSet.add(k);
+  const attrs = [...attrSet];
+  const headers = ["item_code", "product_name", "category", "brand", "hsn_code", "description",
+    ...attrs, "sku", "barcode", "mrp", "offer_price", "stock", "status"];
+  const cell = (v: unknown) => (v == null ? "" : String(v));
+  const lines = [headers.map(esc).join(",")];
+  for (const p of products) {
+    const code = (p.code && String(p.code).trim()) || `P${p.id}`;
+    const head = [code, cell(p.name), cell(p.category_name), cell(p.brand), cell(p.hsn_code), cell(p.description)];
+    const tail = (sku: string, price: unknown, stock: unknown) =>
+      [sku, cell(p.barcode), cell(p.mrp), cell(price), cell(stock), p.status || "active"];
+    const vs = p.variants ?? [];
+    if (vs.length) {
+      for (const v of vs) lines.push([...head, ...attrs.map((a) => v.options?.[a] ?? ""), ...tail(v.sku ?? code, v.price, v.stock)].map(esc).join(","));
+    } else {
+      lines.push([...head, ...attrs.map(() => ""), ...tail(code, p.price, p.stock)].map(esc).join(","));
+    }
+  }
+  return lines.join("\n") + "\n";
+}
+
+/** Trigger a browser download of the products CSV. */
+export function downloadProductsCsv(products: ExportProduct[], filename: string): void {
+  const url = URL.createObjectURL(new Blob([productsToCsv(products)], { type: "text/csv;charset=utf-8" }));
+  const a = document.createElement("a");
+  a.href = url; a.download = filename; a.click();
+  URL.revokeObjectURL(url);
 }
 
 /** Trigger a browser download of the generated template. */
@@ -215,18 +255,18 @@ export type ImportSummary = {
  * aggregating the products/variants summary. `extra` adds fields like { vendor_id }.
  */
 export async function runChunkedImport(
-  post: (url: string, body: unknown) => Promise<{ data: { data?: Record<string, unknown> } }>,
+  post: (url: string, body: unknown, config?: { timeout?: number }) => Promise<{ data: { data?: Record<string, unknown> } }>,
   url: string,
   groups: Group[],
   extra: Record<string, unknown> = {},
   onProgress?: (done: number, total: number) => void,
 ): Promise<ImportSummary> {
-  const CHUNK = 200; // groups per request (each group may carry many variants)
+  const CHUNK = 100; // groups per request (each group may carry many variants)
   const agg: ImportSummary = { products: { created: 0, updated: 0, skipped: 0 }, variants: { created: 0, updated: 0 }, failed: 0, failedRows: [] };
   for (let i = 0; i < groups.length; i += CHUNK) {
     const chunk = groups.slice(i, i + CHUNK);
     onProgress?.(Math.min(i + chunk.length, groups.length), groups.length);
-    const res = await post(url, { ...extra, items: chunk.map(groupToItem) });
+    const res = await post(url, { ...extra, items: chunk.map(groupToItem) }, { timeout: 60000 });
     const d = (res.data.data ?? {}) as Record<string, unknown>;
     const p = (d.products ?? {}) as Record<string, number>;
     const v = (d.variants ?? {}) as Record<string, number>;

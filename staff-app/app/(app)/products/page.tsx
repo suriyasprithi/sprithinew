@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
-import { Package, Plus, Search, MoreHorizontal, Pencil, Boxes, Tag, Layers, Trash2, Shapes, CircleCheck, CircleOff, Copy, X } from "lucide-react";
+import { Package, Plus, Search, MoreHorizontal, Pencil, Boxes, Tag, Layers, Trash2, Shapes, CircleCheck, CircleOff, Copy, X, Download } from "lucide-react";
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -29,6 +29,7 @@ import { TableSkeleton } from "@/components/data-table/table-skeleton";
 import { MobileHeader } from "@/components/layout/mobile-nav";
 import { PageHeader } from "@/components/layout/page-header";
 import { CatalogImportDialog } from "@/components/products/catalog-import-dialog";
+import { downloadProductsCsv } from "@/lib/catalog-import";
 import { api, apiErrorMessage } from "@/lib/api";
 import {
   mock,
@@ -70,7 +71,6 @@ type Draft = {
   combos: ComboRow[];              // Cartesian product, vendor-edited per row
   variant_images: VariantImages;   // per-axis-per-option image arrays
   // Comprehensive catalog details (string-bound inputs; backend normalizes/computes).
-  sub_category: string;            // child category under the picked category (auto-created)
   brand: string;
   hsn_code: string;
   barcode: string;
@@ -98,7 +98,7 @@ type ProductCategory = { id: number; name: string; commission_pct: number; vendo
 
 // The catalog-detail fields, all blank.
 const blankCatalog = () => ({
-  sub_category: "", brand: "", hsn_code: "", barcode: "",
+  brand: "", hsn_code: "", barcode: "",
   tax_type: "", tax_percentage: "", discount_type: "", discount_value: "",
   min_stock_alert: "", max_order_qty: "", weight: "", length: "", width: "", height: "",
   unit: "", delivery_charge: "", return_days: "", warranty_days: "",
@@ -121,8 +121,7 @@ function blankDraft(defaultCategoryId: number | null): Draft {
 }
 
 // Map a product row's catalog columns into Draft string/bool fields (edit + clone).
-// Sub Category is handled by the caller via category_parent_id (reverse-populate).
-function catalogDraftFrom(p: VendorProduct): Omit<ReturnType<typeof blankCatalog>, "sub_category"> {
+function catalogDraftFrom(p: VendorProduct): ReturnType<typeof blankCatalog> {
   const s = (v: unknown) => (v == null ? "" : String(v));
   let gallery = "";
   try {
@@ -143,13 +142,9 @@ function catalogDraftFrom(p: VendorProduct): Omit<ReturnType<typeof blankCatalog
   };
 }
 
-// Resolve the Category picker value + Sub Category text from a product: when the
-// product's category is a sub-category, the picker shows its parent.
-function categorySplit(p: VendorProduct): { category_id: number | null; sub_category: string } {
-  if (p.category_parent_id != null) {
-    return { category_id: p.category_parent_id, sub_category: p.category_name ?? "" };
-  }
-  return { category_id: p.category_id ?? null, sub_category: "" };
+// Resolve the Category picker value from a product (flat — no sub-category).
+function categorySplit(p: VendorProduct): { category_id: number | null } {
+  return { category_id: p.category_id ?? null };
 }
 
 function code(s: string, max: number): string {
@@ -384,9 +379,7 @@ export default function VendorProductsPage() {
         stock: String(v.stock),
       })),
       variant_images: cloneVariantImages(p.variant_images ?? {}),
-      ...catalogDraftFrom(p),
-      sub_category: cs.sub_category,
-    });
+      ...catalogDraftFrom(p),    });
   }
 
   /** Import all fields from an existing product into a new draft (no id, stock reset to 0). */
@@ -416,9 +409,7 @@ export default function VendorProductsPage() {
         stock: "0", // reset per-variant stock
       })),
       variant_images: cloneVariantImages(p.variant_images ?? {}),
-      ...catalogDraftFrom(p),
-      sub_category: cs.sub_category,
-    });
+      ...catalogDraftFrom(p),    });
     setImportOpen(false);
     setImportSearch("");
     toast.success(`Imported from ${p.name} — set new stock & save`);
@@ -446,6 +437,12 @@ export default function VendorProductsPage() {
       toast.success(item?.created ? `Category "${name}" created` : `Using existing "${name}"`);
     } catch (e) { toast.error(apiErrorMessage(e, "Could not create category")); }
     finally { setCreatingCat(false); }
+  }
+
+  function exportCsv() {
+    if (!items.length) { toast.error("No products to export"); return; }
+    downloadProductsCsv(items, `products-${new Date().toISOString().slice(0, 10)}.csv`);
+    toast.success(`Exported ${items.length} products`);
   }
 
   async function save() {
@@ -491,9 +488,7 @@ export default function VendorProductsPage() {
     // tax/discount amounts. (A blank field clears that column on save.)
     const num = (v: string) => (v.trim() !== "" && !Number.isNaN(Number(v)) ? Number(v) : null);
     payload.mrp             = num(editing.mrp);
-    payload.code            = editing.sku.trim() || null;             // SKU → products.code (upsert key)
-    payload.sub_category    = editing.sub_category.trim();            // resolved to a child category server-side
-    payload.brand           = editing.brand.trim() || null;
+    payload.code            = editing.sku.trim() || null;             // SKU → products.code (upsert key)    payload.brand           = editing.brand.trim() || null;
     payload.hsn_code        = editing.hsn_code.trim() || null;
     payload.barcode         = editing.barcode.trim() || null;
     payload.unit            = editing.unit.trim() || null;
@@ -560,6 +555,9 @@ export default function VendorProductsPage() {
                   } catch { /* keep current categories if reload fails */ }
                 }}
               />
+              <Button variant="outline" className="rounded-xl" onClick={exportCsv}>
+                <Download className="h-4 w-4" /> Export
+              </Button>
               <GradientButton onClick={startNew}>
                 <Plus className="h-4 w-4" /> New product
               </GradientButton>
@@ -833,13 +831,6 @@ export default function VendorProductsPage() {
                   {creatingCat ? "Creating…" : <><Plus className="h-3.5 w-3.5" /> Create</>}
                 </Button>
               </div>
-            </div>
-
-            {/* SUB CATEGORY — optional; auto-created under the chosen category */}
-            <div className="space-y-1.5">
-              <Label>Sub category</Label>
-              <Input value={editing?.sub_category ?? ""} onChange={(e) => setEditing((p) => p && ({ ...p, sub_category: e.target.value }))} placeholder="Optional — e.g. Rice, Cookies" className="h-11 rounded-xl bg-surface-2/60" />
-              <p className="text-[11px] text-muted-foreground">Created automatically under the chosen category if it doesn&apos;t exist.</p>
             </div>
 
             {/* COMMON FIELDS — image left, details right on md+ */}

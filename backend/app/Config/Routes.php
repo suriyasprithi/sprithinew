@@ -25,7 +25,10 @@ $routes->group('api/v1', ['filter' => 'cors'], static function ($routes) {
         $routes->post('otp/send',    'Api\AuthController::sendOtp',    ['filter' => 'rate_limit:otp,30,3600,mobile_number,5,3600']);
         $routes->get('check-mobile', 'Api\AuthController::checkMobile', ['filter' => 'rate_limit:check-mobile,100,300']);
         $routes->post('login',       'Api\AuthController::login',      ['filter' => 'rate_limit:login,30,300,mobile_number,8,900']);
-        $routes->post('staff-login',     'Api\AuthController::staffLogin', ['filter' => 'rate_limit:login,30,300,mobile_number,8,900']);
+        // Staff are a small, trusted group (not a public brute-force target like
+        // customer login) — own bucket (won't drain customer login's per-IP quota)
+        // with looser caps: 60/5min per IP, 20/15min per mobile.
+        $routes->post('staff-login',     'Api\AuthController::staffLogin', ['filter' => 'rate_limit:staff-login,60,300,mobile_number,20,900']);
         $routes->post('forgot-password', 'Api\AuthController::forgotPassword', ['filter' => 'rate_limit:forgot,15,3600']);
         $routes->post('reset-password',  'Api\AuthController::resetPassword',  ['filter' => 'rate_limit:reset,20,3600']);
         $routes->post('forgot-password-otp', 'Api\AuthController::sendResetOtp',     ['filter' => 'rate_limit:otp,30,3600,mobile_number,5,3600']);
