@@ -1,0 +1,37 @@
+{
+  "project_info": {
+    "project_number": "996974014157",
+    "project_id": "loyalwings-erp",
+    "storage_bucket": "loyalwings-erp.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:996974014157:android:307eaf3057f387f9740384",
+        "android_client_info": { "package_name": "com.epey.customer" }
+      },
+      "oauth_client": [],
+      "api_key": [ { "current_key": "AIzaSyCP47sYa-4wWUadGK6MTVKi107aiGIw7e8" } ],
+      "services": { "appinvite_service": { "other_platform_oauth_client": [] } }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:996974014157:android:fc438368572443ae740384",
+        "android_client_info": { "package_name": "com.epey.staff" }
+      },
+      "oauth_client": [],
+      "api_key": [ { "current_key": "AIzaSyCP47sYa-4wWUadGK6MTVKi107aiGIw7e8" } ],
+      "services": { "appinvite_service": { "other_platform_oauth_client": [] } }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:996974014157:android:bdbf1f7dfe241abf740384",
+        "android_client_info": { "package_name": "com.loyalwings.erp" }
+      },
+      "oauth_client": [],
+      "api_key": [ { "current_key": "AIzaSyCP47sYa-4wWUadGK6MTVKi107aiGIw7e8" } ],
+      "services": { "appinvite_service": { "other_platform_oauth_client": [] } }
+    }
+  ],
+  "configuration_version": "1"
+}

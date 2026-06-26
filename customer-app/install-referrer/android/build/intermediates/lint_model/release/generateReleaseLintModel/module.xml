@@ -1,0 +1,19 @@
+<lint-module
+    format="1"
+    dir="/workspaces/Sprithi/customer-app/install-referrer/android"
+    name=":install-referrer"
+    type="LIBRARY"
+    maven="android:install-referrer:unspecified"
+    agpVersion="8.13.0"
+    buildFolder="build"
+    bootClassPath="/home/node/android-sdk/platforms/android-36/android.jar:/home/node/android-sdk/build-tools/35.0.0/core-lambda-stubs.jar"
+    javaSourceLevel="21"
+    compileTarget="android-36"
+    neverShrinking="true">
+  <lintOptions
+      abortOnError="true"
+      absolutePaths="true"
+      checkReleaseBuilds="true"
+      explainIssues="true"/>
+  <variant name="release"/>
+</lint-module>
