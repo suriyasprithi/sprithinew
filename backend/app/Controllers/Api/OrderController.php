@@ -723,8 +723,8 @@ class OrderController extends BaseApiController
 
         // Return + cancel eligibility per order (global window settings + any open request).
         $svc         = new SystemSettingsService();
-        $days        = (int) $svc->get('returns.window_days', '0');
-        $cancelHours = (int) $svc->get('cancel.window_hours', '24');
+        $days          = (int) $svc->get('returns.window_days', '0');
+        $cancelEnabled = (string) $svc->get('cancel.enabled', '1') === '1';
         $orderIds = array_map(static fn ($r) => (int) $r['id'], $rows);
         $requested = [];
         $retStatus = [];
@@ -743,7 +743,7 @@ class OrderController extends BaseApiController
             $row = array_merge(
                 $row,
                 $this->returnInfo($row, $days, isset($requested[$oid])),
-                $this->cancelInfo($row, $cancelHours),
+                $this->cancelInfo($row, $cancelEnabled),
                 ['return_status' => $retStatus[$oid] ?? null]
             );
         }
@@ -782,23 +782,17 @@ class OrderController extends BaseApiController
      * Cancellation eligibility for one order given the window (hours). Only
      * un-settled COD orders (status 'pending') qualify — wallet orders settle at
      * placement and go through Return instead.
-     *   cancel_window_hours   — the admin setting (0 = cancellation disabled)
-     *   cancel_eligible_until — created_at + window ('Y-m-d H:i:s') or null
-     *   can_cancel            — pending, window>0, now <= until
+     *   cancel_enabled — the admin toggle (cancel.enabled; off = no cancellation)
+     *   can_cancel     — enabled, status pending, and no driver assigned yet
+     * No time window: a pending order stays cancellable right up until a driver
+     * is assigned (then it's on its way and can't be cancelled).
      */
-    private function cancelInfo(array $order, int $windowHours): array
+    private function cancelInfo(array $order, bool $enabled): array
     {
-        $until = null; $canCancel = false;
-        // Cancellable only while pending AND before a driver is assigned.
-        if ($windowHours > 0 && ($order['status'] ?? '') === 'pending' && empty($order['driver_id']) && ! empty($order['created_at'])) {
-            $ts        = strtotime($order['created_at'] . ' +' . $windowHours . ' hours');
-            $until     = date('Y-m-d H:i:s', $ts);
-            $canCancel = time() <= $ts;
-        }
+        $canCancel = $enabled && ($order['status'] ?? '') === 'pending' && empty($order['driver_id']);
         return [
-            'cancel_window_hours'   => $windowHours,
-            'cancel_eligible_until' => $until,
-            'can_cancel'            => $canCancel,
+            'cancel_enabled' => $enabled,
+            'can_cancel'     => $canCancel,
         ];
     }
 
@@ -858,7 +852,7 @@ class OrderController extends BaseApiController
         $order  = array_merge(
             $order,
             $this->returnInfo($order, $days, $hasReq),
-            $this->cancelInfo($order, (int) $svc->get('cancel.window_hours', '24')),
+            $this->cancelInfo($order, (string) $svc->get('cancel.enabled', '1') === '1'),
             [
                 'return_status'    => $retStatus,
                 // Prescription attached at checkout for medical orders (raw path
@@ -1354,31 +1348,16 @@ class OrderController extends BaseApiController
         }
 
         $svc = new SystemSettingsService();
-        // The cancellation window + penalty apply only to the CUSTOMER. A shop can
-        // decline a still-pending, undispatched order at any time with a reason.
-        if ($isCustomer) {
-            $hours = (int) $svc->get('cancel.window_hours', '24');
-            if ($hours <= 0) return $this->fail('Cancellation is disabled', 422);
-            if (! empty($order['created_at']) && time() > strtotime($order['created_at'] . ' +' . $hours . ' hours')) {
-                return $this->fail('Cancellation window has closed', 422);
-            }
+        // Cancellation is gated only by the admin on/off toggle (for the CUSTOMER)
+        // plus the pending + no-driver checks above — no time window, no penalty.
+        // A shop (vendor) can decline a still-pending, undispatched order anytime.
+        if ($isCustomer && (string) $svc->get('cancel.enabled', '1') !== '1') {
+            return $this->fail('Cancellation is disabled', 422);
         }
 
         $d      = $this->request->getJSON(true) ?? $this->request->getPost() ?? [];
         $reason = trim((string) ($d['reason'] ?? ''));
         if ($isVendor && $reason === '') return $this->fail('Please enter a reason for cancelling this order', 422);
-
-        // Penalty applies only to CUSTOMER cancellations whose reason doesn't match
-        // an admin-configured valid reason. Vendor (shop) cancellations never penalise.
-        $penalty = 0.0;
-        if ($isCustomer) {
-            $valids  = array_values(array_filter(array_map('trim', explode(',', (string) $svc->get('cancel.valid_reasons', '')))));
-            $isValid = empty($valids);
-            foreach ($valids as $vr) {
-                if ($vr !== '' && $reason !== '' && mb_stripos($reason, $vr) !== false) { $isValid = true; break; }
-            }
-            $penalty = $isValid ? 0.0 : (float) $svc->get('cancel.penalty', '0');
-        }
 
         // Restore inventory for every line (mirror of the decrement in place()).
         $items = (new OrderItemModel())->where('order_id', $id)->findAll();
@@ -1394,32 +1373,18 @@ class OrderController extends BaseApiController
             }
         }
 
-        // Charge the penalty from the wallet, clamped to the available balance
-        // (never blocks the cancellation, never goes negative).
-        $charged = 0.0;
-        if ($penalty > 0) {
-            $cid = (int) $order['customer_id'];
-            $u   = (new UserModel())->find($cid);
-            $bal = (float) ($u['wallet_balance'] ?? 0);
-            $charged = round(min($penalty, $bal), 2);
-            if ($charged > 0) {
-                (new WalletService())->debit($cid, 'wallet', $charged, 'penalty', 'order#' . $id, 'Cancellation penalty');
-            }
-        }
-
         $om->update($id, [
             'status'        => 'cancelled',
             'cancel_reason' => $reason !== '' ? mb_substr($reason, 0, 255) : null,
             'cancelled_by'  => $cancelledBy,
             'cancelled_at'  => date('Y-m-d H:i:s'),
-            'penalty'       => $charged,
+            'penalty'       => 0,
         ]);
 
         try {
             $n = new NotificationService();
             if ($isCustomer) {
-                $body = $charged > 0 ? "Order #{$id} cancelled. ₹{$charged} penalty applied." : "Order #{$id} cancelled.";
-                $n->sendTyped((int) $order['customer_id'], 'order_update', $id, '/orders', 'Order cancelled', $body);
+                $n->sendTyped((int) $order['customer_id'], 'order_update', $id, '/orders', 'Order cancelled', "Order #{$id} cancelled.");
                 if (! empty($order['vendor_id'])) {
                     $n->sendTyped((int) $order['vendor_id'], 'order_update', $id, '/orders', 'Order cancelled', "Order #{$id} cancelled by the customer" . ($reason !== '' ? ": {$reason}" : ''));
                 }
@@ -1431,6 +1396,6 @@ class OrderController extends BaseApiController
             log_message('error', 'cancel notify failed: ' . $e->getMessage());
         }
 
-        return $this->ok(['penalty' => $charged], 'Order cancelled');
+        return $this->ok(['penalty' => 0], 'Order cancelled');
     }
 }

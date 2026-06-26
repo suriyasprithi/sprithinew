@@ -322,7 +322,7 @@ export default function DeliveryRatesPage() {
     }
   }
 
-  const avgTime = timeRows.length ? timeRows.reduce((s, r) => s + r.price, 0) / timeRows.length    : 0;
+  const avgTime = timeRows.length ? timeRows.reduce((s, r) => s + (Number(r.price) || 0), 0) / timeRows.length    : 0;
 
   return (
     <>

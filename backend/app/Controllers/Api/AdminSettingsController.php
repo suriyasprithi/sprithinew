@@ -39,13 +39,11 @@ class AdminSettingsController extends BaseApiController
         'buyback.slot_4_pct'         => '2.5',
         // Days after delivery a customer may request a return. 0 = returns disabled.
         'returns.window_days'        => '0',
-        // Order cancellation (Phase 1). Hours after placing a COD order it can be
-        // cancelled (0 = cancellation disabled). Penalty (₹) is charged from the
-        // wallet when the reason isn't one of the comma-separated valid reasons
-        // (empty list = never penalise).
-        'cancel.window_hours'        => '24',
-        'cancel.penalty'             => '0',
-        'cancel.valid_reasons'       => '',
+        // Order cancellation: a single on/off toggle. While ON a customer can
+        // cancel a pending COD order any time UNTIL a driver is assigned (then
+        // it's on its way). No time window, no penalty. A shop can always cancel
+        // a still-pending, undispatched order with a reason.
+        'cancel.enabled'             => '1',
         // Rule-based delivery charge (DeliveryChargeService). Paid window wraps
         // midnight: 18:00 → 09:00 means free 09:00–17:59, paid 18:00–08:59.
         // Evening surcharge (delivery.charge) is added ONCE per order when the
@@ -73,6 +71,9 @@ class AdminSettingsController extends BaseApiController
         'buyback.eligible_user_id', 'buyback.eligible_since',
         'delivery.base_fee', 'delivery.rate_per_km', 'delivery.rate_per_hour',
         'token.base_rate', 'token.markup.state', 'token.markup.district', 'token.markup.taluk',
+        // Retired cancellation knobs — replaced by the cancel.enabled toggle.
+        // Hidden so any stale prod rows don't resurface in the UI.
+        'cancel.window_hours', 'cancel.penalty', 'cancel.valid_reasons',
     ];
 
     public function index(): ResponseInterface

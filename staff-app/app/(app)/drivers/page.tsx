@@ -191,7 +191,7 @@ export default function AdminDriversPage() {
   const safePage = Math.min(page, pageCount);
   const paged = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
 
-  const totalSalary = items.reduce((s, d) => s + d.salary, 0);
+  const totalSalary = items.reduce((s, d) => s + (Number(d.salary) || 0), 0);
 
   async function saveNew() {
     if (!adding) return;

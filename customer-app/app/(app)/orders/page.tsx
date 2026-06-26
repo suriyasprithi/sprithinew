@@ -249,9 +249,8 @@ export default function OrdersPage() {
   async function cancelOrder(id: number) {
     setCancellingId(id);
     try {
-      const res = await api.post(`/orders/${id}/cancel`, { reason: cancelReason.trim() || undefined });
-      const pen = Number(res.data.data?.penalty ?? 0);
-      toast.success(pen > 0 ? `Order cancelled — ₹${pen} penalty applied` : "Order cancelled");
+      await api.post(`/orders/${id}/cancel`, { reason: cancelReason.trim() || undefined });
+      toast.success("Order cancelled");
       setCancelOpenId(null);
       setCancelReason("");
       await load();
@@ -395,7 +394,7 @@ export default function OrdersPage() {
                         </div>
                       ) : (
                         <div className="flex flex-wrap items-center justify-between gap-2">
-                          <p className="text-xs text-muted-foreground">Cancellable until {(o.cancel_eligible_until ?? "").replace("T", " ").slice(0, 16)}</p>
+                          <p className="text-xs text-muted-foreground">You can cancel until a driver is assigned.</p>
                           <button
                             type="button"
                             onClick={() => { setCancelOpenId(o.id); setCancelReason(""); }}

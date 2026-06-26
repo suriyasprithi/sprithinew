@@ -12,6 +12,7 @@ import { EmptyState } from "@/components/data-table/empty-state";
 import { MobileHeader } from "@/components/layout/mobile-nav";
 import { PageHeader } from "@/components/layout/page-header";
 import { api, apiErrorMessage } from "@/lib/api";
+import { cn } from "@/lib/utils";
 import { mock, type SystemSetting } from "@/lib/mock";
 
 type Group = { title: string; description?: string; items: SystemSetting[] };
@@ -24,7 +25,7 @@ const META: Record<string, { title: string; description: string }> = {
   mlm:        { title: "MLM commission", description: "Multi-level commission split (L1 / L2 / L3)." },
   buyback:    { title: "Buyback queue",  description: "Buyback FIFO slot allocations." },
   returns:    { title: "Returns",        description: "How long after delivery customers can request a return." },
-  cancel:     { title: "Cancellation",   description: "When a COD order can be cancelled, and the penalty for a cancellation without a valid reason." },
+  cancel:     { title: "Cancellation",   description: "Allow customers to cancel a pending order until a driver is assigned. Turn off to disable cancellation entirely." },
   delivery:   { title: "Delivery charge", description: "Rule-based delivery fee. Paid window (overnight) is charged the flat amount; orders with an estimated time above the free-hours limit are free; otherwise each product category must meet its Free-delivery threshold (set per category on the Categories page)." },
 };
 
@@ -47,9 +48,7 @@ const LABELS: Record<string, string> = {
   "buyback.slot_3_pct":         "Slot 3 (%)",
   "buyback.slot_4_pct":         "Slot 4 (%)",
   "returns.window_days":        "Return Window (Days)",
-  "cancel.window_hours":        "Cancel window (hours, 0 = off)",
-  "cancel.penalty":             "Cancel penalty (₹)",
-  "cancel.valid_reasons":       "Valid reasons (comma-separated)",
+  "cancel.enabled":             "Allow cancellation",
   "delivery.paid_start":        "Evening window start (HH:MM, e.g. 18:00)",
   "delivery.paid_end":          "Evening window end (HH:MM, e.g. 09:00)",
   "delivery.charge":            "Evening delivery charge (₹, added 6pm–9am)",
@@ -197,6 +196,27 @@ export default function SettingsPage() {
                         {(s.value === "" || s.value === "0") && (
                           <span className="inline-flex w-fit items-center rounded-full bg-amber-500/10 px-2 py-0.5 text-[11px] font-medium text-amber-500">Returns Disabled</span>
                         )}
+                      </div>
+                    ) : s.setting_key === "cancel.enabled" ? (
+                      <div key={s.setting_key} className="space-y-1.5 md:col-span-2">
+                        <div className="flex items-baseline justify-between gap-2">
+                          <span className="text-xs font-medium">{LABELS[s.setting_key]}</span>
+                          <code className="text-[10px] text-muted-foreground">{s.setting_key}</code>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => update(s.setting_key, s.value === "1" ? "0" : "1")}
+                          className={cn(
+                            "inline-flex h-9 items-center gap-2 rounded-xl border px-3 text-sm font-medium transition-colors",
+                            s.value === "1" ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-600" : "border-border bg-surface-2/40 text-muted-foreground",
+                          )}
+                        >
+                          <span className={cn("relative inline-flex h-5 w-9 shrink-0 rounded-full transition-colors", s.value === "1" ? "bg-emerald-500" : "bg-muted-foreground/30")}>
+                            <span className={cn("absolute top-0.5 h-4 w-4 rounded-full bg-white transition-all", s.value === "1" ? "left-[18px]" : "left-0.5")} />
+                          </span>
+                          {s.value === "1" ? "Cancellation ON" : "Cancellation OFF"}
+                        </button>
+                        <p className="text-[11px] text-muted-foreground">Customers can cancel a pending order until a driver is assigned. Turn off to disable cancellation entirely.</p>
                       </div>
                     ) : (
                       <div key={s.setting_key} className="space-y-1.5">

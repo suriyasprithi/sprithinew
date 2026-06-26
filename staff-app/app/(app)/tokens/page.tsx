@@ -144,8 +144,8 @@ export default function TokensPage() {
     finally { setBusy(false); }
   }
 
-  const totalReceived = received.reduce((s, r) => s + r.tokens, 0);
-  const totalIssued = issued.reduce((s, r) => s + r.tokens, 0);
+  const totalReceived = received.reduce((s, r) => s + (Number(r.tokens) || 0), 0);
+  const totalIssued = issued.reduce((s, r) => s + (Number(r.tokens) || 0), 0);
   // Bonus tokens minted into approved requests (state 3.5% / district 3% / taluk 2%).
   const totalBonus = Math.round(received.reduce((s, r) => s + (Number(r.bonus) || 0), 0) * 100) / 100;
 
@@ -177,7 +177,7 @@ export default function TokensPage() {
                 </p>
               </div>
               <p className="text-4xl font-bold tracking-tight md:text-5xl">
-                <AnimatedCounter value={user?.token_balance ?? 0} />
+                <AnimatedCounter value={(user?.wallet_balance ?? 0) + (user?.token_balance ?? 0)} />
               </p>
               <p className="text-xs opacity-80">+{totalReceived.toLocaleString("en-IN")} received · −{totalIssued.toLocaleString("en-IN")} issued</p>
             </div>

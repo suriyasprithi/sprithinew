@@ -101,8 +101,8 @@ export default function AdminWithdrawalsPage() {
   const paged = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
 
   const pending = items.filter((w) => w.status === "pending");
-  const pendingValue = pending.reduce((s, w) => s + w.amount, 0);
-  const approvedValue = items.filter((w) => w.status === "approved").reduce((s, w) => s + w.amount, 0);
+  const pendingValue = pending.reduce((s, w) => s + (Number(w.amount) || 0), 0);
+  const approvedValue = items.filter((w) => w.status === "approved").reduce((s, w) => s + (Number(w.amount) || 0), 0);
 
   async function process(id: number, action: "approve" | "reject") {
     setBusyId(id);

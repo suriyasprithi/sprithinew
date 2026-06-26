@@ -378,7 +378,7 @@ export default function StaffDashboardPage() {
   const tiles = useMemo(() => (user ? tilesFor(user.role, stats) : []), [user, stats]);
   const quick = user ? QUICK_BY_ROLE[user.role] ?? [] : [];
   const series = stats.chart_series ?? [];
-  const total = series.reduce((sum, p) => sum + p.value, 0);
+  const total = series.reduce((sum, p) => sum + (Number(p.value) || 0), 0);
   const isMoney = stats.chart_unit === "tokens" ? undefined : undefined;
   const vendorPerf = (stats.activity_rows ?? []).slice(0, 5).map((r) => {
     const num = parseInt((r.amount ?? "0").replace(/[^0-9]/g, ""), 10) || 0;

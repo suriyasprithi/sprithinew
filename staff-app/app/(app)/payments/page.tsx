@@ -51,8 +51,8 @@ export default function AdminPaymentsPage() {
   const paged = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
 
   const pending = items.filter((p) => p.status === "pending");
-  const pendingValue = pending.reduce((s, p) => s + p.amount, 0);
-  const approvedValue = items.filter((p) => p.status === "approved").reduce((s, p) => s + p.amount, 0);
+  const pendingValue = pending.reduce((s, p) => s + (Number(p.amount) || 0), 0);
+  const approvedValue = items.filter((p) => p.status === "approved").reduce((s, p) => s + (Number(p.amount) || 0), 0);
 
   function process(id: number, action: "approve" | "reject") {
     setItems((cur) => cur.map((p) => (p.id === id ? { ...p, status: action === "approve" ? "approved" : "rejected" } : p)));

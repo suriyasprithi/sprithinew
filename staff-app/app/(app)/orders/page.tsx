@@ -191,7 +191,7 @@ export default function StaffOrdersPage() {
 
   const pending = items.filter((o) => ["pending", "confirmed", "packed", "shipped"].includes(o.status));
   const delivered = items.filter((o) => ["delivered", "paid", "completed"].includes(o.status));
-  const totalRevenue = items.reduce((s, o) => s + o.total, 0);
+  const totalRevenue = items.reduce((s, o) => s + (Number(o.total) || 0), 0);
 
   async function changeStatus(o: OrderRow, next: string) {
     if (!next || next === o.status) return;

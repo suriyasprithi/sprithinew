@@ -118,7 +118,7 @@ export default function TokenRequestPage() {
 
   const pending = rows.filter((r) => r.status === "pending");
   const approved = rows.filter((r) => r.status === "approved");
-  const totalTokens = approved.reduce((s, r) => s + r.tokens, 0);
+  const totalTokens = approved.reduce((s, r) => s + (Number(r.tokens) || 0), 0);
 
   async function uploadAttachment(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0];

@@ -210,7 +210,7 @@ export default function AdminCustomersPage() {
           total: m.length,
           active: m.filter((c) => c.status === "active").length,
           inactive: m.filter((c) => c.status !== "active").length,
-          wallet_sum: m.reduce((sum, c) => sum + c.wallet_balance, 0),
+          wallet_sum: m.reduce((sum, c) => sum + (Number(c.wallet_balance) || 0), 0),
         });
       } finally {
         if (!cancelled) setLoading(false);

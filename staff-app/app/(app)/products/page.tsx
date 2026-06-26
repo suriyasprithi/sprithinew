@@ -323,7 +323,7 @@ export default function VendorProductsPage() {
     return true;
   }), [items, search, status]);
 
-  const totalStock = items.reduce((s, p) => s + p.stock, 0);
+  const totalStock = items.reduce((s, p) => s + (Number(p.stock) || 0), 0);
   const totalValue = items.reduce((s, p) => s + p.price * p.stock, 0);
   const activeCount = items.filter((p) => p.status === "active").length;
 

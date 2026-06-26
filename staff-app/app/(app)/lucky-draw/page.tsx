@@ -131,8 +131,8 @@ export default function LuckyDrawPage() {
   const totals = useMemo(() => {
     const cur = new Date();
     const thisPeriod = `${cur.getFullYear()}-${String(cur.getMonth() + 1).padStart(2, "0")}`;
-    const all = items.reduce((s, r) => s + (r.collected || 0), 0);
-    const distributed = items.reduce((s, r) => s + (r.distributed || 0), 0);
+    const all = items.reduce((s, r) => s + (Number(r.collected) || 0), 0);
+    const distributed = items.reduce((s, r) => s + (Number(r.distributed) || 0), 0);
     const thisMonth = items.find((r) => r.period === thisPeriod);
     return {
       thisMonth: thisMonth?.collected ?? 0,
