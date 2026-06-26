@@ -121,6 +121,14 @@ class PoolDistribute extends BaseCommand
         $now    = date('Y-m-d H:i:s');
         $ref    = "global#{$period}";
 
+        // The global money lives in the admin's main wallet (credited at order
+        // time). Move the TOTAL payout from there so customers aren't paid twice.
+        $mainAdminId = (new \App\Models\UserModel())->mainAdminId();
+        if ($mainAdminId && ! $wallet->debit($mainAdminId, 'wallet', $payout, 'global_pool', $ref, "Global pool {$period} payout")) {
+            CLI::error("Admin main wallet can't cover ₹" . number_format($payout, 2) . " — aborting (no customers paid).");
+            return;
+        }
+
         foreach ($eligibleRows as $u) {
             $wallet->credit((int) $u['id'], 'global', $perUser, 'global_pool', $ref, "Global pool {$period}");
             $dist->insert([

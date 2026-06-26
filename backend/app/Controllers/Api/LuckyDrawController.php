@@ -125,7 +125,14 @@ class LuckyDrawController extends BaseApiController
         if ($amount > $collected) return $this->fail('Amount exceeds pool collected', 422);
 
         $ref = 'lucky#' . $row['period'];
-        (new WalletService())->credit($userId, 'global', $amount, 'lucky_draw', $ref, "Lucky draw {$row['period']}");
+        // The lucky money lives in the admin's main wallet (credited at order
+        // time). Move it from there to the winner so it isn't paid twice.
+        $wallet      = new WalletService();
+        $mainAdminId = (new UserModel())->mainAdminId();
+        if ($mainAdminId && ! $wallet->debit($mainAdminId, 'wallet', $amount, 'lucky_draw', $ref, "Lucky draw payout {$row['period']}")) {
+            return $this->fail('Admin main wallet has insufficient balance for this payout', 422);
+        }
+        $wallet->credit($userId, 'global', $amount, 'lucky_draw', $ref, "Lucky draw {$row['period']}");
 
         $pools->update($id, [
             'distributed'    => $amount,

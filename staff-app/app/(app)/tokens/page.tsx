@@ -53,6 +53,7 @@ export default function TokensPage() {
   const { user } = useAuth();
   const [issued, setIssued] = useState<Row[]>([]);
   const [received, setReceived] = useState<Row[]>([]);
+  const [balance, setBalance] = useState(0);
   const [inbox, setInbox] = useState<InboxRow[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -75,6 +76,7 @@ export default function TokensPage() {
       const res = await api.get("/tokens/distribute/history");
       setIssued((res.data.data?.issued ?? []) as Row[]);
       setReceived((res.data.data?.received ?? []) as Row[]);
+      setBalance(Number(res.data.data?.balance) || 0);
       if (hasInbox) {
         const ib = await api.get("/tokens/requests/inbox");
         setInbox((ib.data.data?.items ?? []) as InboxRow[]);
@@ -177,7 +179,7 @@ export default function TokensPage() {
                 </p>
               </div>
               <p className="text-4xl font-bold tracking-tight md:text-5xl">
-                <AnimatedCounter value={(user?.wallet_balance ?? 0) + (user?.token_balance ?? 0)} />
+                <AnimatedCounter value={balance} />
               </p>
               <p className="text-xs opacity-80">+{totalReceived.toLocaleString("en-IN")} received · −{totalIssued.toLocaleString("en-IN")} issued</p>
             </div>

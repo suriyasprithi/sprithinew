@@ -138,7 +138,24 @@ class TokenController extends BaseApiController
         $byId = [];
         foreach ($users as $u) $byId[(int) $u['id']] = ['name' => $u['name'], 'mobile_number' => $u['mobile_number']];
 
+        // Token-flow balance shown on the card = Σ received − Σ issued − Σ consumed
+        // by this user's own customer orders. wallet_balance is deliberately NOT
+        // used: it also holds commissions/bonuses/legacy funds that must not
+        // inflate the token figure. Mirrors the dashboard widget.
+        $db = db_connect();
+        $me = (int) $auth->id;
+        $recvSum = (float) ($db->query('SELECT COALESCE(SUM(tokens),0) s FROM distribute_tokens WHERE to_user_id = ?', [$me])->getRow()->s ?? 0);
+        $issSum  = (float) ($db->query('SELECT COALESCE(SUM(tokens),0) s FROM distribute_tokens WHERE from_user_id = ?', [$me])->getRow()->s ?? 0);
+        $consumed = 0.0;
+        if ($auth->role === 'vendor') {
+            $pct    = (float) ($db->query('SELECT commission_pct FROM vendor_profiles WHERE user_id = ?', [$me])->getRow()->commission_pct ?? 10.0);
+            $ordTot = (float) ($db->query('SELECT COALESCE(SUM(total),0) s FROM orders WHERE vendor_id = ?', [$me])->getRow()->s ?? 0);
+            $consumed = round($ordTot * $pct / 100, 2);
+        }
+        $balance = max(0, round($recvSum - $issSum - $consumed, 2));
+
         return $this->ok([
+            'balance'  => $balance,
             'issued'   => array_map(static fn ($r) => $r + ['peer' => $byId[(int) $r['to_user_id']]   ?? null], $issued),
             'received' => array_map(static fn ($r) => $r + ['peer' => $byId[(int) $r['from_user_id']] ?? null], $received),
         ]);

@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
-import { Wallet as WalletIcon, Banknote, Clock, Sparkles, Users, Loader2, QrCode, ArrowDownLeft, ShieldCheck, ShieldAlert } from "lucide-react";
+import { Wallet as WalletIcon, Banknote, Clock, Sparkles, Users, Loader2, QrCode, ArrowDownLeft, ShieldCheck, ShieldAlert, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { LuxuryCard } from "@/components/ui/custom/luxury-card";
 import { AnimatedCounter } from "@/components/ui/custom/animated-counter";
@@ -11,6 +11,9 @@ import { EmptyState } from "@/components/data-table/empty-state";
 import { MobileHeader } from "@/components/layout/mobile-nav";
 import { PageHeader } from "@/components/layout/page-header";
 import { QrTransferButton } from "@/components/qr-transfer-button";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useAuth } from "@/stores/auth";
 import { api, apiErrorMessage } from "@/lib/api";
 
@@ -75,6 +78,53 @@ export default function StaffWalletPage() {
     })();
   }, [isAdmin]);
 
+  // Main-wallet transaction history (all roles).
+  type Txn = { id: number; amount: number; direction: "credit" | "debit"; type: string; notes: string; created_at: string };
+  const [txns, setTxns] = useState<Txn[]>([]);
+  const [loadingTxns, setLoadingTxns] = useState(true);
+  async function loadHistory() {
+    setLoadingTxns(true);
+    try {
+      const res = await api.get("/wallet/history", { params: { wallet: "wallet" } });
+      setTxns((res.data.data?.items ?? []) as Txn[]);
+    } catch { /* ignore */ } finally { setLoadingTxns(false); }
+  }
+  useEffect(() => { void loadHistory(); }, []);
+
+  // Admin manual top-up.
+  const [topupOpen, setTopupOpen] = useState(false);
+  const [topupAmt, setTopupAmt] = useState("");
+  const [topupBusy, setTopupBusy] = useState(false);
+  async function submitTopup() {
+    const amt = Number(topupAmt);
+    if (!amt || amt <= 0) { toast.error("Enter a valid amount"); return; }
+    setTopupBusy(true);
+    try {
+      await api.post("/admin/wallet/topup", { amount: amt });
+      toast.success(`Added ${fmtINR(amt)} to your wallet`);
+      setTopupOpen(false); setTopupAmt("");
+      await hydrate?.();
+      await loadHistory();
+    } catch (e) { toast.error(apiErrorMessage(e)); }
+    finally { setTopupBusy(false); }
+  }
+
+  // Admin global-pool distribution (per month).
+  const [distBusy, setDistBusy] = useState<string | null>(null);
+  async function distributeGlobal(period: string) {
+    setDistBusy(period);
+    try {
+      const res = await api.post("/admin/global/distribute", { period });
+      const d = res.data.data as { recipients: number; per_user: number };
+      toast.success(`Distributed ${fmtINR(d.per_user)} to ${d.recipients} customer(s)`);
+      const pr = await api.get("/admin/wallet/global-pool");
+      setPool(pr.data.data as PoolPayload);
+      await hydrate?.();
+      await loadHistory();
+    } catch (e) { toast.error(apiErrorMessage(e)); }
+    finally { setDistBusy(null); }
+  }
+
   return (
     <>
       <MobileHeader title="Wallet" />
@@ -104,6 +154,15 @@ export default function StaffWalletPage() {
             </div>
           </LuxuryCard>
         </motion.div>
+
+        {/* Admin: manually top up the main wallet */}
+        {isAdmin && (
+          <div className="flex justify-end">
+            <Button onClick={() => setTopupOpen(true)} className="gap-1.5 rounded-xl">
+              <Plus className="h-4 w-4" /> Top up wallet
+            </Button>
+          </div>
+        )}
 
         {/* Withdraw / KYC — floor roles (vendor/taluk/district/state) can cash out
             the amount above the ₹2,500 minimum once their KYC is verified. */}
@@ -268,7 +327,13 @@ export default function StaffWalletPage() {
                               {!isDistributed && <span className="ml-1 text-[11px] text-amber-600">pending</span>}
                             </td>
                             <td className="hidden px-3 py-2.5 md:table-cell">{m.eligible_count || "—"}</td>
-                            <td className="px-3 py-2.5 text-right font-medium">{m.per_user_amount ? fmtINR(m.per_user_amount) : "—"}</td>
+                            <td className="px-3 py-2.5 text-right font-medium">
+                              {isDistributed ? fmtINR(m.per_user_amount) : m.collected > 0 ? (
+                                <Button size="sm" disabled={distBusy === m.period} onClick={() => void distributeGlobal(m.period)} className="h-7 rounded-lg px-2.5 text-xs">
+                                  {distBusy === m.period ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Distribute"}
+                                </Button>
+                              ) : "—"}
+                            </td>
                           </tr>
                         );
                       })}
@@ -280,14 +345,54 @@ export default function StaffWalletPage() {
           </motion.div>
         )}
 
-        <LuxuryCard hoverLift={false} className="p-3">
-          <EmptyState
-            icon={Clock}
-            title="Transaction history coming soon"
-            description="Wallet history will appear here once Phase 4 backend lands."
-          />
+        <LuxuryCard hoverLift={false} className="overflow-hidden p-0">
+          <div className="flex items-center gap-2 border-b border-border px-4 py-3 text-sm font-semibold">
+            <Clock className="h-4 w-4 text-muted-foreground" /> Transaction history
+          </div>
+          {loadingTxns ? (
+            <div className="flex items-center justify-center gap-2 p-6 text-xs text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> Loading…</div>
+          ) : txns.length === 0 ? (
+            <EmptyState icon={Clock} title="No transactions yet" description="Wallet credits and debits will appear here." />
+          ) : (
+            <div className="divide-y divide-border">
+              {txns.map((t) => (
+                <div key={t.id} className="flex items-center justify-between gap-3 px-4 py-3">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium">{(t.notes || t.type).replace(/\s*\[[+-]\w+\]$/, "")}</p>
+                    <p className="text-[11px] text-muted-foreground">{(t.created_at ?? "").replace("T", " ").slice(0, 16)}</p>
+                  </div>
+                  <p className={"shrink-0 text-sm font-bold " + (t.direction === "credit" ? "text-emerald-600" : "text-rose-500")}>
+                    {t.direction === "credit" ? "+" : "−"}{fmtINR(t.amount)}
+                  </p>
+                </div>
+              ))}
+            </div>
+          )}
         </LuxuryCard>
       </section>
+
+      {/* Admin: manual wallet top-up */}
+      <Dialog open={topupOpen} onOpenChange={setTopupOpen}>
+        <DialogContent className="rounded-2xl">
+          <DialogHeader>
+            <DialogTitle>Top up wallet</DialogTitle>
+            <DialogDescription>Manually add an amount to your main wallet. It shows in your history.</DialogDescription>
+          </DialogHeader>
+          <Input
+            type="number"
+            inputMode="decimal"
+            value={topupAmt}
+            onChange={(e) => setTopupAmt(e.target.value)}
+            placeholder="Amount (₹)"
+          />
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setTopupOpen(false)}>Cancel</Button>
+            <Button onClick={() => void submitTopup()} disabled={topupBusy} className="gap-1.5">
+              {topupBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />} Add
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

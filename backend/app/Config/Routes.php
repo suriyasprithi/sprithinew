@@ -405,6 +405,9 @@ $routes->group('api/v1', ['filter' => 'cors'], static function ($routes) {
 
         // current global pool balance + last 12 months of monthly_global_pools rows
         $routes->get('wallet/global-pool', 'Api\WalletController::adminGlobalPool');
+        // admin manual wallet top-up + manual global-pool distribution
+        $routes->post('wallet/topup',      'Api\WalletController::adminTopup');
+        $routes->post('global/distribute', 'Api\WalletController::adminDistributeGlobal');
 
         // lucky draw pools (3% slot from every order; admin picks winner)
         $routes->get('lucky-draw/pools',                       'Api\LuckyDrawController::pools');

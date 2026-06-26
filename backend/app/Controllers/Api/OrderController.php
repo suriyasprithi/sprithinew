@@ -288,13 +288,18 @@ class OrderController extends BaseApiController
                     : ('Order #' . $orderIds[0]),
             ]);
             // Delivery fees + GST are platform-collected (logistics revenue / tax
-            // to remit) → admin pool. Neither is vendor sale revenue.
+            // to remit) → admin's main wallet. Neither is vendor sale revenue.
             $platformCut = round($totalDelivery + $totalGst, 2);
             if ($platformCut > 0) {
-                \Config\Database::connect()->table('system_pools')
-                    ->where('pool_key', 'admin_wallet')
-                    ->set('balance', "balance + {$platformCut}", false)
-                    ->update();
+                $mainAdminId = (new UserModel())->mainAdminId();
+                if ($mainAdminId) {
+                    $wallet->credit($mainAdminId, 'wallet', $platformCut, 'platform_fee', 'order#' . $orderIds[0], 'Delivery + GST (platform)');
+                } else {
+                    \Config\Database::connect()->table('system_pools')
+                        ->where('pool_key', 'admin_wallet')
+                        ->set('balance', "balance + {$platformCut}", false)
+                        ->update();
+                }
             }
         }
 

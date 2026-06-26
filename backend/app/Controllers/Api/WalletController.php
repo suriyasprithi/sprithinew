@@ -312,9 +312,11 @@ class WalletController extends BaseApiController
 
         $db = \Config\Database::connect();
 
+        // Awaiting distribution = sum of months not yet distributed. The money
+        // itself now sits in the admin's main wallet; this is the pending tally.
         $current = (float) ($db->query(
-            "SELECT balance FROM system_pools WHERE pool_key = 'global'"
-        )->getRow()->balance ?? 0);
+            "SELECT COALESCE(SUM(collected),0) c FROM monthly_global_pools WHERE distributed_at IS NULL"
+        )->getRow()->c ?? 0);
 
         // Last 12 months: collected, distributed, eligible count, per-user share.
         $months = $db->query(
@@ -348,6 +350,79 @@ class WalletController extends BaseApiController
             'total_distributed' => $totalDistributed,
             'months'            => $items,
         ]);
+    }
+
+    /** Admin-only: manually credit own main wallet (top-up). Shows in history. */
+    public function adminTopup(): ResponseInterface
+    {
+        $auth = $this->authUser();
+        if (! $auth || $auth->role !== 'admin') return $this->fail('Forbidden', 403);
+        if (! $this->validate(['amount' => 'required|numeric|greater_than[0]'])) {
+            return $this->fail('Valid amount required', 422, $this->validator->getErrors());
+        }
+        $d      = $this->request->getJSON(true) ?? $this->request->getPost();
+        $amount = round((float) $d['amount'], 2);
+        $note   = trim((string) ($d['note'] ?? '')) ?: 'Manual top-up';
+        (new WalletService())->credit((int) $auth->id, 'wallet', $amount, 'manual_topup', null, $note);
+        return $this->ok(['amount' => $amount], 'Wallet topped up');
+    }
+
+    /**
+     * Admin-only: distribute one month's global pool to eligible inactive
+     * customers, DEBITING the admin's main wallet (where the money now lives).
+     * Mirrors `php spark pool:distribute`, driven from the admin UI button.
+     */
+    public function adminDistributeGlobal(): ResponseInterface
+    {
+        $auth = $this->authUser();
+        if (! $auth || $auth->role !== 'admin') return $this->fail('Forbidden', 403);
+        $d      = $this->request->getJSON(true) ?? $this->request->getPost();
+        $period = (string) ($d['period'] ?? '');
+        if (! preg_match('/^\d{4}-(0[1-9]|1[0-2])$/', $period)) return $this->fail('Invalid period (YYYY-MM)', 422);
+
+        $pools = new \App\Models\MonthlyGlobalPoolModel();
+        $row   = $pools->where('period', $period)->first();
+        if (! $row || (float) $row['collected'] <= 0) return $this->fail('Nothing collected for this month', 422);
+        if (! empty($row['distributed_at']))           return $this->fail('This month was already distributed', 409);
+
+        // Eligible = active customers with no wallet movement in the rolling
+        // 3-month window [first day of (period-2)] .. [last day of period].
+        $windowStart = date('Y-m-01 00:00:00', strtotime("{$period}-01 -2 months"));
+        $windowEnd   = date('Y-m-t 23:59:59', strtotime("{$period}-01"));
+        $db = \Config\Database::connect();
+        $eligible = $db->table('users u')->select('u.id')
+            ->where('u.role', 'customer')->where('u.status', 'active')
+            ->where("NOT EXISTS (SELECT 1 FROM wallet_transactions wt WHERE wt.user_id = u.id AND wt.created_at BETWEEN '{$windowStart}' AND '{$windowEnd}')", null, false)
+            ->get()->getResultArray();
+
+        $count     = count($eligible);
+        $collected = (float) $row['collected'];
+        if ($count === 0) return $this->fail('No eligible customers for this month', 422);
+
+        $perUser = floor($collected / $count * 100) / 100;
+        if ($perUser <= 0) return $this->fail('Collected amount too small to split', 422);
+        $payout   = round($perUser * $count, 2);
+        $leftover = round($collected - $payout, 2);
+
+        $wallet  = new WalletService();
+        $ref     = "global#{$period}";
+        $adminId = (new UserModel())->mainAdminId();
+        if ($adminId && ! $wallet->debit($adminId, 'wallet', $payout, 'global_pool', $ref, "Global pool {$period} payout")) {
+            return $this->fail('Admin main wallet has insufficient balance for this payout', 422);
+        }
+        $distModel = new \App\Models\MonthlyGlobalDistributionModel();
+        foreach ($eligible as $u) {
+            $wallet->credit((int) $u['id'], 'global', $perUser, 'global_pool', $ref, "Global pool {$period}");
+            $distModel->insert(['pool_id' => (int) $row['id'], 'user_id' => (int) $u['id'], 'amount' => $perUser]);
+        }
+        if ($leftover > 0) $pools->add(date('Y-m', strtotime("{$period}-01 +1 month")), $leftover);
+        $pools->update($row['id'], [
+            'distributed'     => $payout,
+            'eligible_count'  => $count,
+            'per_user_amount' => $perUser,
+            'distributed_at'  => date('Y-m-d H:i:s'),
+        ]);
+        return $this->ok(['period' => $period, 'recipients' => $count, 'per_user' => $perUser, 'total' => $payout], 'Distributed');
     }
 
     /**

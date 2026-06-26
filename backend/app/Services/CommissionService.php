@@ -243,30 +243,25 @@ class CommissionService
             }
         }
 
-        // Global pool slot — accrues into the CURRENT month's bucket so it can
-        // be distributed at month-end by `php spark pool:distribute`.
+        // Global slot — recorded into the CURRENT month's bucket for HISTORY /
+        // DISPLAY only. The money itself goes to the admin's main wallet below;
+        // the admin hands it out to eligible customers from there.
         $globalAmt = round($pool * self::SLOT_PCT['global'] / 100, 2);
         (new MonthlyGlobalPoolModel())->add(date('Y-m'), $globalAmt);
 
-        // Lucky draw slot — accrues into the CURRENT month's bucket. Admin
-        // picks the winner manually via /admin/lucky-draw page. The % is
-        // admin-tunable via system_settings; the admin slot absorbs the delta
-        // so the pool still sums to 100% (clamped so admin can't go negative).
+        // Lucky draw slot — recorded into the month's bucket for HISTORY only.
+        // Money goes to the admin's main wallet; admin picks the winner and pays
+        // from there. The % is admin-tunable; the admin slot absorbs the delta.
         $luckyPct = max(0.0, (float) $settingsModel->get('commission.lucky_draw_pct', (string) self::SLOT_PCT['lucky_draw']));
         $luckyAmt = round($pool * $luckyPct / 100, 2);
         (new MonthlyLuckyDrawPoolModel())->add(date('Y-m'), $luckyAmt);
 
-        // Token-share slot — funds the token-request bonuses paid up the geo
-        // chain (state/district/taluk). TokenService draws from this
-        // system_pools.token_share balance when it fulfils requests. % is
-        // admin-tunable; the admin slot absorbs the delta (see below).
+        // Token-share slot — folded into the admin wallet credit below.
         $tokenSharePct = max(0.0, (float) $settingsModel->get('commission.token_share_pct', (string) self::SLOT_PCT['token_share']));
         $tokenShareAmt = round($pool * $tokenSharePct / 100, 2);
-        $pools->add('token_share', $tokenShareAmt);
 
-        // Admin pool slot + everything that fell through. The admin slot absorbs
-        // the lucky-draw and token-share deltas so the total still sums to 100%
-        // (clamped so admin can't go negative on extreme misconfiguration).
+        // Admin slot + everything that fell through. Absorbs the lucky/token/level/
+        // buyback deltas so the pool still sums to 100% (clamped non-negative).
         $adminPctEffective = self::SLOT_PCT['admin']
             + (self::SLOT_PCT['lucky_draw']  - $luckyPct)
             + (self::SLOT_PCT['token_share'] - $tokenSharePct)
@@ -276,12 +271,25 @@ class CommissionService
             + ((self::SLOT_PCT['buyback_1'] + self::SLOT_PCT['buyback_2'] + self::SLOT_PCT['buyback_3'] + self::SLOT_PCT['buyback_4']) - $allBuybackPct);
         $adminPctEffective = max(0.0, $adminPctEffective);
         $adminAmt = round($pool * $adminPctEffective / 100, 2) + $adminPool;
-        $pools->add('admin_wallet', $adminAmt);
+
+        // Every admin-bound rupee (global + lucky + token-share + admin + all
+        // fall-through) lands in the MAIN admin's spendable wallet as a single
+        // transaction, so it shows in the admin's wallet history / Activity. The
+        // global & lucky monthly rows above stay as display-only history; the
+        // admin distributes those by hand (debited from this same wallet).
+        $adminBound  = round($globalAmt + $luckyAmt + $tokenShareAmt + $adminAmt, 2);
+        $mainAdminId = (new UserModel())->mainAdminId();
+        if ($mainAdminId && $adminBound > 0) {
+            $wallet->credit($mainAdminId, 'wallet', $adminBound, 'commission', 'order#' . $orderId, 'Commission (admin share)');
+        } elseif ($adminBound > 0) {
+            // No resolvable admin — never lose the money; fall back to the pool.
+            $pools->add('admin_wallet', $adminBound);
+        }
 
         $applied[] = ['slot' => 'global',      'pool' => 'monthly_global_pools:' . date('Y-m'),     'amount' => $globalAmt];
         $applied[] = ['slot' => 'lucky_draw',  'pool' => 'monthly_lucky_draw_pools:' . date('Y-m'), 'amount' => $luckyAmt];
-        $applied[] = ['slot' => 'token_share', 'pool' => 'token_share',                             'amount' => $tokenShareAmt];
-        $applied[] = ['slot' => 'admin',       'pool' => 'admin_wallet',                            'amount' => $adminAmt];
+        $applied[] = ['slot' => 'token_share', 'beneficiary_id' => $mainAdminId,                    'amount' => $tokenShareAmt];
+        $applied[] = ['slot' => 'admin',       'beneficiary_id' => $mainAdminId,                    'amount' => $adminAmt];
 
         // M4 commit/rollback: if any payout query failed, roll the whole cascade
         // back and un-stamp the order so a later trigger retries (never half-paid).

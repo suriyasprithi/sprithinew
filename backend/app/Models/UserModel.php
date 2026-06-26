@@ -94,6 +94,21 @@ class UserModel extends Model
             ->first();
     }
 
+    /**
+     * The single "main" admin that receives all platform money (commission,
+     * platform fees, etc.): the active admin with the all-zeros mobile, else the
+     * lowest-id active admin. Returns null only if there is no active admin.
+     */
+    public function mainAdminId(): ?int
+    {
+        $admins = $this->where('role', 'admin')->where('status', 'active')->orderBy('id', 'ASC')->findAll();
+        if (! $admins) return null;
+        foreach ($admins as $a) {
+            if ((string) ($a['mobile_number'] ?? '') === '0000000000') return (int) $a['id'];
+        }
+        return (int) $admins[0]['id'];
+    }
+
     public function findActiveStaffByMobile(string $mobile): array
     {
         return $this->where('mobile_number', $mobile)
