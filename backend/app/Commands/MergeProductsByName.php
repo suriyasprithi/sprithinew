@@ -47,10 +47,12 @@ class MergeProductsByName extends BaseCommand
 
         $db = \Config\Database::connect();
 
+        // Group by name + brand (same name, different brand = different product:
+        // "SHIRT" by Allen Solly vs Polo must not merge). NULL/'' brands collapse.
         $gb = $db->table('products')
-            ->select('vendor_id, name, COUNT(*) AS c')
+            ->select("vendor_id, name, COALESCE(brand,'') AS brand_key, COUNT(*) AS c", false)
             ->where('deleted_at', null)
-            ->groupBy('vendor_id, name')
+            ->groupBy("vendor_id, name, COALESCE(brand,'')", false)
             ->having('c > 1');
         if ($vendor) $gb->where('vendor_id', (int) $vendor);
         if ($nameF)  $gb->where('name', $nameF);
@@ -60,12 +62,16 @@ class MergeProductsByName extends BaseCommand
         $productsInMerge = 0;
 
         foreach ($groups as $g) {
-            $rows = $db->table('products')
+            $pq = $db->table('products')
                 ->where('vendor_id', (int) $g['vendor_id'])
                 ->where('name', $g['name'])
-                ->where('deleted_at', null)
-                ->orderBy('id', 'ASC')
-                ->get()->getResultArray();
+                ->where('deleted_at', null);
+            if (($g['brand_key'] ?? '') === '') {
+                $pq->groupStart()->where('brand', null)->orWhere('brand', '')->groupEnd();
+            } else {
+                $pq->where('brand', $g['brand_key']);
+            }
+            $rows = $pq->orderBy('id', 'ASC')->get()->getResultArray();
             if (count($rows) < 2) continue;
 
             $ids      = array_map(static fn ($r) => (int) $r['id'], $rows);
@@ -115,22 +121,14 @@ class MergeProductsByName extends BaseCommand
         return ['skip', 'price-label/generic'];
     }
 
-    /** A clean variant attribute: weight, volume, storage, length, count, clothing size, or color. */
+    /** A real variant value: a size/volume/colour OR any named flavour/type (Oreo, Fruit & Nut) — anything except a bare price label or a marketing/bundle word. */
     private function isAttribute(string $val): bool
     {
         $v = strtoupper(trim(str_replace('\\', '', $val)));
         if ($v === '') return false;
-        $pats = [
-            '/^\d+(\.\d+)?\s*(MG|G|GM|GMS|GRAM|GRAMS|KG|KGS)$/',           // weight
-            '/^\d+(\.\d+)?\s*(ML|L|LT|LTR|LTRS|LITRE|LITER|LITRES)$/',     // volume
-            '/^\d+(\.\d+)?\s*(MB|GB|TB)$/',                                // storage / RAM
-            '/^\d+(\.\d+)?\s*(MM|CM|INCH|INCHES|FT|FEET)$/',               // length
-            '/^\d+\s*(N|NO|NOS|PC|PCS|PCES|PIECE|PIECES|U|UNIT|UNITS|CT|COUNT|DOZEN)$/', // count
-            '/^(XS|S|M|L|XL|XXL|3XL|XXXL|4XL|5XL|NB|NEWBORN|NEW BORN|FREE SIZE|FREESIZE|STD|STANDARD)(\s*[=:\-]\s*\d+)?$/', // clothing/diaper size (+ optional count)
-        ];
-        foreach ($pats as $p) if (preg_match($p, $v)) return true;
-        $colors = ['RED','BLUE','BLACK','GREEN','WHITE','YELLOW','PINK','ORANGE','PURPLE','VIOLET','BROWN','GREY','GRAY','GOLD','GOLDEN','SILVER','MAROON','NAVY','BEIGE','CREAM','TAN','MULTI','MULTICOLOR','MULTICOLOUR','ASSORTED','ASST'];
-        return in_array($v, $colors, true);
+        if (preg_match('#^\d+(\.\d+)?\s*/-?$#', $v) || preg_match('#^\d+(\.\d+)?$#', $v)) return false; // price label (30/-, 25)
+        if ($this->isMarketing($v)) return false;                                                       // combo / pack / gift
+        return true; // 100G, 500ML, Red, Oreo, Fruit & Nut …
     }
 
     /** A marketing/bundle label (combo, pack, gift, offer, premium, special, …). */

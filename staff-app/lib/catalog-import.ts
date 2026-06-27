@@ -91,25 +91,27 @@ export async function fileToRows(file: File): Promise<string[][]> {
 // A clean variant attribute: weight, volume, storage, length, count, clothing
 // size, or a colour. Decides whether same-(name,category,brand) rows are a real
 // variant set vs a generic name collision / bundle. Never merge on ambiguity.
-const ATTR_PATTERNS = [
-  /^\d+(\.\d+)?\s*(mg|g|gm|gms|gram|grams|kg|kgs)$/i,            // weight
-  /^\d+(\.\d+)?\s*(ml|l|lt|ltr|ltrs|litre|liter|litres)$/i,     // volume
-  /^\d+(\.\d+)?\s*(mb|gb|tb)$/i,                                // storage / RAM
-  /^\d+(\.\d+)?\s*(mm|cm|inch|inches|ft|feet)$/i,               // length
-  /^\d+\s*(n|no|nos|pc|pcs|pces|piece|pieces|u|unit|units|ct|count|dozen)$/i, // count
-  /^(xs|s|m|l|xl|xxl|3xl|xxxl|4xl|5xl|nb|newborn|new born|free\s?size|std|standard)(\s*[=:-]\s*\d+)?$/i, // clothing/diaper size
-];
-const COLORS = new Set(["red","blue","black","green","white","yellow","pink","orange","purple","violet","brown","grey","gray","gold","golden","silver","maroon","navy","beige","cream","tan","multi","multicolor","multicolour","assorted","asst"]);
 const BUNDLE_PHRASES = ["combo","bundle","hamper","multipack","multi pack","value pack","combo pack","family pack","economy pack","trial pack","festival pack","gift pack","gift set","saver pack","jumbo pack"];
 
 const stripVal = (s: string) => s.replace(/\\/g, "").trim();
 
-/** True when a label is a recognised variant attribute value (100G, 500ML, Red, 128GB, S/M/L…). */
+/** A bare price label (30/-, 25) — a price stand-in, never a real variant axis. */
+function isPriceLabel(val: string): boolean {
+  const v = stripVal(val);
+  return /^\d+(\.\d+)?\s*\/-?$/.test(v) || /^\d+(\.\d+)?$/.test(v);
+}
+
+/**
+ * A real variant value: a size (100G), volume (500ML), colour (Red), storage
+ * (128GB) OR any NAMED flavour/type (Oreo, Fruit & Nut) — i.e. anything except a
+ * bare price label or a marketing/bundle word. Flavours count like colours do.
+ */
 export function isCleanAttribute(val: string): boolean {
   const v = stripVal(val);
   if (!v) return false;
-  if (ATTR_PATTERNS.some((p) => p.test(v))) return true;
-  return COLORS.has(v.toLowerCase());
+  if (isPriceLabel(v)) return false;   // 30/-, 25 → price, not a variant
+  if (hasBundleWord(v)) return false;  // combo / pack / gift → marketing
+  return true;                         // 100G, 500ML, Red, Oreo, Fruit & Nut …
 }
 
 /** Marketing / bundle wording in a variant value or a product name (combo, pack, gift…). */
