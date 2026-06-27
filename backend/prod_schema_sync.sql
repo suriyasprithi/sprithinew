@@ -208,3 +208,6 @@ ALTER TABLE `users` ADD COLUMN IF NOT EXISTS `upi` varchar(100) DEFAULT NULL;
 ALTER TABLE `users` ADD COLUMN IF NOT EXISTS `kyc_status` varchar(20) NOT NULL DEFAULT 'none';
 ALTER TABLE `users` ADD COLUMN IF NOT EXISTS `kyc_note` varchar(255) DEFAULT NULL;
 ALTER TABLE `users` ADD COLUMN IF NOT EXISTS `account_holder` varchar(150) DEFAULT NULL;
+-- Admin reserves: surplus buyback + orphan L1/L2/L3 commission held on the admin row.
+ALTER TABLE `users` ADD COLUMN IF NOT EXISTS `buyback_reserve` decimal(12,2) NOT NULL DEFAULT 0;
+ALTER TABLE `users` ADD COLUMN IF NOT EXISTS `level_reserve`   decimal(12,2) NOT NULL DEFAULT 0;
