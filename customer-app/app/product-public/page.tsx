@@ -3,7 +3,7 @@
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
-import { ChevronDown, Filter, Loader2, Minus, Plus, ShoppingCart, X } from "lucide-react";
+import { ChevronDown, Filter, Loader2, Minus, Plus, Search, ShoppingCart, X } from "lucide-react";
 import { toast } from "sonner";
 import { TopInfoBar } from "@/components/marketplace/top-info-bar";
 import { MarketplaceHeader } from "@/components/marketplace/marketplace-header";
@@ -208,6 +208,9 @@ function CategoryTree({
   }, [activeId, categories, vendorCategories, grouped]);
 
   const [open, setOpen] = useState<Set<number>>(initiallyOpen);
+  const [query, setQuery] = useState("");
+  const q = query.trim().toLowerCase();
+  const matches = (name: string) => !q || name.toLowerCase().includes(q);
   // If the active selection moves to a different subtree, expand its parent.
   useEffect(() => {
     if (activeId == null) return;
@@ -226,12 +229,27 @@ function CategoryTree({
     });
   }
 
+  const visibleOrphans = grouped.orphans.filter((c) => matches(c.name));
+  const anyParentMatch = vendorCategories.some((vc) => (grouped.m.get(vc.id) ?? []).some((c) => matches(c.name)));
+
   return (
-    <div className="space-y-0.5">
+    <div className="space-y-1">
+      <div className="relative">
+        <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[var(--mk-text-muted)]" />
+        <input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search categories…"
+          className="h-9 w-full rounded-lg border border-[var(--mk-border)] bg-[var(--mk-surface-2)] pl-8 pr-2 text-xs text-[var(--mk-text)] outline-none focus:border-[var(--mk-brand)]"
+        />
+      </div>
+      {q && !anyParentMatch && visibleOrphans.length === 0 && (
+        <p className="px-2 py-2 text-xs text-[var(--mk-text-muted)]">No categories found</p>
+      )}
       {vendorCategories.map((vc) => {
-        const kids = grouped.m.get(vc.id) ?? [];
+        const kids = (grouped.m.get(vc.id) ?? []).filter((c) => matches(c.name));
         if (kids.length === 0) return null;
-        const isOpen = open.has(vc.id);
+        const isOpen = q ? true : open.has(vc.id);
         const totalCount = kids.reduce((s, k) => s + (counts.get(k.id) ?? 0), 0);
         return (
           <div key={vc.id}>
@@ -276,11 +294,11 @@ function CategoryTree({
         );
       })}
 
-      {grouped.orphans.length > 0 && (
+      {visibleOrphans.length > 0 && (
         <div>
           <p className="px-2 pt-2 text-[10px] font-semibold uppercase tracking-wider text-[var(--mk-text-muted)]">Unlinked</p>
           <ul className="space-y-0.5">
-            {grouped.orphans.map((c) => {
+            {visibleOrphans.map((c) => {
               const active = c.id === activeId;
               const cnt = counts.get(c.id) ?? 0;
               return (
