@@ -365,6 +365,20 @@ export default function VendorProductsPage() {
   const totalValue = stats.total_value;
   const activeCount = stats.active;
 
+  // Category dropdown options. Always include the product's CURRENT category so
+  // an edit pre-selects it even when that category isn't linked to this vendor
+  // category (imported products' categories often aren't) — otherwise the field
+  // looks empty though the product clearly has a category.
+  const categoryOptions = useMemo(() => {
+    const opts = productCategories.map((c) => ({ value: String(c.id), label: c.name }));
+    const cid = editing?.category_id;
+    if (cid != null && !opts.some((o) => o.value === String(cid))) {
+      const prod = items.find((p) => p.id === editing?.id);
+      opts.unshift({ value: String(cid), label: prod?.category_name ?? `Category #${cid}` });
+    }
+    return opts;
+  }, [productCategories, editing?.category_id, editing?.id, items]);
+
   function startNew() {
     setEditing(blankDraft(vendorCategory?.id ?? null));
   }
@@ -944,8 +958,8 @@ export default function VendorProductsPage() {
                   if (p.category_id === newId) return p;
                   return { ...p, category_id: newId, attributes: {} };
                 })}
-                options={productCategories.map((c) => ({ value: String(c.id), label: c.name }))}
-                placeholder={productCategories.length === 0 ? "No categories available for your vendor category" : "Pick a category — Vegetables, Fruits, Rice…"}
+                options={categoryOptions}
+                placeholder={categoryOptions.length === 0 ? "No categories available for your vendor category" : "Pick a category — Vegetables, Fruits, Rice…"}
                 searchPlaceholder="Search category…"
                 emptyText={`No categories — ask admin to link some to ${vendorCategory?.name ?? "your vendor category"}`}
                 className="h-11 w-full rounded-xl bg-surface-2/60"
