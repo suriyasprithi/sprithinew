@@ -243,6 +243,9 @@ function CategoryTree({
           className="h-9 w-full rounded-lg border border-[var(--mk-border)] bg-[var(--mk-surface-2)] pl-8 pr-2 text-xs text-[var(--mk-text)] outline-none focus:border-[var(--mk-brand)]"
         />
       </div>
+      {/* Scrollable list — the category list (374+ items) scrolls on its own
+          while the search box above stays put. */}
+      <div className="mt-1 max-h-[70vh] space-y-1 overflow-y-auto pr-1">
       {q && !anyParentMatch && visibleOrphans.length === 0 && (
         <p className="px-2 py-2 text-xs text-[var(--mk-text-muted)]">No categories found</p>
       )}
@@ -322,6 +325,7 @@ function CategoryTree({
           </ul>
         </div>
       )}
+      </div>
     </div>
   );
 }
