@@ -225,11 +225,43 @@ class ProductController extends BaseApiController
         $auth = $this->authUser();
         if (! $auth) return $this->fail('Unauthorized', 401);
         if (! in_array($auth->role, ['vendor', 'admin'], true)) return $this->fail('Forbidden', 403);
+
+        // Server-side pagination + search + status filter (14k+ products per vendor
+        // — the whole catalog must never be shipped in one response).
+        $page     = max(1, (int) $this->request->getGet('page'));
+        $perPage  = (int) $this->request->getGet('per_page');
+        $perPage  = $perPage > 0 ? min($perPage, 200) : 50;
+        $q        = trim((string) $this->request->getGet('q'));
+        $status   = (string) $this->request->getGet('status');
+        $vendorId = $auth->role === 'vendor' ? (int) $auth->id : (int) $this->request->getGet('vendor_id');
+
         $model = new ProductModel();
-        if ($auth->role === 'vendor') $model->where('vendor_id', $auth->id);
-        $rows = $model->orderBy('id', 'DESC')->findAll();
-        $rows = $this->enrich($rows);
-        return $this->ok(['items' => $rows]);
+        if ($vendorId)  $model->where('vendor_id', $vendorId);
+        if ($q !== '')  $model->like('name', $q);
+        if (in_array($status, ['active', 'inactive'], true)) $model->where('status', $status);
+
+        $total = $model->countAllResults(false);   // false: keep the conditions for findAll
+        $rows  = $model->orderBy('id', 'DESC')->findAll($perPage, ($page - 1) * $perPage);
+        $rows  = $this->enrich($rows);
+
+        // Overview-card aggregates over ALL of this vendor's products (not the page).
+        $sm = new ProductModel();
+        if ($vendorId) $sm->where('vendor_id', $vendorId);
+        $st = $sm->select("COUNT(*) AS cnt, COALESCE(SUM(stock),0) AS total_stock, COALESCE(SUM(price * stock),0) AS total_value, SUM(status = 'active') AS active_cnt", false)
+                 ->first() ?? [];
+
+        return $this->ok([
+            'items'    => $rows,
+            'total'    => $total,
+            'page'     => $page,
+            'per_page' => $perPage,
+            'stats'    => [
+                'total'       => (int)   ($st['cnt']         ?? 0),
+                'active'      => (int)   ($st['active_cnt']  ?? 0),
+                'total_stock' => (int)   ($st['total_stock'] ?? 0),
+                'total_value' => (float) ($st['total_value'] ?? 0),
+            ],
+        ]);
     }
 
     public function create(): ResponseInterface

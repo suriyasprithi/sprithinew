@@ -248,7 +248,11 @@ export default function VendorProductsPage() {
   const [creatingCat, setCreatingCat] = useState(false);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const [stats, setStats] = useState({ total: 0, active: 0, total_stock: 0, total_value: 0 });
+  const [reloadKey, setReloadKey] = useState(0);
   const [status, setStatus] = useState<"all" | "active" | "inactive">("all");
   const [editing, setEditing] = useState<Draft | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<VendorProduct | null>(null);
@@ -260,24 +264,18 @@ export default function VendorProductsPage() {
   const [bulkConfirm, setBulkConfirm] = useState(false);
   const [bulkBusy, setBulkBusy] = useState(false);
 
+  // Debounce the search box → a server query; new search/status restarts at page 1.
+  useEffect(() => { const t = setTimeout(() => setDebouncedSearch(search.trim()), 350); return () => clearTimeout(t); }, [search]);
+  useEffect(() => { setPage(1); }, [debouncedSearch, status]);
+
+  // Vendor category + its product categories — loaded once.
   useEffect(() => {
     void (async () => {
-      // 1. Logged-in vendor's vendor_category (auto — no dropdown shown).
       const vc = await api.get("/vendor/me/category")
         .then((res) => (res.data.data?.category ?? null) as VendorCategoryFull | null)
         .catch(() => mock.currentVendorCategory());
       setVendorCategory(vc);
 
-      // 2. Their products.
-      const products = await api.get("/vendor/products")
-        .then((res) => {
-          const items = res.data.data?.items;
-          return Array.isArray(items) ? (items as VendorProduct[]) : [];
-        })
-        .catch(() => mock.vendorProducts());
-      setItems(Array.isArray(products) ? products : []);
-
-      // 3. Product categories filtered to this vendor's vendor_category.
       const params = vc ? { vendor_category_id: vc.id } : {};
       const cats = await api.get("/catalog/categories", { params })
         .then((res) => {
@@ -313,22 +311,46 @@ export default function VendorProductsPage() {
           return seed[vc.id] ?? [];
         });
       setProductCategories(Array.isArray(cats) ? cats : []);
-      setLoading(false);
     })();
   }, []);
 
-  const filtered = useMemo(() => items.filter((p) => {
-    if (search && !p.name.toLowerCase().includes(search.toLowerCase())) return false;
-    if (status !== "all" && p.status !== status) return false;
-    return true;
-  }), [items, search, status]);
-
-  // Table pagination (50/page). Search/status filter the FULL list first, then
-  // we slice — so searching looks across every product, not just the page.
+  // One server page of products — the backend owns filtering, paging and the
+  // aggregate stat counts (a vendor can have 14k+ products).
   const PAGE_SIZE = 50;
-  const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      setLoading(true);
+      try {
+        const res = await api.get("/vendor/products", {
+          params: { q: debouncedSearch || undefined, status: status !== "all" ? status : undefined, page, per_page: PAGE_SIZE },
+        });
+        if (cancelled) return;
+        const payload = res.data.data;
+        setItems((Array.isArray(payload?.items) ? payload.items : []) as VendorProduct[]);
+        setTotal(Number(payload?.total ?? 0));
+        const s = payload?.stats;
+        if (s) setStats({ total: Number(s.total ?? 0), active: Number(s.active ?? 0), total_stock: Number(s.total_stock ?? 0), total_value: Number(s.total_value ?? 0) });
+      } catch {
+        if (cancelled) return;
+        const m = await mock.vendorProducts();
+        setItems(m);
+        setTotal(m.length);
+        setStats({ total: m.length, active: m.filter((p) => p.status === "active").length, total_stock: m.reduce((s, p) => s + (Number(p.stock) || 0), 0), total_value: m.reduce((s, p) => s + p.price * p.stock, 0) });
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+    /* eslint-disable-next-line react-hooks/exhaustive-deps */
+  }, [debouncedSearch, status, page, reloadKey]);
+
+  const reload = () => setReloadKey((k) => k + 1);
+
+  // The server already returns just this page; filtering/paging happen on the backend.
+  const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const safePage = Math.min(page, pageCount);
-  const paged = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+  const paged = items;
   const pageIds = paged.map((p) => p.id);
   const allPageSelected = pageIds.length > 0 && pageIds.every((id) => selected.has(id));
   function toggleSelectPage() {
@@ -339,11 +361,9 @@ export default function VendorProductsPage() {
       return n;
     });
   }
-  useEffect(() => { setPage(1); }, [search, status]);
-
-  const totalStock = items.reduce((s, p) => s + (Number(p.stock) || 0), 0);
-  const totalValue = items.reduce((s, p) => s + p.price * p.stock, 0);
-  const activeCount = items.filter((p) => p.status === "active").length;
+  const totalStock = stats.total_stock;
+  const totalValue = stats.total_value;
+  const activeCount = stats.active;
 
   function startNew() {
     setEditing(blankDraft(vendorCategory?.id ?? null));
@@ -380,7 +400,7 @@ export default function VendorProductsPage() {
     setSelected((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
   }
   function clearSelection() { setSelected(new Set()); }
-  function selectAllFiltered() { setSelected(new Set(filtered.map((p) => p.id))); }
+  function selectAllFiltered() { setSelected(new Set(items.map((p) => p.id))); }
 
   async function bulkDelete() {
     const ids = Array.from(selected);
@@ -395,14 +415,13 @@ export default function VendorProductsPage() {
         done += chunk.length;
         if (ids.length > 500) toast.message(`Deleting… ${done}/${ids.length}`);
       }
-      const del = new Set(ids);
-      setItems((cur) => cur.filter((x) => !del.has(x.id)));
       setSelected(new Set());
       setBulkConfirm(false);
       toast.success(`${ids.length} product${ids.length === 1 ? "" : "s"} deleted`);
+      reload();
     } catch (e) {
       toast.error(apiErrorMessage(e, "Bulk delete failed"));
-      try { const res = await api.get("/vendor/products"); setItems((res.data.data?.items ?? []) as VendorProduct[]); } catch { /* keep current */ }
+      reload();
     } finally {
       setBulkBusy(false);
     }
@@ -494,10 +513,24 @@ export default function VendorProductsPage() {
     finally { setCreatingCat(false); }
   }
 
-  function exportCsv() {
-    if (!items.length) { toast.error("No products to export"); return; }
-    downloadProductsCsv(items, `products-${new Date().toISOString().slice(0, 10)}.csv`);
-    toast.success(`Exported ${items.length} products`);
+  async function exportCsv() {
+    toast.message("Preparing export…");
+    try {
+      // Pull every page (200/req) so the export covers the whole catalog, not
+      // just the page on screen (the list is now server-paginated).
+      const all: VendorProduct[] = [];
+      for (let p = 1; ; p++) {
+        const res = await api.get("/vendor/products", { params: { page: p, per_page: 200 } });
+        const batch = (res.data.data?.items ?? []) as VendorProduct[];
+        all.push(...batch);
+        if (batch.length < 200 || p > 500) break;
+      }
+      if (!all.length) { toast.error("No products to export"); return; }
+      downloadProductsCsv(all, `products-${new Date().toISOString().slice(0, 10)}.csv`);
+      toast.success(`Exported ${all.length} products`);
+    } catch (e) {
+      toast.error(apiErrorMessage(e, "Export failed"));
+    }
   }
 
   async function save() {
@@ -574,11 +607,7 @@ export default function VendorProductsPage() {
         toast.success("Product added");
       }
       setEditing(null);
-      // Reload list from API to pick up server-side state
-      try {
-        const res = await api.get("/vendor/products");
-        setItems((res.data.data?.items ?? []) as VendorProduct[]);
-      } catch { /* keep current items if reload fails */ }
+      reload(); // refresh the current page from the server
     } catch (e) {
       toast.error(apiErrorMessage(e, "Save failed"));
     }
@@ -597,10 +626,7 @@ export default function VendorProductsPage() {
             <div className="flex items-center gap-2">
               <CatalogImportDialog
                 onImported={async () => {
-                  try {
-                    const res = await api.get("/vendor/products");
-                    setItems((res.data.data?.items ?? []) as VendorProduct[]);
-                  } catch { /* keep current items if reload fails */ }
+                  reload(); // refresh the current page from the server
                   // Refresh categories too — the import may have created new ones.
                   try {
                     const params = vendorCategory ? { vendor_category_id: vendorCategory.id } : {};
@@ -621,7 +647,7 @@ export default function VendorProductsPage() {
         />
 
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <StatCard label="Total products"  value={items.length} icon={Package} tone="brand"   spark={[2, 2, 3, 3, 3, 3, 3, 3]} />
+          <StatCard label="Total products"  value={stats.total} icon={Package} tone="brand"   spark={[2, 2, 3, 3, 3, 3, 3, 3]} />
           <StatCard label="Active"          value={activeCount}  icon={Tag}     tone="emerald" spark={[2, 2, 3, 3, 3, 3, 3, 3]} />
           <StatCard label="Total stock"     value={totalStock}   icon={Boxes}   tone="amber"   spark={[8, 10, 12, 14, 12, 16, 18, 18]} />
           <StatCard label="Inventory value" value={totalValue}   icon={Package} tone="violet"  spark={[3, 5, 6, 8, 9, 10, 12, 13]} format={fmtINR} />
@@ -648,8 +674,8 @@ export default function VendorProductsPage() {
           <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-rose-500/30 bg-rose-500/5 px-4 py-2.5">
             <span className="text-sm font-medium">{selected.size} selected</span>
             <div className="flex flex-wrap items-center gap-2">
-              {selected.size < filtered.length && (
-                <Button size="sm" variant="ghost" className="h-8 text-xs" onClick={selectAllFiltered}>Select all {filtered.length}</Button>
+              {selected.size < items.length && (
+                <Button size="sm" variant="ghost" className="h-8 text-xs" onClick={selectAllFiltered}>Select all {items.length}</Button>
               )}
               <Button size="sm" variant="ghost" className="h-8 text-xs" onClick={clearSelection}>Clear</Button>
               <Button size="sm" className="h-8 gap-1 bg-rose-500 text-xs text-white hover:bg-rose-600" disabled={bulkBusy} onClick={() => setBulkConfirm(true)}>
@@ -673,7 +699,7 @@ export default function VendorProductsPage() {
           </div>
           {loading ? (
             <div className="p-3"><TableSkeleton rows={4} cols={6} /></div>
-          ) : filtered.length === 0 ? (
+          ) : items.length === 0 ? (
             <EmptyState
               icon={Package}
               title="No products match your filters"
@@ -756,9 +782,9 @@ export default function VendorProductsPage() {
               ))}
             </div>
           )}
-          {!loading && filtered.length > PAGE_SIZE && (
+          {!loading && total > PAGE_SIZE && (
             <div className="flex items-center justify-between border-t border-border px-3 py-2 text-xs text-muted-foreground">
-              <span>{filtered.length} products · showing {(safePage - 1) * PAGE_SIZE + 1}–{Math.min(safePage * PAGE_SIZE, filtered.length)}</span>
+              <span>{total} products · showing {(safePage - 1) * PAGE_SIZE + 1}–{Math.min(safePage * PAGE_SIZE, total)}</span>
               <div className="flex items-center gap-2">
                 <Button size="sm" variant="outline" className="h-7 rounded-lg" disabled={safePage <= 1} onClick={() => setPage(safePage - 1)}>Prev</Button>
                 <span>Page {safePage} / {pageCount}</span>
