@@ -42,7 +42,7 @@ function adapt(raw: ApiProduct): MarketplaceProduct {
     min_price: raw.min_price != null ? Number(raw.min_price) : undefined,
     max_price: raw.max_price != null ? Number(raw.max_price) : undefined,
     variant_axes: Array.isArray(raw.variant_axes) ? raw.variant_axes : undefined,
-    category_id: raw.category_id ?? null,
+    category_id: raw.category_id != null ? Number(raw.category_id) : null,
     category_name: raw.category_name ?? null,
   };
 }
