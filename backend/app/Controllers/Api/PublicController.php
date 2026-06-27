@@ -355,7 +355,7 @@ class PublicController extends BaseApiController
                 foreach ($vtypes as $ax) {
                     $nm   = trim((string) ($ax['name'] ?? ''));
                     $opts = is_array($ax['options'] ?? null)
-                        ? array_values(array_filter(array_map(static fn ($o) => trim((string) $o), $ax['options']), static fn ($o) => $o !== ''))
+                        ? array_values(array_unique(array_filter(array_map(static fn ($o) => trim((string) $o), $ax['options']), static fn ($o) => $o !== '')))
                         : [];
                     // Include the actual option VALUES (e.g. ["100ml"]) so the card
                     // can show the real size/colour names instead of "1 size".

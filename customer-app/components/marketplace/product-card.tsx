@@ -52,12 +52,14 @@ export function ProductCard({ product, onAdd }: {
   // Variant options shown as tag chips with their ACTUAL names (e.g. [100ml]
   // [250ml] [Red]); falls back to a "N name" count when option values are
   // missing. The exact option is picked on the detail page (no on-card selector).
-  const allChips = product.has_variants && product.variant_axes && product.variant_axes.length > 0
-    ? product.variant_axes.flatMap((a) =>
-        a.options && a.options.length > 0
-          ? a.options
-          : [`${a.count} ${a.name}${a.count !== 1 && !a.name.toLowerCase().endsWith("s") ? "s" : ""}`])
-    : [];
+  const allChips = Array.from(new Set(
+    product.has_variants && product.variant_axes && product.variant_axes.length > 0
+      ? product.variant_axes.flatMap((a) =>
+          a.options && a.options.length > 0
+            ? a.options
+            : [`${a.count} ${a.name}${a.count !== 1 && !a.name.toLowerCase().endsWith("s") ? "s" : ""}`])
+      : [],
+  ));   // de-duped: the same value can appear across axes or repeat in the data
   const variantChips = allChips.slice(0, 6);
   const extraChips = allChips.length - variantChips.length;
   const hasRange = !!product.has_variants && product.min_price != null && product.max_price != null && product.max_price > product.min_price;
