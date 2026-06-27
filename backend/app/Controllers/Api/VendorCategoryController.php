@@ -19,39 +19,47 @@ class VendorCategoryController extends BaseApiController
         $districtId = (int) $this->request->getGet('district_id');
         $stateId    = (int) $this->request->getGet('state_id');
 
+        $hasLoc  = $talukId > 0 || $districtId > 0 || $stateId > 0;
         $locJoin = '';
         $locWhere = '';
-        if ($talukId > 0 || $districtId > 0 || $stateId > 0) {
+        if ($hasLoc) {
             $locJoin = ' JOIN vendor_profiles vp ON vp.user_id = p.vendor_id';
-            $clauses = [];
-            if ($talukId > 0)    $clauses[] = 'vp.taluk_id = ' . $talukId;
-            elseif ($districtId > 0) $clauses[] = 'vp.district_id = ' . $districtId;
-            elseif ($stateId > 0)    $clauses[] = 'vp.state_id = ' . $stateId;
-            $locWhere = ' AND ' . implode(' AND ', $clauses);
+            if ($talukId > 0)        $locWhere = ' AND vp.taluk_id = ' . $talukId;
+            elseif ($districtId > 0) $locWhere = ' AND vp.district_id = ' . $districtId;
+            elseif ($stateId > 0)    $locWhere = ' AND vp.state_id = ' . $stateId;
         }
 
-        // Count active, non-deleted products either linked directly via
-        // products.vendor_category_id OR via products.category_id → categories.vendor_category_id.
-        // Use COUNT(DISTINCT p.id) so a row matched by both paths isn't double-counted.
-        $countExpr = '('
-            . 'SELECT COUNT(DISTINCT p.id) FROM products p '
-            . 'LEFT JOIN categories c ON c.id = p.category_id'
-            . $locJoin . ' '
-            . 'WHERE (p.vendor_category_id = vendor_categories.id OR c.vendor_category_id = vendor_categories.id) '
-            . 'AND p.status = "active" AND p.deleted_at IS NULL'
-            . $locWhere
-            . ') AS product_count';
-
         $rows = (new VendorCategoryModel())
-            ->select('vendor_categories.*, ' . $countExpr)
             ->where('status', 'active')
             ->orderBy('display_order', 'ASC')
             ->orderBy('id', 'ASC')
             ->findAll();
 
+        // Count products for ALL categories in ONE pass (was a per-category
+        // correlated subquery → O(categories × products), which crawled once the
+        // catalog grew). Each active product contributes to its direct
+        // vendor_category_id AND its product-category's vendor_category_id;
+        // COUNT(DISTINCT pid) dedupes a product matched by both paths.
+        $db  = \Config\Database::connect();
+        $sql = "SELECT vc_id, COUNT(DISTINCT pid) AS n FROM (
+                    SELECT p.id pid, p.vendor_category_id vc_id
+                      FROM products p{$locJoin}
+                     WHERE p.status='active' AND p.deleted_at IS NULL AND p.vendor_category_id IS NOT NULL{$locWhere}
+                    UNION ALL
+                    SELECT p.id pid, c.vendor_category_id vc_id
+                      FROM products p JOIN categories c ON c.id = p.category_id{$locJoin}
+                     WHERE p.status='active' AND p.deleted_at IS NULL AND c.vendor_category_id IS NOT NULL{$locWhere}
+                ) x GROUP BY vc_id";
+        $counts = [];
+        foreach ($db->query($sql)->getResultArray() as $r) {
+            $counts[(int) $r['vc_id']] = (int) $r['n'];
+        }
+        foreach ($rows as &$c) { $c['product_count'] = $counts[(int) $c['id']] ?? 0; }
+        unset($c);
+
         // When a location is set, hide categories with 0 matching products so
         // the customer doesn't see empty options for their area.
-        if ($talukId > 0 || $districtId > 0 || $stateId > 0) {
+        if ($hasLoc) {
             $rows = array_values(array_filter($rows, static fn ($r) => (int) $r['product_count'] > 0));
         }
 
