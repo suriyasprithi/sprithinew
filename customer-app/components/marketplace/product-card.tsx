@@ -26,6 +26,8 @@ export type MarketplaceProduct = {
   min_price?: number | null;           // cheapest variant price (range low)
   max_price?: number | null;           // dearest variant price (range high)
   variant_axes?: { name: string; count: number; options?: string[] }[];  // e.g. [{name:"size",count:4,options:["100ml","250ml"]}]
+  category_id?: number | null;         // product category — for the in-shop category filter tabs
+  category_name?: string | null;
 };
 
 const fmtINR = (n: number) =>

@@ -17,7 +17,7 @@ import { readSavedLocation } from "@/components/marketplace/location-picker";
 
 type ApiProduct = {
   id: number; name: string; price: number | string; old_price?: number | string | null; image: string | null;
-  stock: number; category_id: number | null; vendor_name?: string | null;
+  stock: number; category_id: number | null; category_name?: string | null; vendor_name?: string | null;
   has_variants?: boolean;
   default_variant_id?: number | null;
   min_price?: number | string | null;
@@ -42,6 +42,8 @@ function adapt(raw: ApiProduct): MarketplaceProduct {
     min_price: raw.min_price != null ? Number(raw.min_price) : undefined,
     max_price: raw.max_price != null ? Number(raw.max_price) : undefined,
     variant_axes: Array.isArray(raw.variant_axes) ? raw.variant_axes : undefined,
+    category_id: raw.category_id ?? null,
+    category_name: raw.category_name ?? null,
   };
 }
 
@@ -60,6 +62,10 @@ function PublicShopInner() {
   const [cats, setCats] = useState<Category[]>([]);
   const [vcats, setVcats] = useState<VendorCategory[]>([]);
   const [vendors, setVendors] = useState<Vendor[]>([]);
+  // Product-category filter tabs shown under the Shops row (derived from the
+  // products in view); the active one filters the grid client-side.
+  const [productCats, setProductCats] = useState<Category[]>([]);
+  const [activeCat, setActiveCat] = useState<number | null>(null);
   // catId is derived from the URL so the dropdown <Link> clicks (which only
   // change the query string) actually re-filter the products.
   const catId = sp?.get("category_id") ? Number(sp.get("category_id")) : null;
@@ -101,6 +107,8 @@ function PublicShopInner() {
   // The shop currently in view (when scoped to one). Pharmacies accept a
   // prescription-only order, so we surface that entry below.
   const selectedVendor = vendorId ? vendors.find((v) => v.id === vendorId) ?? null : null;
+  // Grid filtered by the active in-shop product-category tab (client-side).
+  const shownItems = activeCat != null ? items.filter((p) => p.category_id === activeCat) : items;
 
   async function load(overrideQ?: string) {
     setLoading(true);
@@ -129,6 +137,14 @@ function PublicShopInner() {
       const raws = (r.data.data?.items ?? []) as ApiProduct[];
       setItems(raws.map(adapt));
       setCats((r.data.data?.categories ?? []) as Category[]);
+      // Distinct product categories present in this view → in-shop filter tabs.
+      const catMap = new Map<number, string>();
+      raws.forEach((p) => {
+        const cid = p.category_id != null ? Number(p.category_id) : null;
+        if (cid != null && p.category_name) catMap.set(cid, p.category_name);
+      });
+      setProductCats([...catMap].map(([id, name]) => ({ id, name })));
+      setActiveCat(null);
     } catch (err) { toast.error(apiErrorMessage(err)); }
     finally { setLoading(false); }
   }
@@ -252,6 +268,19 @@ function PublicShopInner() {
         </section>
       )}
 
+      {/* Product-category tabs — filter the products in view by their category */}
+      {productCats.length > 1 && (
+        <section className="mx-auto max-w-7xl px-4 pt-3">
+          <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-[var(--mk-text-muted)]">Categories</p>
+          <div className="flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            <CategoryPill active={activeCat === null} onClick={() => setActiveCat(null)}>All</CategoryPill>
+            {productCats.map((c) => (
+              <CategoryPill key={c.id} active={activeCat === c.id} onClick={() => setActiveCat(c.id)}>{c.name}</CategoryPill>
+            ))}
+          </div>
+        </section>
+      )}
+
       {/* Header */}
       <section className="mx-auto max-w-7xl px-4 pt-4">
         <div className="flex items-end justify-between">
@@ -270,7 +299,7 @@ function PublicShopInner() {
             </h1>
           </div>
           {!loading && (
-            <p className="text-sm text-[var(--mk-text-muted)]">{items.length} item{items.length === 1 ? "" : "s"}</p>
+            <p className="text-sm text-[var(--mk-text-muted)]">{shownItems.length} item{shownItems.length === 1 ? "" : "s"}</p>
           )}
         </div>
       </section>
@@ -300,7 +329,7 @@ function PublicShopInner() {
           <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
             {Array.from({ length: 10 }).map((_, i) => <ProductCardSkeleton key={i} />)}
           </div>
-        ) : items.length === 0 ? (
+        ) : shownItems.length === 0 ? (
           <div className="rounded-2xl border border-dashed border-[var(--mk-border)] bg-[var(--mk-surface)] p-12 text-center">
             <Sparkles className="mx-auto mb-3 h-10 w-10 text-[var(--mk-brand)]" />
             <p className="text-sm font-semibold">No products match your filters</p>
@@ -308,7 +337,7 @@ function PublicShopInner() {
           </div>
         ) : (
           <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
-            {items.map((p) => <ProductCard key={p.id} product={p} />)}
+            {shownItems.map((p) => <ProductCard key={p.id} product={p} />)}
           </div>
         )}
       </section>
