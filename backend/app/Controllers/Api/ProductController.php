@@ -1145,4 +1145,27 @@ class ProductController extends BaseApiController
         $model->delete($id);
         return $this->ok(null, 'Deleted');
     }
+
+    /**
+     * Vendor/admin: soft-delete many products at once. A vendor can only delete
+     * their OWN products (admin any). Soft delete (reversible) — the storefront
+     * hides them; variants follow since their product is hidden.
+     */
+    public function bulkDelete(): ResponseInterface
+    {
+        $auth = $this->authUser();
+        if (! $auth) return $this->fail('Unauthorized', 401);
+        $d   = $this->request->getJSON(true) ?? $this->request->getPost() ?? [];
+        $ids = array_values(array_unique(array_filter(array_map('intval', is_array($d['ids'] ?? null) ? $d['ids'] : []))));
+        if (! $ids) return $this->fail('No products selected', 422);
+        $ids = array_slice($ids, 0, 2000);   // safety cap per request
+
+        $model = new ProductModel();
+        $q = $model->whereIn('id', $ids);
+        if ($auth->role !== 'admin') $q->where('vendor_id', (int) $auth->id);
+        $ownIds = $q->findColumn('id') ?: [];
+        if (! $ownIds) return $this->ok(['deleted' => 0], 'Nothing to delete');
+        $model->whereIn('id', $ownIds)->delete();
+        return $this->ok(['deleted' => count($ownIds)], count($ownIds) . ' product(s) deleted');
+    }
 }

@@ -255,6 +255,10 @@ export default function VendorProductsPage() {
   const [rowBusy, setRowBusy] = useState<number | null>(null);
   const [importOpen, setImportOpen] = useState(false);
   const [importSearch, setImportSearch] = useState("");
+  // Bulk-select for mass delete.
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [bulkConfirm, setBulkConfirm] = useState(false);
+  const [bulkBusy, setBulkBusy] = useState(false);
 
   useEffect(() => {
     void (async () => {
@@ -325,6 +329,16 @@ export default function VendorProductsPage() {
   const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const safePage = Math.min(page, pageCount);
   const paged = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+  const pageIds = paged.map((p) => p.id);
+  const allPageSelected = pageIds.length > 0 && pageIds.every((id) => selected.has(id));
+  function toggleSelectPage() {
+    setSelected((s) => {
+      const n = new Set(s);
+      if (allPageSelected) pageIds.forEach((id) => n.delete(id));
+      else pageIds.forEach((id) => n.add(id));
+      return n;
+    });
+  }
   useEffect(() => { setPage(1); }, [search, status]);
 
   const totalStock = items.reduce((s, p) => s + (Number(p.stock) || 0), 0);
@@ -359,6 +373,38 @@ export default function VendorProductsPage() {
     } finally {
       setRowBusy(null);
       setDeleteTarget(null);
+    }
+  }
+
+  function toggleSelect(id: number) {
+    setSelected((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  }
+  function clearSelection() { setSelected(new Set()); }
+  function selectAllFiltered() { setSelected(new Set(filtered.map((p) => p.id))); }
+
+  async function bulkDelete() {
+    const ids = Array.from(selected);
+    if (!ids.length) return;
+    setBulkBusy(true);
+    try {
+      // Chunk to respect the backend's per-request cap; works for huge selections.
+      let done = 0;
+      for (let i = 0; i < ids.length; i += 500) {
+        const chunk = ids.slice(i, i + 500);
+        await api.post("/vendor/products/bulk-delete", { ids: chunk });
+        done += chunk.length;
+        if (ids.length > 500) toast.message(`Deleting… ${done}/${ids.length}`);
+      }
+      const del = new Set(ids);
+      setItems((cur) => cur.filter((x) => !del.has(x.id)));
+      setSelected(new Set());
+      setBulkConfirm(false);
+      toast.success(`${ids.length} product${ids.length === 1 ? "" : "s"} deleted`);
+    } catch (e) {
+      toast.error(apiErrorMessage(e, "Bulk delete failed"));
+      try { const res = await api.get("/vendor/products"); setItems((res.data.data?.items ?? []) as VendorProduct[]); } catch { /* keep current */ }
+    } finally {
+      setBulkBusy(false);
     }
   }
 
@@ -598,9 +644,27 @@ export default function VendorProductsPage() {
           </div>
         </div>
 
+        {selected.size > 0 && (
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-rose-500/30 bg-rose-500/5 px-4 py-2.5">
+            <span className="text-sm font-medium">{selected.size} selected</span>
+            <div className="flex flex-wrap items-center gap-2">
+              {selected.size < filtered.length && (
+                <Button size="sm" variant="ghost" className="h-8 text-xs" onClick={selectAllFiltered}>Select all {filtered.length}</Button>
+              )}
+              <Button size="sm" variant="ghost" className="h-8 text-xs" onClick={clearSelection}>Clear</Button>
+              <Button size="sm" className="h-8 gap-1 bg-rose-500 text-xs text-white hover:bg-rose-600" disabled={bulkBusy} onClick={() => setBulkConfirm(true)}>
+                <Trash2 className="h-3.5 w-3.5" /> Delete selected
+              </Button>
+            </div>
+          </div>
+        )}
+
         <div className="luxe-card overflow-hidden">
           <div className="hidden grid-cols-[1.4fr_140px_120px_120px_120px_56px] gap-3 border-b border-border bg-surface-2/40 px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground md:grid">
-            <span>Product</span>
+            <span className="flex items-center gap-2">
+              <input type="checkbox" checked={allPageSelected} onChange={toggleSelectPage} aria-label="Select all on page" className="h-4 w-4 accent-rose-500" />
+              Product
+            </span>
             <span>Category</span>
             <span>Stock</span>
             <span>Price</span>
@@ -627,6 +691,13 @@ export default function VendorProductsPage() {
                   className="grid grid-cols-[1fr_auto] items-center gap-3 px-4 py-3 transition-colors hover:bg-surface-2/40 md:grid-cols-[1.4fr_140px_120px_120px_120px_56px]"
                 >
                   <div className="flex items-center gap-3">
+                    <input
+                      type="checkbox"
+                      checked={selected.has(p.id)}
+                      onChange={() => toggleSelect(p.id)}
+                      aria-label={`Select ${p.name}`}
+                      className="h-4 w-4 shrink-0 accent-rose-500"
+                    />
                     <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-brand/10 text-brand">
                       <Package className="h-4 w-4" />
                     </span>
@@ -709,6 +780,23 @@ export default function VendorProductsPage() {
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction onClick={() => void removeProduct()} className="bg-rose-500 text-white hover:bg-rose-600">Delete</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={bulkConfirm} onOpenChange={(o) => { if (!o && !bulkBusy) setBulkConfirm(false); }}>
+        <AlertDialogContent className="rounded-2xl border-border bg-popover">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete {selected.size} product{selected.size === 1 ? "" : "s"}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              The selected products will be removed from your store. An admin can restore them if it was a mistake.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={bulkBusy}>Cancel</AlertDialogCancel>
+            <Button onClick={() => void bulkDelete()} disabled={bulkBusy} className="bg-rose-500 text-white hover:bg-rose-600">
+              {bulkBusy ? "Deleting…" : `Delete ${selected.size}`}
+            </Button>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

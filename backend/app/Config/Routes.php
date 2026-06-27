@@ -209,6 +209,7 @@ $routes->group('api/v1', ['filter' => 'cors'], static function ($routes) {
         $routes->post('products',        'Api\ProductController::create');
         $routes->patch('products/(:num)','Api\ProductController::update/$1');
         $routes->delete('products/(:num)','Api\ProductController::delete/$1');
+        $routes->post('products/bulk-delete', 'Api\ProductController::bulkDelete');   // vendor: soft-delete many at once
         $routes->post('categories',      'Api\CategoryController::ensure');
         $routes->get('me/category',      'Api\VendorCategoryController::mine');
     });
