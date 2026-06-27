@@ -25,7 +25,7 @@ export type MarketplaceProduct = {
   default_variant_id?: number | null;  // backend picks cheapest in-stock variant
   min_price?: number | null;           // cheapest variant price (range low)
   max_price?: number | null;           // dearest variant price (range high)
-  variant_axes?: { name: string; count: number }[];  // e.g. [{name:"size",count:4}]
+  variant_axes?: { name: string; count: number; options?: string[] }[];  // e.g. [{name:"size",count:4,options:["100ml","250ml"]}]
 };
 
 const fmtINR = (n: number) =>
@@ -49,11 +49,17 @@ export function ProductCard({ product, onAdd }: {
     ? Math.round(((product.old_price - product.price) / product.old_price) * 100)
     : 0;
 
-  // Variant axes shown as individual tag chips (e.g. [4 sizes] [2 colors]); the
-  // actual size/colour is picked on the detail page, so no on-card selector.
-  const variantChips = product.has_variants && product.variant_axes && product.variant_axes.length > 0
-    ? product.variant_axes.map((a) => `${a.count} ${a.name}${a.count !== 1 && !a.name.toLowerCase().endsWith("s") ? "s" : ""}`)
+  // Variant options shown as tag chips with their ACTUAL names (e.g. [100ml]
+  // [250ml] [Red]); falls back to a "N name" count when option values are
+  // missing. The exact option is picked on the detail page (no on-card selector).
+  const allChips = product.has_variants && product.variant_axes && product.variant_axes.length > 0
+    ? product.variant_axes.flatMap((a) =>
+        a.options && a.options.length > 0
+          ? a.options
+          : [`${a.count} ${a.name}${a.count !== 1 && !a.name.toLowerCase().endsWith("s") ? "s" : ""}`])
     : [];
+  const variantChips = allChips.slice(0, 6);
+  const extraChips = allChips.length - variantChips.length;
   const hasRange = !!product.has_variants && product.min_price != null && product.max_price != null && product.max_price > product.min_price;
 
   // Persist to the backend cart. If a parent supplies `onAdd`, defer to it
@@ -156,6 +162,11 @@ export function ProductCard({ product, onAdd }: {
                 {label}
               </span>
             ))}
+            {extraChips > 0 && (
+              <span className="inline-flex items-center rounded-full border border-[var(--mk-border)] bg-[var(--mk-surface-2)] px-2 py-0.5 text-[11px] font-medium text-[var(--mk-text-muted)]">
+                +{extraChips}
+              </span>
+            )}
           </div>
         )}
 

@@ -22,7 +22,7 @@ type ApiProduct = {
   default_variant_id?: number | null;
   min_price?: number | string | null;
   max_price?: number | string | null;
-  variant_axes?: { name: string; count: number }[];
+  variant_axes?: { name: string; count: number; options?: string[] }[];
 };
 type Category = { id: number; name: string };
 type VendorCategory = { id: number; name: string };

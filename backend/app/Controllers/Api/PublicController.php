@@ -353,9 +353,13 @@ class PublicController extends BaseApiController
                 $rawTypes = $r['variant_types'] ?? null;
                 $vtypes   = is_string($rawTypes) ? (json_decode($rawTypes, true) ?: []) : (is_array($rawTypes) ? $rawTypes : []);
                 foreach ($vtypes as $ax) {
-                    $nm = trim((string) ($ax['name'] ?? ''));
-                    $ct = is_array($ax['options'] ?? null) ? count($ax['options']) : 0;
-                    if ($nm !== '' && $ct > 0) $axes[] = ['name' => $nm, 'count' => $ct];
+                    $nm   = trim((string) ($ax['name'] ?? ''));
+                    $opts = is_array($ax['options'] ?? null)
+                        ? array_values(array_filter(array_map(static fn ($o) => trim((string) $o), $ax['options']), static fn ($o) => $o !== ''))
+                        : [];
+                    // Include the actual option VALUES (e.g. ["100ml"]) so the card
+                    // can show the real size/colour names instead of "1 size".
+                    if ($nm !== '' && count($opts) > 0) $axes[] = ['name' => $nm, 'count' => count($opts), 'options' => $opts];
                 }
             }
 
