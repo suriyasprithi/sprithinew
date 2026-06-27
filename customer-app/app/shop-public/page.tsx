@@ -136,7 +136,7 @@ function PublicShopInner() {
       const r = await api.get("/public/products", { params });
       const raws = (r.data.data?.items ?? []) as ApiProduct[];
       setItems(raws.map(adapt));
-      setCats((r.data.data?.categories ?? []) as Category[]);
+      setCats(((r.data.data?.categories ?? []) as Array<{ id: number | string; name: string }>).map((c) => ({ id: Number(c.id), name: c.name })));
       // Distinct product categories present in this view → in-shop filter tabs.
       const catMap = new Map<number, string>();
       raws.forEach((p) => {
@@ -173,7 +173,10 @@ function PublicShopInner() {
         else if (loc?.district_id) params.district_id = String(loc.district_id);
         else if (loc?.state_id)    params.state_id    = String(loc.state_id);
         const res = await api.get("/vendor-categories", { params });
-        setVcats((res.data.data?.items ?? []) as VendorCategory[]);
+        // Coerce id to Number — the API returns it as a string, which broke the
+        // active-tab highlight (number vendorCategoryId !== string id).
+        const raw = (res.data.data?.items ?? []) as Array<{ id: number | string; name: string }>;
+        setVcats(raw.map((v) => ({ id: Number(v.id), name: v.name })));
       } catch { setVcats([]); }
     };
     void fetchVcats();
