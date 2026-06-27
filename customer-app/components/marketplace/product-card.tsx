@@ -35,7 +35,6 @@ export function ProductCard({ product, onAdd }: {
   product: MarketplaceProduct;
   onAdd?: (p: MarketplaceProduct, qty: number) => void;
 }) {
-  const [weight, setWeight] = useState(product.weights?.[0] ?? "");
   const [qty, setQty] = useState(0);
   const [liked, setLiked] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -50,12 +49,11 @@ export function ProductCard({ product, onAdd }: {
     ? Math.round(((product.old_price - product.price) / product.old_price) * 100)
     : 0;
 
-  // Variant card hint (Option A): "4 sizes · 2 colors" + a "From ₹X" price range,
-  // so the listing shows the cheapest variant's offer; the size/colour is picked
-  // on the detail page.
-  const variantHint = product.has_variants && product.variant_axes && product.variant_axes.length > 0
-    ? product.variant_axes.map((a) => `${a.count} ${a.name}${a.count !== 1 && !a.name.toLowerCase().endsWith("s") ? "s" : ""}`).join(" · ")
-    : null;
+  // Variant axes shown as individual tag chips (e.g. [4 sizes] [2 colors]); the
+  // actual size/colour is picked on the detail page, so no on-card selector.
+  const variantChips = product.has_variants && product.variant_axes && product.variant_axes.length > 0
+    ? product.variant_axes.map((a) => `${a.count} ${a.name}${a.count !== 1 && !a.name.toLowerCase().endsWith("s") ? "s" : ""}`)
+    : [];
   const hasRange = !!product.has_variants && product.min_price != null && product.max_price != null && product.max_price > product.min_price;
 
   // Persist to the backend cart. If a parent supplies `onAdd`, defer to it
@@ -151,10 +149,14 @@ export function ProductCard({ product, onAdd }: {
           {product.name}
         </Link>
 
-        {variantHint && (
-          <span className="inline-flex w-fit items-center rounded-full bg-[var(--mk-surface-2)] px-2 py-0.5 text-[11px] font-medium text-[var(--mk-text-muted)]">
-            {variantHint}
-          </span>
+        {variantChips.length > 0 && (
+          <div className="flex flex-wrap gap-1">
+            {variantChips.map((label) => (
+              <span key={label} className="inline-flex items-center rounded-full border border-[var(--mk-border)] bg-[var(--mk-surface-2)] px-2 py-0.5 text-[11px] font-medium text-[var(--mk-text-muted)]">
+                {label}
+              </span>
+            ))}
+          </div>
         )}
 
         {/* Rating */}
@@ -165,17 +167,6 @@ export function ProductCard({ product, onAdd }: {
             </span>
             {product.reviews != null && <span className="text-[var(--mk-text-muted)]">({product.reviews})</span>}
           </div>
-        )}
-
-        {/* Weight selector */}
-        {product.weights && product.weights.length > 0 && (
-          <select
-            value={weight}
-            onChange={(e) => setWeight(e.target.value)}
-            className="w-full rounded-md border border-[var(--mk-border)] bg-[var(--mk-surface-2)] px-2 py-1 text-xs text-[var(--mk-text)]"
-          >
-            {product.weights.map((w) => <option key={w} value={w}>{w}</option>)}
-          </select>
         )}
 
         {/* Price + actions */}
