@@ -88,6 +88,29 @@ class ProductController extends BaseApiController
         unset($it);
 
         $items = $this->enrich($items);
+
+        // Listing-card summary for variant products: show the CHEAPEST variant's
+        // price + its MRP (so the card offer matches the detail page), plus the
+        // variant axes ("4 sizes", "2 colours") for the card hint.
+        foreach ($items as &$it) {
+            if ((int) ($it['has_variants'] ?? 0) !== 1) continue;
+            $vs = array_values(array_filter($it['variants'] ?? [], static fn ($v) => ($v['status'] ?? 'active') === 'active'));
+            if (! $vs) continue;
+            usort($vs, static fn ($a, $b) => ((float) $a['price']) <=> ((float) $b['price']));
+            $stocked  = array_values(array_filter($vs, static fn ($v) => (int) ($v['stock'] ?? 0) > 0));
+            $cheapest = $stocked[0] ?? $vs[0];
+            $it['price']     = (float) $cheapest['price'];
+            $it['old_price'] = (isset($cheapest['mrp']) && (float) $cheapest['mrp'] > (float) $cheapest['price']) ? (float) $cheapest['mrp'] : null;
+            $axes = [];
+            foreach (($it['variant_types'] ?? []) as $ax) {
+                $nm = trim((string) ($ax['name'] ?? ''));
+                $ct = is_array($ax['options'] ?? null) ? count($ax['options']) : 0;
+                if ($nm !== '' && $ct > 0) $axes[] = ['name' => $nm, 'count' => $ct];
+            }
+            $it['variant_axes'] = $axes;
+        }
+        unset($it);
+
         $cats  = (new CategoryModel())->where('status', 'active')->findAll();
         return $this->ok(['items' => $items, 'categories' => $cats]);
     }

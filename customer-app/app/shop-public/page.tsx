@@ -20,6 +20,9 @@ type ApiProduct = {
   stock: number; category_id: number | null; vendor_name?: string | null;
   has_variants?: boolean;
   default_variant_id?: number | null;
+  min_price?: number | string | null;
+  max_price?: number | string | null;
+  variant_axes?: { name: string; count: number }[];
 };
 type Category = { id: number; name: string };
 type VendorCategory = { id: number; name: string };
@@ -36,6 +39,9 @@ function adapt(raw: ApiProduct): MarketplaceProduct {
     stock: raw.stock,
     has_variants: !!raw.has_variants,
     default_variant_id: raw.default_variant_id ?? null,
+    min_price: raw.min_price != null ? Number(raw.min_price) : undefined,
+    max_price: raw.max_price != null ? Number(raw.max_price) : undefined,
+    variant_axes: Array.isArray(raw.variant_axes) ? raw.variant_axes : undefined,
   };
 }
 

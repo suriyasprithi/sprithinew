@@ -159,6 +159,8 @@ class PublicController extends BaseApiController
             $v['options'] = is_string($raw) ? (json_decode($raw, true) ?: []) : (is_array($raw) ? $raw : []);
             $v['price']   = (float) ($v['price'] ?? 0);
             $v['stock']   = (int) ($v['stock'] ?? 0);
+            // Per-variant MRP for the detail strikethrough / % OFF (null when not discounted).
+            $v['mrp']     = (isset($v['mrp']) && (float) $v['mrp'] > (float) $v['price']) ? (float) $v['mrp'] : null;
             return $v;
         }, $variants);
 
@@ -306,6 +308,7 @@ class PublicController extends BaseApiController
             }
         }
         $defaultVariant = [];
+        $variantInfo    = [];   // pid => [price (cheapest in-stock), mrp, min, max]
         if ($variantProductIds) {
             // ORDER puts in-stock variants first (stock > 0 → false → 0 → sorts before
             // stock = 0 → true → 1), then cheapest, then oldest. The third arg `false`
@@ -320,20 +323,53 @@ class PublicController extends BaseApiController
                 ->findAll();
             foreach ($variants as $v) {
                 $pid = (int) ($v['product_id'] ?? 0);
-                if (! isset($defaultVariant[$pid])) $defaultVariant[$pid] = (int) $v['id'];
+                $p   = (float) ($v['price'] ?? 0);
+                if (! isset($defaultVariant[$pid])) {
+                    // First row = cheapest in-stock active variant → card price + offer.
+                    $defaultVariant[$pid] = (int) $v['id'];
+                    $variantInfo[$pid] = ['price' => $p, 'mrp' => isset($v['mrp']) ? (float) $v['mrp'] : 0.0, 'min' => $p, 'max' => $p];
+                } elseif ($p > $variantInfo[$pid]['max']) {
+                    $variantInfo[$pid]['max'] = $p;
+                }
             }
         }
 
-        return array_map(static function ($r) use ($catName, $vendName, $shopName, $defaultVariant) {
+        return array_map(static function ($r) use ($catName, $vendName, $shopName, $defaultVariant, $variantInfo) {
             $rawAttrs = $r['attributes'] ?? null;
             $attrs    = is_string($rawAttrs) ? (json_decode($rawAttrs, true) ?: null) : (is_array($rawAttrs) ? $rawAttrs : null);
+            $pid   = (int) ($r['id'] ?? 0);
+            $vi    = $variantInfo[$pid] ?? null;
+            $isVar = (int) ($r['has_variants'] ?? 0) === 1 && $vi !== null;
+
+            // Card offer: the cheapest variant's price + MRP (variant product), else
+            // the product's own price/MRP. The client derives % OFF from old_price.
+            $price    = $isVar ? $vi['price'] : (float) ($r['price'] ?? 0);
+            $cheapMrp = $isVar ? $vi['mrp']   : (float) ($r['mrp'] ?? 0);
+            $oldPrice = $cheapMrp > $price ? $cheapMrp : null;
+
+            // Variant axes ("4 sizes", "2 colours") for the listing-card hint.
+            $axes = [];
+            if ($isVar) {
+                $rawTypes = $r['variant_types'] ?? null;
+                $vtypes   = is_string($rawTypes) ? (json_decode($rawTypes, true) ?: []) : (is_array($rawTypes) ? $rawTypes : []);
+                foreach ($vtypes as $ax) {
+                    $nm = trim((string) ($ax['name'] ?? ''));
+                    $ct = is_array($ax['options'] ?? null) ? count($ax['options']) : 0;
+                    if ($nm !== '' && $ct > 0) $axes[] = ['name' => $nm, 'count' => $ct];
+                }
+            }
+
             return array_merge($r, [
                 'category_name'      => $catName[(int) ($r['category_id'] ?? 0)]  ?? null,
                 'vendor_name'        => $shopName[(int) ($r['vendor_id'] ?? 0)] ?? $vendName[(int) ($r['vendor_id'] ?? 0)] ?? null,
-                'price'              => (float) ($r['price'] ?? 0),
+                'price'              => $price,
+                'old_price'          => $oldPrice,
+                'min_price'          => $isVar ? $vi['min'] : null,
+                'max_price'          => $isVar ? $vi['max'] : null,
+                'variant_axes'       => $axes,
                 'stock'              => (int)   ($r['stock'] ?? 0),
                 'has_variants'       => (bool)  ($r['has_variants'] ?? 0),
-                'default_variant_id' => $defaultVariant[(int) ($r['id'] ?? 0)] ?? null,
+                'default_variant_id' => $defaultVariant[$pid] ?? null,
                 'attributes'         => $attrs,
             ]);
         }, $rows);

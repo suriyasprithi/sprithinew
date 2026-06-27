@@ -23,11 +23,13 @@ type Product = {
   image: string | null; vendor_name: string | null; category_name: string | null;
   category_id: number | null;
   has_variants: boolean;
+  old_price?: number | null;   // product-level strikethrough MRP (non-variant fallback)
   attributes?: Record<string, AttrValue> | null;
 };
 type Variant = {
   id: number; name: string; price: number; stock: number;
   sku?: string | null;
+  mrp?: number | null;   // strikethrough MRP for this variant (null when not discounted)
   options?: Record<string, string>;
 };
 type VType = { name: string; options: string[] };
@@ -554,6 +556,12 @@ function ProductInner() {
   const selectedVariant = variantTypes.length > 0 ? matchVariant(variants, picks) : undefined;
   const price = selectedVariant?.price ?? product?.price ?? 0;
   const stock = selectedVariant?.stock ?? product?.stock ?? 0;
+  // Offer (MRP strikethrough + % OFF): the selected variant's MRP, else the
+  // product-level old_price. Only when the MRP is above the price.
+  const oldPrice = selectedVariant
+    ? (selectedVariant.mrp != null && selectedVariant.mrp > selectedVariant.price ? selectedVariant.mrp : null)
+    : (product?.old_price != null && product.old_price > price ? product.old_price : null);
+  const off = oldPrice && oldPrice > price ? Math.round(((oldPrice - price) / oldPrice) * 100) : 0;
   const selectedCatName = categories.find((c) => c.id === filters.category_id)?.name;
 
   const clearAll = useCallback(() => {
@@ -694,7 +702,15 @@ function ProductInner() {
                                 {product.vendor_name}{product.vendor_name && product.category_name ? " · " : ""}{product.category_name}
                               </p>
                             )}
-                            <p className="mt-3 text-3xl font-bold text-brand">{fmtINR(price)}</p>
+                            <div className="mt-3 flex flex-wrap items-center gap-2">
+                              <p className="text-3xl font-bold text-brand">{fmtINR(price)}</p>
+                              {oldPrice && oldPrice > price && (
+                                <>
+                                  <span className="text-lg text-muted-foreground line-through">{fmtINR(oldPrice)}</span>
+                                  <span className="rounded-md bg-emerald-100 px-2 py-0.5 text-xs font-bold text-emerald-700">{off}% OFF</span>
+                                </>
+                              )}
+                            </div>
                             <p className="mt-1 text-xs text-muted-foreground">Stock: {stock}</p>
                           </div>
 

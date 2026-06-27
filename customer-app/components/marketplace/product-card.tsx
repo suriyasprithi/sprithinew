@@ -23,6 +23,9 @@ export type MarketplaceProduct = {
   badge?: string;           // "20% OFF", "Trending", etc.
   has_variants?: boolean;
   default_variant_id?: number | null;  // backend picks cheapest in-stock variant
+  min_price?: number | null;           // cheapest variant price (range low)
+  max_price?: number | null;           // dearest variant price (range high)
+  variant_axes?: { name: string; count: number }[];  // e.g. [{name:"size",count:4}]
 };
 
 const fmtINR = (n: number) =>
@@ -46,6 +49,14 @@ export function ProductCard({ product, onAdd }: {
   const off = product.old_price && product.old_price > product.price
     ? Math.round(((product.old_price - product.price) / product.old_price) * 100)
     : 0;
+
+  // Variant card hint (Option A): "4 sizes · 2 colors" + a "From ₹X" price range,
+  // so the listing shows the cheapest variant's offer; the size/colour is picked
+  // on the detail page.
+  const variantHint = product.has_variants && product.variant_axes && product.variant_axes.length > 0
+    ? product.variant_axes.map((a) => `${a.count} ${a.name}${a.count !== 1 && !a.name.toLowerCase().endsWith("s") ? "s" : ""}`).join(" · ")
+    : null;
+  const hasRange = !!product.has_variants && product.min_price != null && product.max_price != null && product.max_price > product.min_price;
 
   // Persist to the backend cart. If a parent supplies `onAdd`, defer to it
   // (e.g. for a UI-only override or analytics shim). Otherwise POST directly
@@ -140,6 +151,12 @@ export function ProductCard({ product, onAdd }: {
           {product.name}
         </Link>
 
+        {variantHint && (
+          <span className="inline-flex w-fit items-center rounded-full bg-[var(--mk-surface-2)] px-2 py-0.5 text-[11px] font-medium text-[var(--mk-text-muted)]">
+            {variantHint}
+          </span>
+        )}
+
         {/* Rating */}
         {product.rating != null && (
           <div className="flex items-center gap-1 text-xs">
@@ -164,7 +181,10 @@ export function ProductCard({ product, onAdd }: {
         {/* Price + actions */}
         <div className="mt-auto flex items-end justify-between gap-2 pt-1">
           <div className="min-w-0">
-            <p className="text-base font-bold text-[var(--mk-text)] leading-tight">{fmtINR(product.price)}</p>
+            <p className="text-base font-bold text-[var(--mk-text)] leading-tight">
+              {hasRange && <span className="text-[11px] font-medium text-[var(--mk-text-muted)]">From </span>}
+              {fmtINR(product.price)}
+            </p>
             {product.old_price && product.old_price > product.price && (
               <p className="text-xs text-[var(--mk-text-muted)] line-through">{fmtINR(product.old_price)}</p>
             )}
