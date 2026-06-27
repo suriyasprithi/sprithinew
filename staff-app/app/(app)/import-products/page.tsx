@@ -13,7 +13,7 @@ import { api, apiErrorMessage } from "@/lib/api";
 import { ImportSummaryCard } from "@/components/products/import-summary-card";
 import { TemplateBuilder } from "@/components/products/template-builder";
 import {
-  type Group, type ImportSummary,
+  type Group, type ImportSummary, type ReviewRow,
   fileToRows, groupRows, isValidGroup, runChunkedImport,
 } from "@/lib/catalog-import";
 
@@ -23,6 +23,8 @@ export default function ImportProductsPage() {
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [vendorId, setVendorId] = useState("");
   const [groups, setGroups] = useState<Group[]>([]);
+  const [review, setReview] = useState<ReviewRow[]>([]);
+  const [totalRows, setTotalRows] = useState(0);
   const [fileName, setFileName] = useState("");
   const [importing, setImporting] = useState(false);
   const [progress, setProgress] = useState("");
@@ -48,9 +50,11 @@ export default function ImportProductsPage() {
     setFileName(f.name);
     setResult(null);
     try {
-      const gs = groupRows(await fileToRows(f));
+      const { groups: gs, review: rv, totalRows: tr } = groupRows(await fileToRows(f));
       setGroups(gs);
-      if (!gs.length) toast.error("No products found — check the file has a header row + item_code column");
+      setReview(rv);
+      setTotalRows(tr);
+      if (!gs.length) toast.error("No products found — check the file has a header row with product_name + category");
     } catch {
       toast.error("Could not read that file");
     }
@@ -67,10 +71,16 @@ export default function ImportProductsPage() {
         { vendor_id: Number(vendorId) },
         (done, total) => setProgress(`Importing ${done} / ${total} products…`),
       );
-      setResult(agg);
+      setResult({
+        ...agg,
+        totalRows,
+        variantProducts: valid.filter((g) => g.variants.length >= 2).length,
+        separateProducts: valid.filter((g) => g.variants.length < 2).length,
+        needsReview: review,
+      });
       setProgress("");
       toast.success(`Products ${agg.products.created}+${agg.products.updated}, variants ${agg.variants.created}+${agg.variants.updated}` + (agg.failed ? `, ${agg.failed} failed` : ""));
-      setGroups([]); setFileName("");
+      setGroups([]); setReview([]); setTotalRows(0); setFileName("");
       if (inputRef.current) inputRef.current.value = "";
     } catch (e) {
       setProgress("");
@@ -88,7 +98,7 @@ export default function ImportProductsPage() {
           eyebrow="Catalog"
           icon={Upload}
           title="Import Products"
-          description="One universal importer for every category. Rows sharing an item_code become one product; each row is a SKU/variant. Any attribute column (Color, Size, RAM…) is supported automatically."
+          description="One universal importer for every category. Rows with the same product name + category + brand auto-merge into one product with variants — only when every row is a clean attribute (Size, Color, RAM…). Bundles/packs or mixed rows stay separate and are flagged Needs review."
         />
 
         <TemplateBuilder />
@@ -119,7 +129,10 @@ export default function ImportProductsPage() {
             <div className="rounded-xl border border-border bg-surface-2/40 p-3 text-sm">
               <p><span className="font-semibold">{valid.length}</span> products ({variantCount} variants) ready to import.</p>
               {groups.length > valid.length && (
-                <p className="mt-1 text-xs text-amber-600">{groups.length - valid.length} product(s) missing item_code / product_name / price will be skipped.</p>
+                <p className="mt-1 text-xs text-amber-600">{groups.length - valid.length} product(s) missing product_name / category / price will be skipped.</p>
+              )}
+              {review.length > 0 && (
+                <p className="mt-1 text-xs text-amber-600">{review.length} group(s) flagged <span className="font-medium">Needs review</span> (bundle/pack or mixed values) — kept as separate products.</p>
               )}
             </div>
           )}

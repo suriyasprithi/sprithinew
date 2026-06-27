@@ -87,24 +87,96 @@ export async function fileToRows(file: File): Promise<string[][]> {
   return parseCsv(await file.text());
 }
 
+// ---- Safe variant auto-detection (Rule 1–3) ---------------------------------
+// A clean variant attribute: weight, volume, storage, length, count, clothing
+// size, or a colour. Decides whether same-(name,category,brand) rows are a real
+// variant set vs a generic name collision / bundle. Never merge on ambiguity.
+const ATTR_PATTERNS = [
+  /^\d+(\.\d+)?\s*(mg|g|gm|gms|gram|grams|kg|kgs)$/i,            // weight
+  /^\d+(\.\d+)?\s*(ml|l|lt|ltr|ltrs|litre|liter|litres)$/i,     // volume
+  /^\d+(\.\d+)?\s*(mb|gb|tb)$/i,                                // storage / RAM
+  /^\d+(\.\d+)?\s*(mm|cm|inch|inches|ft|feet)$/i,               // length
+  /^\d+\s*(n|no|nos|pc|pcs|pces|piece|pieces|u|unit|units|ct|count|dozen)$/i, // count
+  /^(xs|s|m|l|xl|xxl|3xl|xxxl|4xl|5xl|nb|newborn|new born|free\s?size|std|standard)(\s*[=:-]\s*\d+)?$/i, // clothing/diaper size
+];
+const COLORS = new Set(["red","blue","black","green","white","yellow","pink","orange","purple","violet","brown","grey","gray","gold","golden","silver","maroon","navy","beige","cream","tan","multi","multicolor","multicolour","assorted","asst"]);
+const BUNDLE_PHRASES = ["combo","bundle","hamper","multipack","multi pack","value pack","combo pack","family pack","economy pack","trial pack","festival pack","gift pack","gift set","saver pack","jumbo pack"];
+
+const stripVal = (s: string) => s.replace(/\\/g, "").trim();
+
+/** True when a label is a recognised variant attribute value (100G, 500ML, Red, 128GB, S/M/L…). */
+export function isCleanAttribute(val: string): boolean {
+  const v = stripVal(val);
+  if (!v) return false;
+  if (ATTR_PATTERNS.some((p) => p.test(v))) return true;
+  return COLORS.has(v.toLowerCase());
+}
+
+/** Marketing / bundle wording in a variant value or a product name (combo, pack, gift…). */
+export function hasBundleWord(s: string): boolean {
+  const v = stripVal(s).toLowerCase();
+  if (!v) return false;
+  if (BUNDLE_PHRASES.some((w) => v.includes(w))) return true;
+  return /\b(combo|bundle|hamper|gift|multipack)\b/.test(v) || /\bpack\b/.test(v);
+}
+
+export type ReviewRow = { name: string; reason: string; count: number };
+export type GroupResult = { groups: Group[]; review: ReviewRow[]; totalRows: number };
+
+type ParsedRow = { f: Record<string, string>; options: Record<string, string>; rowNum: number };
+
+/** Variant value to classify on, by priority: size → colour → storage → ram → first attribute. */
+function axisValue(options: Record<string, string>): string {
+  const pick = (want: string): string | null => {
+    for (const k of Object.keys(options)) if (norm(k) === want) return options[k];
+    return null;
+  };
+  return pick("size") ?? pick("color") ?? pick("colour") ?? pick("storage") ?? pick("ram") ?? Object.values(options)[0] ?? "";
+}
+
+/** Fold a set of parsed rows into one product Group (first row = product-level fields). */
+function buildGroup(members: ParsedRow[]): Group {
+  const first = members[0].f;
+  const g = blankGroup((first.code ?? "").trim());
+  g.name = first.name ?? ""; g.category = first.category ?? ""; g.brand = first.brand ?? "";
+  g.description = first.description ?? ""; g.short_description = first.short_description ?? "";
+  g.tags = first.tags ?? ""; g.hsn_code = first.hsn_code ?? ""; g.status = first.status ?? "";
+  g.featured = first.featured ?? ""; g.image = first.image ?? ""; g.gallery_images = first.gallery_images ?? "";
+  g.tax_type = first.tax_type ?? ""; g.tax_percentage = first.tax_percentage ?? "";
+  g.price = first.price ?? ""; g.mrp = first.mrp ?? ""; g.stock = first.stock ?? ""; g.barcode = first.barcode ?? "";
+  for (const m of members) {
+    const isVariant = !!(m.f.sku && m.f.sku.trim()) || Object.keys(m.options).length > 0;
+    if (isVariant) {
+      g.variants.push({
+        sku: m.f.sku ?? "", name: m.f.variant_name ?? "", options: m.options,
+        price: m.f.price ?? "", mrp: m.f.mrp ?? "", stock: m.f.stock ?? "", barcode: m.f.barcode ?? "",
+      });
+    }
+  }
+  return g;
+}
+
 /**
- * Parse CSV rows into product groups (by item_code). Reserved headers map to fields;
- * any other header is a variant attribute (its label → variant.options[label]).
+ * Group rows into products by NAME + CATEGORY + BRAND, auto-detecting variants
+ * only when it is safe (Rule 1–3):
+ *   - all rows carry a clean attribute (size/volume/colour/…) and the name has
+ *     no bundle wording → ONE product with those variants (Rule 1);
+ *   - mixed (some attributes + some bundle/blank) → the clean rows form a variant
+ *     product, the rest become separate products, and the group is flagged (Rule 3);
+ *   - generic (no clean attribute, e.g. price labels) → separate products.
+ * Never auto-merges on ambiguity — a wrong merge corrupts the catalog, a missed
+ * merge is easy to fix later.
  */
-export function groupRows(rows: string[][]): Group[] {
-  if (rows.length < 2) return [];
-  // Per column: a reserved field key, or an attribute label (original header).
+export function groupRows(rows: string[][]): GroupResult {
+  if (rows.length < 2) return { groups: [], review: [], totalRows: 0 };
   const cols = rows[0].map((h) => {
     const key = RESERVED[norm(h)];
     return key ? { kind: "field" as const, key } : { kind: "attr" as const, label: h.trim() };
   });
 
-  const groups = new Map<string, Group>();
-  const order: string[] = [];
-
+  const parsed: ParsedRow[] = [];
   for (let r = 1; r < rows.length; r++) {
     const row = rows[r];
-    // Resolve this row's reserved values + attribute options.
     const f: Record<string, string> = {};
     const options: Record<string, string> = {};
     cols.forEach((c, i) => {
@@ -112,34 +184,49 @@ export function groupRows(rows: string[][]): Group[] {
       if (c.kind === "field") { if (v !== "") f[c.key] = v; }
       else if (c.label !== "" && v !== "") options[c.label] = v;
     });
-
-    const code = (f.code ?? "").trim();
-    if (!code) continue; // item_code is the grouping key; skip blank
-    const key = code.toLowerCase();
-    let g = groups.get(key);
-    if (!g) {
-      g = blankGroup(code);
-      // product-level fields from the first row of this item_code
-      g.name = f.name ?? ""; g.category = f.category ?? "";
-      g.brand = f.brand ?? ""; g.description = f.description ?? ""; g.short_description = f.short_description ?? "";
-      g.tags = f.tags ?? ""; g.hsn_code = f.hsn_code ?? ""; g.status = f.status ?? "";
-      g.featured = f.featured ?? ""; g.image = f.image ?? ""; g.gallery_images = f.gallery_images ?? "";
-      g.tax_type = f.tax_type ?? ""; g.tax_percentage = f.tax_percentage ?? "";
-      // row-level (used if product-only)
-      g.price = f.price ?? ""; g.mrp = f.mrp ?? ""; g.stock = f.stock ?? ""; g.barcode = f.barcode ?? "";
-      groups.set(key, g);
-      order.push(key);
-    }
-    // A row is a variant when it carries a sku or any attribute value.
-    const isVariant = !!(f.sku && f.sku.trim()) || Object.keys(options).length > 0;
-    if (isVariant) {
-      g.variants.push({
-        sku: f.sku ?? "", name: f.variant_name ?? "", options,
-        price: f.price ?? "", mrp: f.mrp ?? "", stock: f.stock ?? "", barcode: f.barcode ?? "",
-      });
-    }
+    parsed.push({ f, options, rowNum: r });
   }
-  return order.map((k) => groups.get(k)!);
+
+  // Group by name + category + brand (name alone wrongly merges different brands).
+  const map = new Map<string, ParsedRow[]>();
+  const order: string[] = [];
+  for (const p of parsed) {
+    if (!(p.f.name ?? "").trim()) continue;
+    const k = [norm(p.f.name ?? ""), norm(p.f.category ?? ""), norm(p.f.brand ?? "")].join("|");
+    if (!map.has(k)) { map.set(k, []); order.push(k); }
+    map.get(k)!.push(p);
+  }
+
+  const groups: Group[] = [];
+  const review: ReviewRow[] = [];
+  for (const k of order) {
+    const members = map.get(k)!;
+    const name = members[0].f.name ?? "";
+    const clean = members.filter((m) => isCleanAttribute(axisValue(m.options)));
+    const dirty = members.filter((m) => !isCleanAttribute(axisValue(m.options)));
+    const nameBundle = hasBundleWord(name);
+
+    if (members.length === 1) {
+      groups.push(buildGroup(members));
+      if (nameBundle) review.push({ name, reason: "Bundle / pack in product name", count: 1 });
+      continue;
+    }
+    if (dirty.length === 0 && !nameBundle) {
+      groups.push(buildGroup(members)); // Rule 1 — clean variant set
+      continue;
+    }
+    // Rule 3 — mixed: clean rows merge, the rest stay separate; flag for review.
+    if (clean.length >= 2) groups.push(buildGroup(clean));
+    else for (const m of clean) groups.push(buildGroup([m]));
+    for (const m of dirty) groups.push(buildGroup([m]));
+    review.push({
+      name,
+      reason: nameBundle ? "Bundle / pack wording" : "Mixed variant & non-attribute values",
+      count: members.length,
+    });
+  }
+
+  return { groups, review, totalRows: parsed.length };
 }
 
 /** A group is importable with an item_code + product_name + a price (variant or product-only). */
@@ -248,6 +335,11 @@ export type ImportSummary = {
   variants: { created: number; updated: number };
   failed: number;
   failedRows: FailedRow[];
+  // Client-side grouping facts (Rule 5 summary), set by the import UI.
+  totalRows?: number;
+  variantProducts?: number;
+  separateProducts?: number;
+  needsReview?: ReviewRow[];
 };
 
 /**

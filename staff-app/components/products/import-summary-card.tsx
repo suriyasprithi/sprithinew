@@ -27,6 +27,30 @@ export function ImportSummaryCard({ result }: { result: ImportSummary }) {
         <Stat label="Failed" value={result.failed} tone={result.failed ? "text-red-600" : "text-muted-foreground"} />
       </div>
 
+      {(result.totalRows != null || result.separateProducts != null) && (
+        <>
+          <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Detection</p>
+          <div className="grid grid-cols-3 gap-2 text-sm">
+            <Stat label="Total rows" value={result.totalRows ?? 0} tone="text-muted-foreground" />
+            <Stat label="Variant products" value={result.variantProducts ?? 0} tone="text-emerald-600" />
+            <Stat label="Separate" value={result.separateProducts ?? 0} tone="text-sky-600" />
+          </div>
+        </>
+      )}
+
+      {result.needsReview && result.needsReview.length > 0 && (
+        <details className="rounded-xl border border-amber-500/40 bg-amber-500/5 p-3 text-xs">
+          <summary className="flex cursor-pointer items-center gap-1.5 font-medium text-amber-600">
+            <AlertCircle className="h-3.5 w-3.5" /> {result.needsReview.length} group(s) need review
+          </summary>
+          <ul className="mt-2 space-y-1 text-muted-foreground">
+            {result.needsReview.slice(0, 100).map((r, idx) => (
+              <li key={idx}><span className="font-medium text-foreground">{r.name}</span> ×{r.count} — {r.reason}</li>
+            ))}
+          </ul>
+        </details>
+      )}
+
       {result.failedRows.length > 0 && (
         <details className="rounded-xl border border-border bg-surface-2/40 p-3 text-xs">
           <summary className="flex cursor-pointer items-center gap-1.5 font-medium text-red-600">
