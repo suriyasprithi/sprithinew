@@ -69,7 +69,9 @@ function PublicShopInner() {
   // catId is derived from the URL so the dropdown <Link> clicks (which only
   // change the query string) actually re-filter the products.
   const catId = sp?.get("category_id") ? Number(sp.get("category_id")) : null;
-  const [pincode, setPincode] = useState(sp?.get("pincode") ?? "");
+  // Pincode scoping still honoured from the URL (?pincode=) + saved location;
+  // the manual pincode box was removed from the filter bar.
+  const pincode = sp?.get("pincode") ?? "";
   const [q, setQ] = useState(sp?.get("q") ?? "");
   const [loading, setLoading] = useState(true);
   // Bumped when the saved delivery location changes, to re-scope the products.
@@ -228,14 +230,6 @@ function PublicShopInner() {
                 className="h-11 w-full rounded-xl border border-[var(--mk-border)] bg-[var(--mk-surface-2)] pl-9 pr-3 text-sm text-[var(--mk-text)] outline-none focus:border-[var(--mk-brand)]"
               />
             </div>
-            <input
-              value={pincode}
-              inputMode="numeric"
-              maxLength={6}
-              onChange={(e) => setPincode(e.target.value.replace(/\D/g, "").slice(0, 6))}
-              placeholder="Pincode"
-              className="h-11 w-36 rounded-xl border border-[var(--mk-border)] bg-[var(--mk-surface-2)] px-3 text-sm text-[var(--mk-text)] outline-none focus:border-[var(--mk-brand)]"
-            />
             <button
               type="submit"
               className="inline-flex h-11 items-center gap-1.5 rounded-xl bg-[var(--mk-brand)] px-4 text-sm font-semibold text-white shadow-[var(--mk-shadow-sm)] transition-colors hover:bg-[var(--mk-brand-deep)]"
