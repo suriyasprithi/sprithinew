@@ -369,7 +369,7 @@ export default function OrdersPage() {
                             </div>
                           )}
 
-                  {o.status === "pending" && o.can_cancel && (
+                  {o.can_cancel && (
                     <div className="mt-3 border-t border-border/60 pt-3">
                       {cancelOpenId === o.id ? (
                         <div className="space-y-2">

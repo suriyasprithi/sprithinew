@@ -796,7 +796,11 @@ class OrderController extends BaseApiController
      */
     private function cancelInfo(array $order, bool $enabled): array
     {
-        $canCancel = $enabled && ($order['status'] ?? '') === 'pending' && empty($order['driver_id']);
+        // Cancellable while early in the flow (pending/confirmed/packed), COD +
+        // not QR-paid, and no driver assigned yet.
+        $status    = $order['status'] ?? '';
+        $unsettled = ($order['payment_method'] ?? '') === 'cod' && empty($order['paid_via']);
+        $canCancel = $enabled && in_array($status, ['pending', 'confirmed', 'packed'], true) && $unsettled && empty($order['driver_id']);
         return [
             'cancel_enabled' => $enabled,
             'can_cancel'     => $canCancel,
@@ -1323,10 +1327,11 @@ class OrderController extends BaseApiController
     }
 
     /**
-     * Customer: cancel an un-settled order (COD awaiting delivery, status
-     * 'pending'). Restores inventory, charges a wallet penalty when the reason
-     * isn't one of the admin's valid reasons, and notifies vendor + admin.
-     * Wallet orders settle at placement → they must use Return instead.
+     * Customer or shop: cancel an un-settled COD order before it's dispatched.
+     * Cancellable while the status is still early (pending / confirmed / packed)
+     * AND no driver is assigned yet — i.e. right up until it goes out. Restores
+     * inventory and notifies the other party. Orders that already moved money
+     * (wallet-paid or QR-paid) must use Return instead.
      */
     public function cancel(int $id): ResponseInterface
     {
@@ -1342,10 +1347,13 @@ class OrderController extends BaseApiController
         if (! $isCustomer && ! $isVendor) return $this->fail('Forbidden', 403);
         $cancelledBy = $isVendor ? 'vendor' : 'customer';
 
-        // Only un-settled orders qualify. COD orders are 'pending' until delivered;
-        // wallet orders settle (vendor + commission paid) at placement → 'paid'.
-        if (($order['status'] ?? '') !== 'pending') {
-            return $this->fail(($order['status'] ?? '') === 'delivered'
+        // Cancellable while early in the flow and not yet settled: a COD order that
+        // hasn't been QR-paid, before dispatch. Wallet / QR-paid orders already
+        // moved money → they go through Return instead.
+        $status    = $order['status'] ?? '';
+        $unsettled = ($order['payment_method'] ?? '') === 'cod' && empty($order['paid_via']);
+        if (! in_array($status, ['pending', 'confirmed', 'packed'], true) || ! $unsettled) {
+            return $this->fail($status === 'delivered'
                 ? 'Delivered orders can only be returned, not cancelled'
                 : 'This order can no longer be cancelled', 422);
         }
