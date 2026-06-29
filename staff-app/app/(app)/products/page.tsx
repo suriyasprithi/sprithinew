@@ -1158,6 +1158,7 @@ function VariantsEditor({ draft, onTypesChange, onComboChange, onImagesChange }:
 }) {
   const types = draft.variant_types;
   const images = draft.variant_images;
+  const [vZoom, setVZoom] = useState<string | null>(null);   // click a thumb → full-screen preview
 
   function addType() {
     onTypesChange([...types, { name: "", options: [] }]);
@@ -1240,7 +1241,7 @@ function VariantsEditor({ draft, onTypesChange, onComboChange, onImagesChange }:
                         <div className="flex flex-wrap gap-2">
                           {imgs.map((src, idx) => (
                             <div key={idx} className="relative h-16 w-16 overflow-hidden rounded-md border border-border">
-                              <img src={src} alt={`${t.name} ${opt} ${idx + 1}`} className="h-full w-full object-cover" />
+                              <img src={src} alt={`${t.name} ${opt} ${idx + 1}`} onClick={() => setVZoom(src)} className="h-full w-full cursor-zoom-in object-cover" />
                               <button
                                 type="button"
                                 onClick={() => onImagesChange(t.name, opt, imgs.filter((_, i) => i !== idx))}
@@ -1285,6 +1286,15 @@ function VariantsEditor({ draft, onTypesChange, onComboChange, onImagesChange }:
             <Layers className="mx-auto mb-2 h-8 w-8 text-muted-foreground" />
             <p className="text-sm font-medium">Add variant types first</p>
             <p className="text-[11px] text-muted-foreground">Define a variant type above (e.g. Color → Black, Blue) and per-option image slots appear here.</p>
+          </div>
+        )}
+        {vZoom && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 p-4" onClick={() => setVZoom(null)}>
+            <button type="button" onClick={() => setVZoom(null)} aria-label="Close preview" className="absolute right-4 top-4 inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/10 text-white hover:bg-white/20">
+              <X className="h-5 w-5" />
+            </button>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={vZoom} alt="Variant preview" onClick={(e) => e.stopPropagation()} className="max-h-[90vh] max-w-full rounded-xl object-contain" />
           </div>
         )}
       </div>

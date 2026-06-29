@@ -8,6 +8,7 @@ use App\Models\ProductVariantModel;
 use App\Models\UserModel;
 use App\Models\VariantTypeGroupModel;
 use App\Models\VendorProfileModel;
+use App\Services\ZipImportService;
 use CodeIgniter\HTTP\ResponseInterface;
 
 class ProductController extends BaseApiController
@@ -392,7 +393,7 @@ class ProductController extends BaseApiController
         $vendor = (new UserModel())->find($vendorId);
         if (! $vendor || $vendor['role'] !== 'vendor') return $this->fail('Pick a valid vendor', 422);
 
-        [$summary, $msg] = $this->runCatalogImport($vendorId, $items);
+        [$summary, $msg] = $this->runCatalogImport($vendorId, $items, trim((string) ($d['image_batch'] ?? '')));
         return $this->ok($summary, $msg);
     }
 
@@ -411,8 +412,44 @@ class ProductController extends BaseApiController
         if (! is_array($items) || ! $items) return $this->fail('No rows to import', 422);
         if (count($items) > 2000)           return $this->fail('Too many rows (max 2000 per request)', 422);
 
-        [$summary, $msg] = $this->runCatalogImport((int) $auth->id, $items);
+        [$summary, $msg] = $this->runCatalogImport((int) $auth->id, $items, trim((string) ($d['image_batch'] ?? '')));
         return $this->ok($summary, $msg);
+    }
+
+    /** Max product-images ZIP size. */
+    private const IMPORT_ZIP_MAX_MB = 300;
+
+    /**
+     * Upload + extract a product-images ZIP for the catalog import. Returns a
+     * batch token the import chunks pass back as `image_batch`. Optional —
+     * imports without images skip this entirely.
+     */
+    public function importImagesUpload(): ResponseInterface
+    {
+        $auth = $this->authUser();
+        if (! $auth) return $this->fail('Unauthorized', 401);
+        if (! in_array($auth->role, ['vendor', 'admin'], true)) return $this->fail('Forbidden', 403);
+        $zip = $this->request->getFile('zip');
+        if (! $zip) return $this->fail('No ZIP uploaded', 422);
+        try {
+            $svc = new ZipImportService();
+            $svc->prune();   // sweep abandoned batches
+            $res = $svc->extract($zip, self::IMPORT_ZIP_MAX_MB * 1024 * 1024);
+        } catch (\Throwable $e) {
+            return $this->fail($e->getMessage(), 422);
+        }
+        return $this->ok($res, $res['count'] . ' image(s) ready');
+    }
+
+    /** Remove a finished import's extracted images. */
+    public function importImagesCleanup(): ResponseInterface
+    {
+        $auth = $this->authUser();
+        if (! $auth) return $this->fail('Unauthorized', 401);
+        $d     = $this->request->getJSON(true) ?? $this->request->getPost() ?? [];
+        $token = trim((string) ($d['token'] ?? ''));
+        if ($token !== '') (new ZipImportService())->cleanup($token);
+        return $this->ok(null, 'Cleaned up');
     }
 
     /**
@@ -429,10 +466,14 @@ class ProductController extends BaseApiController
      *
      * @return array{0: array, 1: string} [summary, message]
      */
-    private function runCatalogImport(int $vendorId, array $items): array
+    private function runCatalogImport(int $vendorId, array $items, string $imageBatch = ''): array
     {
         $pm       = new ProductModel();
         $catModel = new CategoryModel();
+
+        // Optional product-images ZIP batch (resolved per row; never fatal).
+        $zipSvc        = $imageBatch !== '' ? new ZipImportService() : null;
+        $missingImages = [];
 
         // The vendor's fixed vendor_category (set by admin). Imported categories
         // and products link to it so they appear in the vendor's pickers, and the
@@ -523,6 +564,7 @@ class ProductController extends BaseApiController
                         'barcode' => trim((string) ($rv['barcode'] ?? '')) !== '' ? trim((string) $rv['barcode']) : null,
                         'weight'  => isset($rv['weight']) && is_numeric($rv['weight']) ? (float) $rv['weight'] : null,
                         'name'    => trim((string) ($rv['name'] ?? '')),
+                        'image'   => trim((string) ($rv['image'] ?? '')),   // ZIP filename / URL, resolved below
                     ];
                 }
                 $axes        = $this->deriveAxes($variants);
@@ -550,6 +592,31 @@ class ProductController extends BaseApiController
 
                 $statusRaw = mb_strtolower(trim((string) ($item['status'] ?? '')));
                 $status    = $statusRaw === '' ? null : (in_array($statusRaw, ['inactive', '0', 'no', 'disabled', 'off'], true) ? 'inactive' : 'active');
+
+                // Resolve images from the uploaded ZIP (Option A: explicit filename
+                // first, SKU fallback). Product image ← image/images cell; each
+                // variant ← its own image cell. Missing CSV-named files are logged.
+                if ($zipSvc) {
+                    $multi     = $this->splitImageList($item['images'] ?? null);
+                    $mainNames = array_values(array_filter(array_merge([trim((string) ($item['image'] ?? ''))], $multi), static fn ($s) => $s !== ''));
+                    $main      = $this->resolveImportImage($zipSvc, $imageBatch, $mainNames, $code, $missingImages);
+                    if ($main !== null) $item['image'] = $main;
+                    $gal = [];
+                    foreach (array_merge(array_slice($multi, 1), $this->splitImageList($item['gallery_images'] ?? null)) as $gn) {
+                        $u = $this->resolveImportImage($zipSvc, $imageBatch, [$gn], '', $missingImages);
+                        if ($u !== null) $gal[] = $u;
+                    }
+                    if ($gal) $item['gallery_images'] = implode("\n", $gal);
+                    foreach ($variants as &$vrow) {
+                        $vNames = $this->splitImageList($vrow['image'] ?? null);
+                        $vimg   = $this->resolveImportImage($zipSvc, $imageBatch, $vNames, $vrow['sku'] !== '' ? $vrow['sku'] : $code, $missingImages);
+                        $vrow['image'] = $vimg;   // URL or null (null = leave existing on update)
+                    }
+                    unset($vrow);
+                } else {
+                    foreach ($variants as &$vrow) { $vrow['image'] = null; }
+                    unset($vrow);
+                }
 
                 $base = [
                     'category_id'      => $catId,

@@ -18,6 +18,22 @@ type Props = {
 export function ImageDrop({ value, onChange, variant = "full", className, maxSizeMB = 5 }: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [hover, setHover] = useState(false);
+  const [zoom, setZoom] = useState(false);   // click the preview → full-screen view
+
+  const lightbox = zoom && value ? (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 p-4" onClick={() => setZoom(false)}>
+      <button
+        type="button"
+        onClick={() => setZoom(false)}
+        aria-label="Close preview"
+        className="absolute right-4 top-4 inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/10 text-white hover:bg-white/20"
+      >
+        <X className="h-5 w-5" />
+      </button>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src={value} alt="Preview" onClick={(e) => e.stopPropagation()} className="max-h-[90vh] max-w-full rounded-xl object-contain" />
+    </div>
+  ) : null;
 
   function readFile(file: File) {
     // Accept anything that LOOKS like an image: either the MIME type starts with
@@ -76,7 +92,7 @@ export function ImageDrop({ value, onChange, variant = "full", className, maxSiz
     <div className="relative flex h-full w-full items-center justify-center overflow-hidden rounded-xl border border-border bg-surface-2/40">
       {value ? (
         <>
-          <img src={value} alt="Preview" className="h-full w-full object-cover" />
+          <img src={value} alt="Preview" onClick={() => setZoom(true)} className="h-full w-full cursor-zoom-in object-cover" />
           <button
             type="button"
             onClick={(e) => { e.stopPropagation(); onChange(null); }}
@@ -95,26 +111,32 @@ export function ImageDrop({ value, onChange, variant = "full", className, maxSiz
   if (variant === "compact") {
     if (value) {
       return (
-        <div className={cn("relative h-24 w-full overflow-hidden rounded-xl border border-border", className)}>
-          <img src={value} alt="Preview" className="h-full w-full object-cover" />
-          <button
-            type="button"
-            onClick={() => onChange(null)}
-            aria-label="Remove image"
-            className="absolute right-1 top-1 inline-flex h-6 w-6 items-center justify-center rounded-full bg-black/60 text-white hover:bg-black"
-          >
-            <X className="h-3 w-3" />
-          </button>
-        </div>
+        <>
+          <div className={cn("relative h-24 w-full overflow-hidden rounded-xl border border-border", className)}>
+            <img src={value} alt="Preview" onClick={() => setZoom(true)} className="h-full w-full cursor-zoom-in object-cover" />
+            <button
+              type="button"
+              onClick={() => onChange(null)}
+              aria-label="Remove image"
+              className="absolute right-1 top-1 inline-flex h-6 w-6 items-center justify-center rounded-full bg-black/60 text-white hover:bg-black"
+            >
+              <X className="h-3 w-3" />
+            </button>
+          </div>
+          {lightbox}
+        </>
       );
     }
     return <div className={className}>{drop}</div>;
   }
 
   return (
-    <div className={cn("grid grid-cols-[1fr_120px] gap-3", className)}>
-      {drop}
-      <div className="h-32">{preview}</div>
-    </div>
+    <>
+      <div className={cn("grid grid-cols-[1fr_120px] gap-3", className)}>
+        {drop}
+        <div className="h-32">{preview}</div>
+      </div>
+      {lightbox}
+    </>
   );
 }

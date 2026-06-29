@@ -17,7 +17,7 @@ export default function AppShellLayout({ children }: { children: React.ReactNode
     <AuthGuard>
       <div className="flex min-h-screen">
         <SideNav />
-        <main className="flex-1 pb-20 md:pb-0">
+        <main className="min-w-0 flex-1 overflow-x-clip pb-20 md:pb-0">
           {children}
         </main>
         <BottomNav />
