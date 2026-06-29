@@ -206,6 +206,8 @@ $routes->group('api/v1', ['filter' => 'cors'], static function ($routes) {
         $routes->get('products',         'Api\ProductController::mine');
         $routes->post('products/bulk',   'Api\ProductController::bulkCreate');
         $routes->post('products/import', 'Api\ProductController::vendorImport');
+        $routes->post('products/import-images', 'Api\ProductController::importImagesUpload');           // upload + extract images ZIP
+        $routes->post('products/import-images/cleanup', 'Api\ProductController::importImagesCleanup');  // remove extracted temp
         $routes->post('products',        'Api\ProductController::create');
         $routes->patch('products/(:num)','Api\ProductController::update/$1');
         $routes->delete('products/(:num)','Api\ProductController::delete/$1');
@@ -328,6 +330,8 @@ $routes->group('api/v1', ['filter' => 'cors'], static function ($routes) {
         $routes->get('customers/(:num)',             'Api\AdminUsersController::show/$1');
         $routes->post('customers',                   'Api\AdminUsersController::create');
         $routes->post('products/import',             'Api\ProductController::adminImport');
+        $routes->post('products/import-images',          'Api\ProductController::importImagesUpload');
+        $routes->post('products/import-images/cleanup',  'Api\ProductController::importImagesCleanup');
         $routes->patch('customers/(:num)',           'Api\AdminUsersController::update/$1');
         $routes->post('customers/(:num)/activate',   'Api\AdminUsersController::activate/$1');
         $routes->post('customers/(:num)/deactivate', 'Api\AdminUsersController::deactivate/$1');

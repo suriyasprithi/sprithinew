@@ -17,7 +17,8 @@ const RESERVED: Record<string, string> = {
   mrp: "mrp", offerprice: "price", price: "price", sellingprice: "price", salesprice: "price",
   stock: "stock", stockqty: "stock", stockquantity: "stock",
   status: "status", featured: "featured", featuredproductflag: "featured",
-  image: "image", mainimageurl: "image", imageurl: "image", proimage: "image",
+  image: "image", mainimageurl: "image", imageurl: "image", proimage: "image", variantimage: "image",
+  images: "images", productimages: "images", imagefiles: "images",
   galleryimages: "gallery_images", galleryimageurls: "gallery_images", gallery: "gallery_images",
   taxtype: "tax_type", taxpercentage: "tax_percentage", taxpercent: "tax_percentage",
 };
@@ -30,11 +31,12 @@ export const isReservedLabel = (s: string) => Object.prototype.hasOwnProperty.ca
 export type Variant = {
   sku: string; name: string; options: Record<string, string>;
   price: string; mrp: string; stock: string; barcode: string;
+  image: string; images: string;   // per-variant image filename(s) — resolved from the ZIP server-side
 };
 export type Group = {
   code: string; name: string; category: string; brand: string;
   description: string; short_description: string; tags: string; hsn_code: string;
-  status: string; featured: string; image: string; gallery_images: string;
+  status: string; featured: string; image: string; images: string; gallery_images: string;
   tax_type: string; tax_percentage: string;
   // product-only row-level values (used when the group has no variants):
   price: string; mrp: string; stock: string; barcode: string;
@@ -43,7 +45,7 @@ export type Group = {
 
 const blankGroup = (code: string): Group => ({
   code, name: "", category: "", brand: "", description: "", short_description: "",
-  tags: "", hsn_code: "", status: "", featured: "", image: "", gallery_images: "", tax_type: "",
+  tags: "", hsn_code: "", status: "", featured: "", image: "", images: "", gallery_images: "", tax_type: "",
   tax_percentage: "", price: "", mrp: "", stock: "", barcode: "", variants: [],
 });
 
@@ -143,7 +145,7 @@ function buildGroup(members: ParsedRow[]): Group {
   g.name = first.name ?? ""; g.category = first.category ?? ""; g.brand = first.brand ?? "";
   g.description = first.description ?? ""; g.short_description = first.short_description ?? "";
   g.tags = first.tags ?? ""; g.hsn_code = first.hsn_code ?? ""; g.status = first.status ?? "";
-  g.featured = first.featured ?? ""; g.image = first.image ?? ""; g.gallery_images = first.gallery_images ?? "";
+  g.featured = first.featured ?? ""; g.image = first.image ?? ""; g.images = first.images ?? ""; g.gallery_images = first.gallery_images ?? "";
   g.tax_type = first.tax_type ?? ""; g.tax_percentage = first.tax_percentage ?? "";
   g.price = first.price ?? ""; g.mrp = first.mrp ?? ""; g.stock = first.stock ?? ""; g.barcode = first.barcode ?? "";
   for (const m of members) {
@@ -152,6 +154,7 @@ function buildGroup(members: ParsedRow[]): Group {
       g.variants.push({
         sku: m.f.sku ?? "", name: m.f.variant_name ?? "", options: m.options,
         price: m.f.price ?? "", mrp: m.f.mrp ?? "", stock: m.f.stock ?? "", barcode: m.f.barcode ?? "",
+        image: m.f.image ?? "", images: m.f.images ?? "",
       });
     }
   }
@@ -245,12 +248,13 @@ export function groupToItem(g: Group): Record<string, unknown> {
   return {
     code: g.code, name: g.name, category: g.category,
     brand: g.brand, description: g.description, short_description: g.short_description, tags: g.tags,
-    hsn_code: g.hsn_code, status: g.status, featured: g.featured, image: g.image,
+    hsn_code: g.hsn_code, status: g.status, featured: g.featured, image: g.image, images: g.images,
     gallery_images: g.gallery_images, tax_type: g.tax_type, tax_percentage: num(g.tax_percentage),
     price: num(g.price), mrp: num(g.mrp), stock: num(g.stock), barcode: g.barcode || null,
     variants: g.variants.filter((v) => num(v.price) !== null).map((v) => ({
       sku: v.sku, name: v.name, options: v.options,
       price: num(v.price), mrp: num(v.mrp), stock: num(v.stock), barcode: v.barcode || null,
+      image: v.image || "", images: v.images || "",
     })),
   };
 }
@@ -337,6 +341,9 @@ export type ImportSummary = {
   variants: { created: number; updated: number };
   failed: number;
   failedRows: FailedRow[];
+  // Image-import report (populated only when a Product Images ZIP was used).
+  missingImages?: number;
+  missingImageNames?: string[];
   // Client-side grouping facts (Rule 5 summary), set by the import UI.
   totalRows?: number;
   variantProducts?: number;
@@ -356,7 +363,7 @@ export async function runChunkedImport(
   onProgress?: (done: number, total: number) => void,
 ): Promise<ImportSummary> {
   const CHUNK = 100; // groups per request (each group may carry many variants)
-  const agg: ImportSummary = { products: { created: 0, updated: 0, skipped: 0 }, variants: { created: 0, updated: 0 }, failed: 0, failedRows: [] };
+  const agg: ImportSummary = { products: { created: 0, updated: 0, skipped: 0 }, variants: { created: 0, updated: 0 }, failed: 0, failedRows: [], missingImages: 0, missingImageNames: [] };
   for (let i = 0; i < groups.length; i += CHUNK) {
     const chunk = groups.slice(i, i + CHUNK);
     onProgress?.(Math.min(i + chunk.length, groups.length), groups.length);
@@ -372,6 +379,11 @@ export async function runChunkedImport(
     const failed = d.failed as FailedRow[] | undefined;
     agg.failed += Number(d.failed_count ?? (Array.isArray(failed) ? failed.length : 0));
     if (Array.isArray(failed)) agg.failedRows.push(...failed.slice(0, 50).map((f) => ({ ...f, row: (Number(f.row) || 0) + i })));
+    agg.missingImages = (agg.missingImages ?? 0) + Number(d.missing_images_count ?? 0);
+    const miss = d.missing_images as string[] | undefined;
+    if (Array.isArray(miss) && (agg.missingImageNames?.length ?? 0) < 200) {
+      agg.missingImageNames?.push(...miss.slice(0, 200 - (agg.missingImageNames?.length ?? 0)));
+    }
   }
   return agg;
 }

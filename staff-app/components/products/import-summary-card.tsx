@@ -51,6 +51,19 @@ export function ImportSummaryCard({ result }: { result: ImportSummary }) {
         </details>
       )}
 
+      {(result.missingImages ?? 0) > 0 && (
+        <details className="rounded-xl border border-amber-500/40 bg-amber-500/5 p-3 text-xs">
+          <summary className="flex cursor-pointer items-center gap-1.5 font-medium text-amber-600">
+            <AlertCircle className="h-3.5 w-3.5" /> {result.missingImages} image(s) not found in the ZIP
+          </summary>
+          <ul className="mt-2 max-h-40 space-y-1 overflow-y-auto font-mono text-muted-foreground">
+            {(result.missingImageNames ?? []).slice(0, 200).map((n, idx) => (
+              <li key={idx}>{n}</li>
+            ))}
+          </ul>
+        </details>
+      )}
+
       {result.failedRows.length > 0 && (
         <details className="rounded-xl border border-border bg-surface-2/40 p-3 text-xs">
           <summary className="flex cursor-pointer items-center gap-1.5 font-medium text-red-600">

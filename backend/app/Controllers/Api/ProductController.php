@@ -681,7 +681,63 @@ class ProductController extends BaseApiController
             'failed_count' => count($failed),
             'failed'       => array_slice($failed, 0, 100),
             'total'        => count($items),
+            // Image import report (only when a ZIP batch was used).
+            'missing_images_count' => count($missingImages),
+            'missing_images'       => array_values(array_slice(array_unique($missingImages), 0, 200)),
         ], $msg];
+    }
+
+    /** Split a multi-image cell ("a.jpg|b.jpg", "a.jpg,b.jpg", array) into filenames. */
+    private function splitImageList($v): array
+    {
+        $parts = is_array($v) ? $v : (preg_split('/[|\n,]+/', (string) $v) ?: []);
+        return array_values(array_filter(array_map(static fn ($s) => trim((string) $s), $parts), static fn ($s) => $s !== ''));
+    }
+
+    /** A value already a URL / data-URI / absolute path — use as-is, skip the ZIP. */
+    private function looksLikeUrl(string $s): bool
+    {
+        $s = strtolower($s);
+        return str_starts_with($s, 'http://') || str_starts_with($s, 'https://') || str_starts_with($s, 'data:') || str_starts_with($s, '/');
+    }
+
+    /**
+     * Resolve a row's image from the ZIP batch (Option A: each explicit filename
+     * first, then a <sku>.<ext> fallback). A found file is copied into
+     * public/uploads/products/ and its absolute URL returned. CSV-named files that
+     * aren't in the ZIP are recorded in $missing (the SKU fallback is silent).
+     */
+    private function resolveImportImage(ZipImportService $svc, string $token, array $names, string $skuFallback, array &$missing): ?string
+    {
+        $explicit = [];
+        foreach ($names as $n) {
+            $n = trim((string) $n);
+            if ($n === '') continue;
+            if ($this->looksLikeUrl($n)) return $n;          // already a URL/base64
+            $explicit[] = $n;
+            $src = $svc->resolve($token, $n);
+            if ($src) { $u = $this->storeImportImage($src); if ($u) return $u; }
+        }
+        if ($skuFallback !== '') {
+            foreach (ZipImportService::SUPPORTED as $ext) {
+                $src = $svc->resolve($token, $skuFallback . '.' . $ext);
+                if ($src) { $u = $this->storeImportImage($src); if ($u) return $u; }
+            }
+        }
+        foreach ($explicit as $n) $missing[] = $n;           // log only CSV-named misses
+        return null;
+    }
+
+    /** Copy an extracted temp image into public/uploads/products/ → absolute URL. */
+    private function storeImportImage(string $src): ?string
+    {
+        $ext = strtolower(pathinfo($src, PATHINFO_EXTENSION));
+        if (! in_array($ext, ZipImportService::SUPPORTED, true)) return null;
+        $dir = FCPATH . 'uploads/products/';
+        if (! is_dir($dir)) @mkdir($dir, 0775, true);
+        $name = bin2hex(random_bytes(8)) . '.' . $ext;
+        if (! @copy($src, $dir . $name)) return null;
+        return base_url('uploads/products/' . $name);
     }
 
     /** Discount % + amount from mrp vs price (offer). [null,null] when no discount. */
@@ -751,6 +807,9 @@ class ProductController extends BaseApiController
                 'weight'     => $v['weight'] ?? null,
                 'status'     => 'active',
             ];
+            // Variant image (from the ZIP) — only set when resolved, so a re-import
+            // without images doesn't wipe an existing variant image.
+            if (! empty($v['image'])) $row['image'] = $v['image'];
             $sKey = mb_strtolower(trim($sku));
             if (isset($existing[$sKey]) && $existing[$sKey] > 0) {
                 $vm->update($existing[$sKey], $row);   // existing DB row → update

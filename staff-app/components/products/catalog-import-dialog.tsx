@@ -34,7 +34,9 @@ export function CatalogImportDialog({ onImported }: Props) {
   const [result, setResult] = useState<ImportSummary | null>(null);
   const [previewing, setPreviewing] = useState(false);
   const [previewPage, setPreviewPage] = useState(0);
+  const [zipFile, setZipFile] = useState<File | null>(null);   // optional product-images ZIP
   const fileRef = useRef<HTMLInputElement>(null);
+  const zipRef = useRef<HTMLInputElement>(null);
 
   const valid = useMemo(() => groups.filter(isValidGroup), [groups]);
   const variantCount = useMemo(() => valid.reduce((n, g) => n + g.variants.length, 0), [valid]);
@@ -48,7 +50,9 @@ export function CatalogImportDialog({ onImported }: Props) {
 
   function reset() {
     setGroups([]); setReview([]); setTotalRows(0); setFileName(""); setProgress(""); setResult(null); setPreviewing(false); setPreviewPage(0);
+    setZipFile(null);
     if (fileRef.current) fileRef.current.value = "";
+    if (zipRef.current) zipRef.current.value = "";
   }
 
   async function onFile(file: File | undefined) {
@@ -73,9 +77,20 @@ export function CatalogImportDialog({ onImported }: Props) {
     if (!valid.length) { toast.error("No valid products to import"); return; }
     setImporting(true);
     setResult(null);
+    let imageBatch = "";
     try {
+      // 1. Upload the images ZIP first (optional) → batch token.
+      if (zipFile) {
+        setProgress("Uploading & extracting images…");
+        const fd = new FormData();
+        fd.append("zip", zipFile);
+        const up = await api.post("/vendor/products/import-images", fd, { headers: { "Content-Type": "multipart/form-data" }, timeout: 600000 });
+        imageBatch = String(up.data.data?.token ?? "");
+        toast.success(`${Number(up.data.data?.count ?? 0)} image(s) ready`);
+      }
+      // 2. Chunked row import — passes the token so each chunk resolves its images.
       const agg = await runChunkedImport(
-        api.post, "/vendor/products/import", valid, {},
+        api.post, "/vendor/products/import", valid, imageBatch ? { image_batch: imageBatch } : {},
         (done, total) => setProgress(`Importing ${done} / ${total} products…`),
       );
       setResult({
@@ -87,13 +102,17 @@ export function CatalogImportDialog({ onImported }: Props) {
       });
       setProgress("");
       setGroups([]); setReview([]); setTotalRows(0); setFileName(""); setPreviewing(false); setPreviewPage(0);
+      setZipFile(null);
       if (fileRef.current) fileRef.current.value = "";
-      toast.success(`Products ${agg.products.created}+${agg.products.updated}, variants ${agg.variants.created}+${agg.variants.updated}` + (agg.failed ? `, ${agg.failed} failed` : ""));
+      if (zipRef.current) zipRef.current.value = "";
+      toast.success(`Products ${agg.products.created}+${agg.products.updated}, variants ${agg.variants.created}+${agg.variants.updated}` + (agg.failed ? `, ${agg.failed} failed` : "") + ((agg.missingImages ?? 0) ? `, ${agg.missingImages} images missing` : ""));
       await onImported();
     } catch (e) {
       setProgress("");
       toast.error(apiErrorMessage(e, "Import failed"));
     } finally {
+      // 3. Always remove the extracted temp images (matched ones were already copied).
+      if (imageBatch) { try { await api.post("/vendor/products/import-images/cleanup", { token: imageBatch }); } catch { /* best-effort */ } }
       setImporting(false);
     }
   }
@@ -123,6 +142,20 @@ export function CatalogImportDialog({ onImported }: Props) {
                 <FileUp className="h-3.5 w-3.5" /> {fileName || "Choose CSV / Excel file"}
               </Button>
               <input ref={fileRef} type="file" accept=".csv,.xlsx,.xls" className="hidden" onChange={(e) => void onFile(e.target.files?.[0])} />
+            </div>
+
+            {/* Optional product images ZIP — matched to rows by image filename (or SKU). */}
+            <div className="flex flex-wrap items-center gap-2 rounded-xl border border-dashed border-border bg-surface-2/30 p-3">
+              <Button type="button" size="sm" variant="outline" className="rounded-lg" onClick={() => zipRef.current?.click()} disabled={importing}>
+                <FileUp className="h-3.5 w-3.5" /> {zipFile ? zipFile.name : "Product Images ZIP (optional)"}
+              </Button>
+              {zipFile && (
+                <Button type="button" size="sm" variant="ghost" className="h-7 text-xs text-muted-foreground" disabled={importing} onClick={() => { setZipFile(null); if (zipRef.current) zipRef.current.value = ""; }}>
+                  Remove
+                </Button>
+              )}
+              <input ref={zipRef} type="file" accept=".zip,application/zip" className="hidden" onChange={(e) => setZipFile(e.target.files?.[0] ?? null)} />
+              <p className="w-full text-[11px] text-muted-foreground">Images matched to each row by the <code>image</code>/<code>images</code> filename, or by SKU (<code>SKU001.jpg</code>). Supported: jpg, png, webp.</p>
             </div>
 
             {groups.length > 0 && (
