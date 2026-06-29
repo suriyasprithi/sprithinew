@@ -279,7 +279,7 @@ class ProductController extends BaseApiController
         ])) {
             return $this->fail('Validation failed', 422, $this->validator->getErrors());
         }
-        $d        = $this->request->getJSON(true) ?? $this->request->getPost();
+        $d        = $this->jsonBody();
         $vendorId = $auth->role === 'admin' ? (int) ($d['vendor_id'] ?? $auth->id) : (int) $auth->id;
         $d['category_id'] = $this->applySubCategory($d);
         $id       = $this->persistProduct($d, $vendorId);
@@ -299,7 +299,7 @@ class ProductController extends BaseApiController
         if (! $auth) return $this->fail('Unauthorized', 401);
         if (! in_array($auth->role, ['vendor', 'admin'], true)) return $this->fail('Forbidden', 403);
 
-        $d     = $this->request->getJSON(true) ?? $this->request->getPost();
+        $d     = $this->jsonBody();
         $items = $d['items'] ?? null;
         if (! is_array($items) || ! $items) return $this->fail('No items to import', 422);
         if (count($items) > 500)            return $this->fail('Too many rows (max 500 per import)', 422);
@@ -664,6 +664,25 @@ class ProductController extends BaseApiController
                     $varCreated += $vc; $varUpdated += $vu;
                     // keep the cached row's types fresh for repeat groups in this batch
                     $byCode[$cKey]['variant_types'] = json_encode($mergedTypes, JSON_UNESCAPED_UNICODE);
+
+                    // Mirror per-variant ZIP images into the variant_images MAP
+                    // (axis→option→[url]) so the vendor edit form + the customer
+                    // gallery swap both show them. Merged with any existing map.
+                    if ($zipSvc) {
+                        $rawVI = $existing['variant_images'] ?? null;
+                        $map   = is_string($rawVI) ? (json_decode($rawVI, true) ?: []) : (is_array($rawVI) ? $rawVI : []);
+                        foreach ($variants as $vr) {
+                            if (empty($vr['image'])) continue;
+                            foreach ($vr['options'] as $ax => $opt) {
+                                $cur = $map[$ax][$opt] ?? [];
+                                if (! in_array($vr['image'], $cur, true)) { $cur[] = $vr['image']; $map[$ax][$opt] = $cur; }
+                            }
+                        }
+                        if ($map) {
+                            $pm->update($productId, ['variant_images' => json_encode($map, JSON_UNESCAPED_UNICODE)]);
+                            $byCode[$cKey]['variant_images'] = json_encode($map, JSON_UNESCAPED_UNICODE);
+                        }
+                    }
                 }
             } catch (\Throwable $e) {
                 $failed[] = ['row' => $line, 'name' => is_array($item) ? (string) ($item['name'] ?? '') : '', 'reason' => $e->getMessage()];
@@ -1244,7 +1263,7 @@ class ProductController extends BaseApiController
         if (! $row) return $this->fail('Not found', 404);
         if ($auth->role !== 'admin' && (int) $row['vendor_id'] !== (int) $auth->id) return $this->fail('Forbidden', 403);
 
-        $d = $this->request->getJSON(true) ?? $this->request->getPost();
+        $d = $this->jsonBody();
         if (array_key_exists('category_id', $d)) {
             $d['category_id'] = $this->applySubCategory($d);
         }
