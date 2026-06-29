@@ -2,6 +2,7 @@
 
 namespace App\Controllers\Api;
 
+use App\Libraries\ImageOptimizer;
 use App\Models\CategoryModel;
 use App\Models\ProductModel;
 use App\Models\ProductVariantModel;
@@ -1004,7 +1005,7 @@ class ProductController extends BaseApiController
             'has_variants'       => $variants ? 1 : 0,
             'variant_types'      => $vTypes ? json_encode($vTypes, JSON_UNESCAPED_UNICODE) : null,
             'variant_images'     => $vImages ? json_encode($vImages, JSON_UNESCAPED_UNICODE) : null,
-            'image'              => $d['image'] ?? null,
+            'image'              => ImageOptimizer::fromDataUri($d['image'] ?? null, 'products'),
             'attributes'         => $attrs !== null ? json_encode($attrs, JSON_UNESCAPED_UNICODE) : null,
             'status'             => $d['status'] ?? 'active',
         ];
@@ -1201,7 +1202,7 @@ class ProductController extends BaseApiController
                 'options' => $opts,
                 'price'   => (float) ($v['price'] ?? 0),
                 'stock'   => (int) ($v['stock'] ?? 0),
-                'image'   => isset($v['image']) && is_string($v['image']) && $v['image'] !== '' ? $v['image'] : null,
+                'image'   => isset($v['image']) && is_string($v['image']) && $v['image'] !== '' ? ImageOptimizer::fromDataUri($v['image'], 'products') : null,
                 'status'  => in_array(($v['status'] ?? 'active'), ['active', 'inactive'], true) ? ($v['status'] ?? 'active') : 'active',
             ];
         }
@@ -1228,7 +1229,7 @@ class ProductController extends BaseApiController
                 $arr = is_array($imgs) ? $imgs : [$imgs];
                 $clean = [];
                 foreach ($arr as $img) {
-                    if (is_string($img) && $img !== '') $clean[] = $img;
+                    if (is_string($img) && $img !== '') $clean[] = ImageOptimizer::fromDataUri($img, 'products');
                 }
                 if ($clean) $axisOut[$opt] = $clean;
             }
@@ -1270,6 +1271,12 @@ class ProductController extends BaseApiController
             $d['category_id'] = $this->applySubCategory($d);
         }
         $payload = array_intersect_key($d, array_flip(['name', 'description', 'price', 'stock', 'image', 'status', 'category_id', 'vendor_category_id']));
+
+        // A freshly-uploaded image arrives as a base64 data: URI — persist it as a small
+        // file under uploads/products/ and store only the URL. Existing URLs / null pass through.
+        if (array_key_exists('image', $payload)) {
+            $payload['image'] = ImageOptimizer::fromDataUri(is_string($payload['image']) ? $payload['image'] : null, 'products');
+        }
 
         $payload = $this->mergeCatalogForUpdate($payload, $d);
 
