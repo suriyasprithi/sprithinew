@@ -155,7 +155,7 @@ export function CatalogImportDialog({ onImported }: Props) {
                 </Button>
               )}
               <input ref={zipRef} type="file" accept=".zip,application/zip" className="hidden" onChange={(e) => setZipFile(e.target.files?.[0] ?? null)} />
-              <p className="w-full text-[11px] text-muted-foreground">Images matched to each row by the <code>image</code>/<code>images</code> filename, or by SKU (<code>SKU001.jpg</code>). Supported: jpg, png, webp.</p>
+              <p className="w-full text-[11px] text-muted-foreground">Images matched to each row by the <code>image</code>/<code>images</code> filename, or by SKU (<code>SKU001.jpg</code>). Supported: jpg, png, webp. <span className="font-medium text-foreground">Max 300 MB</span> per ZIP.</p>
             </div>
 
             {groups.length > 0 && (
