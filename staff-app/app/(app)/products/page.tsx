@@ -426,7 +426,7 @@ export default function VendorProductsPage() {
       let done = 0;
       for (let i = 0; i < ids.length; i += 500) {
         const chunk = ids.slice(i, i + 500);
-        await api.post("/vendor/products/bulk-delete", { ids: chunk });
+        await api.post("/vendor/products/bulk-delete", { ids: chunk }, { timeout: 60000 });
         done += chunk.length;
         if (ids.length > 500) toast.message(`Deleting… ${done}/${ids.length}`);
       }
@@ -615,10 +615,10 @@ export default function VendorProductsPage() {
 
     try {
       if (editing.id) {
-        await api.patch(`/vendor/products/${editing.id}`, payload);
+        await api.patch(`/vendor/products/${editing.id}`, payload, { timeout: 60000 });
         toast.success("Product updated");
       } else {
-        await api.post("/vendor/products", payload);
+        await api.post("/vendor/products", payload, { timeout: 60000 });
         toast.success("Product added");
       }
       setEditing(null);

@@ -18,7 +18,9 @@ export function fileUrl(path?: string | null): string | null {
 export const api = axios.create({
   baseURL: `${API_BASE}/api/v1`,
   headers: { "Content-Type": "application/json" },
-  timeout: 15000,
+  // Default for normal requests. Heavy writes (product save, bulk ops, imports)
+  // pass a longer per-request timeout — production can be slow on big payloads.
+  timeout: 30000,
 });
 
 api.interceptors.request.use((config: InternalAxiosRequestConfig) => {

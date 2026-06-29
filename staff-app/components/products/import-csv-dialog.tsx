@@ -220,7 +220,7 @@ export function ImportCsvDialog({ productCategories, existingProducts, vendorCat
         vendorCategoryId,
       });
       if (items.length === 0) { toast.error("Nothing to import"); setImporting(false); return; }
-      const res = await api.post("/vendor/products/bulk", { items });
+      const res = await api.post("/vendor/products/bulk", { items }, { timeout: 120000 });
       const d = res.data.data ?? {};
       const created = d.created ?? nCreate;
       const updated = d.updated ?? nUpdate;

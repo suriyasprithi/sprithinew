@@ -1,0 +1,6 @@
+item_code,product_name,category,sku,size,price,stock,image
+RICE,Rice,Grocery,RICE001,1 Kg,60,100,RICE001.jpg
+RICE,Rice,Grocery,RICE005,5 Kg,280,50,RICE005.jpg
+OIL,Sunflower Oil,Grocery,,,120,30,OIL001.jpg
+DAL,Toor Dal,Grocery,,,90,40,DAL_MISSING.jpg
+SUG,Sugar,Grocery,,,45,80,
