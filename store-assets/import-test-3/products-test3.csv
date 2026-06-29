@@ -1,0 +1,6 @@
+item_code,product_name,category,sku,color,price,stock,image,images
+SHIRT,Cotton Shirt,Clothing,SHIRT-RED,Red,499,20,SHIRT_RED.jpg,
+SHIRT,Cotton Shirt,Clothing,SHIRT-BLUE,Blue,499,15,shirts/SHIRT_BLUE.jpg,
+SOAP,Lavender Soap,Personal Care,,,35,200,,SOAP1.jpg|SOAP2.jpg
+PEN,Blue Pen,Stationery,,,10,500,,
+BAG,Jute Bag,Accessories,,,150,25,BAG_MISSING.jpg,
