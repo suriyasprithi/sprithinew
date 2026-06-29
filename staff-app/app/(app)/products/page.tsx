@@ -739,8 +739,13 @@ export default function VendorProductsPage() {
                       aria-label={`Select ${p.name}`}
                       className="h-4 w-4 shrink-0 accent-rose-500"
                     />
-                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-brand/10 text-brand">
-                      <Package className="h-4 w-4" />
+                    <span className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-brand/10 text-brand">
+                      {p.image ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={p.image} alt="" className="h-full w-full object-cover" loading="lazy" />
+                      ) : (
+                        <Package className="h-4 w-4" />
+                      )}
                     </span>
                     <div className="min-w-0">
                       <p className="truncate text-sm font-semibold">{p.name}</p>
