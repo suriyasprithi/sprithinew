@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Search, Filter, Sparkles } from "lucide-react";
 import { toast } from "sonner";
@@ -26,6 +26,9 @@ type ApiProduct = {
 };
 type Category = { id: number; name: string };
 type VendorCategory = { id: number; name: string };
+
+// Products fetched per scroll page (infinite scroll on the "All products" grid).
+const PAGE_SIZE = 24;
 type Vendor = { id: number; name: string; shop_name?: string | null; requires_prescription?: boolean };
 
 function adapt(raw: ApiProduct): MarketplaceProduct {
@@ -64,8 +67,17 @@ function PublicShopInner() {
   const [vendors, setVendors] = useState<Vendor[]>([]);
   // Product-category filter tabs shown under the Shops row (derived from the
   // products in view); the active one filters the grid client-side.
-  const [productCats, setProductCats] = useState<Category[]>([]);
   const [activeCat, setActiveCat] = useState<number | null>(null);
+  // Infinite-scroll pagination state. `page` is the last page fetched.
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [total, setTotal] = useState(0);
+  // Guards against the IntersectionObserver firing loadMore twice before
+  // `loadingMore` state has flushed; the ref flips synchronously.
+  const fetchingRef = useRef(false);
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
+  const loadMoreRef = useRef<() => void>(() => {});
   // catId is derived from the URL so the dropdown <Link> clicks (which only
   // change the query string) actually re-filter the products.
   const catId = sp?.get("category_id") ? Number(sp.get("category_id")) : null;
@@ -111,50 +123,96 @@ function PublicShopInner() {
   const selectedVendor = vendorId ? vendors.find((v) => v.id === vendorId) ?? null : null;
   // Grid filtered by the active in-shop product-category tab (client-side).
   const shownItems = activeCat != null ? items.filter((p) => p.category_id === activeCat) : items;
+  // Infinite scroll is active only while browsing all products (no in-shop tab,
+  // since that filters the loaded set client-side and the server can't page it).
+  const canPaginate = !loading && items.length > 0 && activeCat == null;
+  // Distinct product categories present in the loaded items → in-shop filter
+  // tabs. Derived (not state) so it grows as more pages are appended on scroll.
+  const productCats = useMemo<Category[]>(() => {
+    const m = new Map<number, string>();
+    items.forEach((p) => {
+      if (p.category_id != null && p.category_name) m.set(Number(p.category_id), p.category_name);
+    });
+    return [...m].map(([id, name]) => ({ id, name }));
+  }, [items]);
+
+  // Build the shared filter params (geo + category + search) for a given page.
+  function buildParams(effectiveQ: string, pageNum: number): Record<string, string> {
+    const params: Record<string, string> = { page: String(pageNum), limit: String(PAGE_SIZE) };
+    if (catId)             params.category_id        = String(catId);
+    if (vendorCategoryId)  params.vendor_category_id = String(vendorCategoryId);
+    if (vendorId)          params.vendor_id          = String(vendorId);
+    if (effectiveQ)        params.q = effectiveQ;
+
+    // Geo scope: URL params win (set when the location picker is applied here);
+    // otherwise fall back to the saved delivery location — same source the
+    // header, shop pills and category tabs use — so products stay scoped to
+    // the chosen area even when arriving without geo query params.
+    const urlHasGeo = !!(talukId || districtId || stateId || pincode);
+    const loc = urlHasGeo ? null : readSavedLocation();
+    const geoTaluk    = talukId    ?? loc?.taluk_id    ?? null;
+    const geoDistrict = districtId ?? loc?.district_id ?? null;
+    const geoState    = stateId    ?? loc?.state_id    ?? null;
+    if (pincode)     params.pincode     = pincode;
+    if (geoTaluk)    params.taluk_id    = String(geoTaluk);
+    if (geoDistrict) params.district_id = String(geoDistrict);
+    if (geoState)    params.state_id    = String(geoState);
+    return params;
+  }
 
   async function load(overrideQ?: string) {
     setLoading(true);
     try {
       const effectiveQ = overrideQ ?? q;
-      const params: Record<string, string> = {};
-      if (catId)             params.category_id        = String(catId);
-      if (vendorCategoryId)  params.vendor_category_id = String(vendorCategoryId);
-      if (vendorId)          params.vendor_id          = String(vendorId);
-      if (effectiveQ)        params.q = effectiveQ;
-
-      // Geo scope: URL params win (set when the location picker is applied here);
-      // otherwise fall back to the saved delivery location — same source the
-      // header, shop pills and category tabs use — so products stay scoped to
-      // the chosen area even when arriving without geo query params.
-      const urlHasGeo = !!(talukId || districtId || stateId || pincode);
-      const loc = urlHasGeo ? null : readSavedLocation();
-      const geoTaluk    = talukId    ?? loc?.taluk_id    ?? null;
-      const geoDistrict = districtId ?? loc?.district_id ?? null;
-      const geoState    = stateId    ?? loc?.state_id    ?? null;
-      if (pincode)     params.pincode     = pincode;
-      if (geoTaluk)    params.taluk_id    = String(geoTaluk);
-      if (geoDistrict) params.district_id = String(geoDistrict);
-      if (geoState)    params.state_id    = String(geoState);
-      const r = await api.get("/public/products", { params });
+      const r = await api.get("/public/products", { params: buildParams(effectiveQ, 1) });
       const raws = (r.data.data?.items ?? []) as ApiProduct[];
       setItems(raws.map(adapt));
       setCats(((r.data.data?.categories ?? []) as Array<{ id: number | string; name: string }>).map((c) => ({ id: Number(c.id), name: c.name })));
-      // Distinct product categories present in this view → in-shop filter tabs.
-      const catMap = new Map<number, string>();
-      raws.forEach((p) => {
-        const cid = p.category_id != null ? Number(p.category_id) : null;
-        if (cid != null && p.category_name) catMap.set(cid, p.category_name);
-      });
-      setProductCats([...catMap].map(([id, name]) => ({ id, name })));
+      setPage(1);
+      setHasMore(Boolean(r.data.data?.has_more));
+      setTotal(Number(r.data.data?.total ?? raws.length));
       setActiveCat(null);
     } catch (err) { toast.error(apiErrorMessage(err)); }
     finally { setLoading(false); }
+  }
+
+  // Fetch the next page and append. Re-entrancy guarded by fetchingRef so the
+  // observer can't double-fire while a page is in flight.
+  async function loadMore() {
+    if (fetchingRef.current || !hasMore || loading) return;
+    fetchingRef.current = true;
+    setLoadingMore(true);
+    try {
+      const next = page + 1;
+      const r = await api.get("/public/products", { params: buildParams(q, next) });
+      const raws = (r.data.data?.items ?? []) as ApiProduct[];
+      setItems((prev) => [...prev, ...raws.map(adapt)]);
+      setPage(next);
+      setHasMore(Boolean(r.data.data?.has_more));
+    } catch (err) { toast.error(apiErrorMessage(err)); }
+    finally { fetchingRef.current = false; setLoadingMore(false); }
   }
   // Sync `q` from the URL whenever it changes (header search submits via
   // router.push, which updates ?q= without remounting this component).
   const urlQ = sp?.get("q") ?? "";
   useEffect(() => { setQ(urlQ); }, [urlQ]);
   useEffect(() => { void load(urlQ); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [catId, vendorId, vendorCategoryId, talukId, districtId, stateId, urlQ, locVersion]);
+
+  // Keep the observer pointed at the freshest loadMore (current page/filters).
+  loadMoreRef.current = () => { void loadMore(); };
+  // Infinite scroll: when the bottom sentinel nears the viewport, fetch more.
+  // Re-runs when canPaginate flips so the observer attaches once the sentinel
+  // is actually in the DOM (it isn't during the initial loading state).
+  useEffect(() => {
+    const el = sentinelRef.current;
+    if (!el) return;
+    const io = new IntersectionObserver(
+      (entries) => { if (entries[0]?.isIntersecting) loadMoreRef.current(); },
+      { rootMargin: "600px" },
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, [canPaginate]);
 
   // Re-scope products when the delivery location changes (picker apply/clear),
   // even if it didn't alter the URL — mirrors the shop pills / category tabs.
@@ -296,7 +354,11 @@ function PublicShopInner() {
             </h1>
           </div>
           {!loading && (
-            <p className="text-sm text-[var(--mk-text-muted)]">{shownItems.length} item{shownItems.length === 1 ? "" : "s"}</p>
+            <p className="text-sm text-[var(--mk-text-muted)]">
+              {activeCat == null && total > items.length
+                ? `${items.length} of ${total}`
+                : `${shownItems.length} item${shownItems.length === 1 ? "" : "s"}`}
+            </p>
           )}
         </div>
       </section>
@@ -336,6 +398,23 @@ function PublicShopInner() {
           <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
             {shownItems.map((p) => <ProductCard key={p.id} product={p} />)}
           </div>
+        )}
+
+        {/* Infinite scroll: sentinel + status. Only while browsing all products
+            (no in-shop category tab active, so the loaded set isn't filtered). */}
+        {!loading && items.length > 0 && (
+          <>
+            {canPaginate && <div ref={sentinelRef} className="h-1 w-full" aria-hidden />}
+            {loadingMore && (
+              <div className="mt-6 flex items-center justify-center gap-2 text-sm text-[var(--mk-text-muted)]">
+                <span className="h-4 w-4 animate-spin rounded-full border-2 border-[var(--mk-brand)] border-t-transparent" />
+                Loading more…
+              </div>
+            )}
+            {activeCat == null && !hasMore && (
+              <p className="mt-6 text-center text-xs text-[var(--mk-text-muted)]">You&apos;ve reached the end · {items.length} products</p>
+            )}
+          </>
         )}
       </section>
 

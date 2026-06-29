@@ -141,10 +141,22 @@ class PublicController extends BaseApiController
             $model->whereIn('vendor_id', $geoVendorIds);
         }
 
-        $items = $model->orderBy('id', 'DESC')->findAll(60);
+        // Pagination (for the customer "All products" infinite scroll). Backward
+        // compatible: callers that omit `page` get page 1 with the default 60.
+        $page  = max(1, (int) $this->request->getGet('page'));
+        $limit = (int) $this->request->getGet('limit');
+        $limit = $limit > 0 ? min($limit, 100) : 60;
+        $offset = ($page - 1) * $limit;
+
+        $total = $model->countAllResults(false);
+        $items = $model->orderBy('id', 'DESC')->findAll($limit, $offset);
         return $this->ok([
             'items'      => $this->enrich($items),
             'categories' => (new CategoryModel())->where('status', 'active')->findAll(),
+            'page'       => $page,
+            'limit'      => $limit,
+            'total'      => $total,
+            'has_more'   => ($offset + count($items)) < $total,
         ]);
     }
 
