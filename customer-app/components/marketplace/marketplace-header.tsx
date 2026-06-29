@@ -13,6 +13,21 @@ import { cartBadge } from "@/lib/cart";
 type Suggestion = { id: number; name: string; price: number; image: string | null };
 const fmtINR = (n: number) => new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(n);
 
+// Search-suggestion thumbnail: shows the product image, but falls back to the
+// search icon if it's missing OR fails to load (broken URL / 404), so the
+// dropdown never shows the browser's broken-image glyph.
+function SuggestionThumb({ image }: { image: string | null }) {
+  const [failed, setFailed] = useState(false);
+  const url = fileUrl(image);
+  return (
+    <span className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-[var(--mk-surface-2)]">
+      {url && !failed
+        ? <img src={url} alt="" onError={() => setFailed(true)} className="h-full w-full object-cover" />
+        : <Search className="h-4 w-4 text-[var(--mk-text-muted)]" />}
+    </span>
+  );
+}
+
 export function MarketplaceHeader({ cartCount = 0, wishlistCount = 0, unreadCount = 0 }: {
   cartCount?: number;
   wishlistCount?: number;
@@ -170,11 +185,7 @@ export function MarketplaceHeader({ cartCount = 0, wishlistCount = 0, unreadCoun
                         onClick={() => openProduct(s.id)}
                         className="flex w-full items-center gap-3 px-3 py-2 text-left hover:bg-[var(--mk-surface-2)]"
                       >
-                        <span className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-[var(--mk-surface-2)]">
-                          {fileUrl(s.image)
-                            ? <img src={fileUrl(s.image)!} alt="" className="h-full w-full object-cover" />
-                            : <Search className="h-4 w-4 text-[var(--mk-text-muted)]" />}
-                        </span>
+                        <SuggestionThumb image={s.image} />
                         <span className="min-w-0 flex-1 truncate text-sm text-[var(--mk-text)]">{s.name}</span>
                         <span className="shrink-0 text-xs font-semibold text-[var(--mk-text)]">{fmtINR(s.price)}</span>
                       </button>
