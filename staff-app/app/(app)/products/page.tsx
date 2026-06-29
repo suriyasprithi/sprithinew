@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import { motion } from "framer-motion";
 import { Package, Plus, Search, MoreHorizontal, Pencil, Boxes, Tag, Layers, Trash2, Shapes, CircleCheck, CircleOff, Copy, X, Download } from "lucide-react";
 import { toast } from "sonner";
@@ -1288,14 +1289,15 @@ function VariantsEditor({ draft, onTypesChange, onComboChange, onImagesChange }:
             <p className="text-[11px] text-muted-foreground">Define a variant type above (e.g. Color → Black, Blue) and per-option image slots appear here.</p>
           </div>
         )}
-        {vZoom && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 p-4" onClick={() => setVZoom(null)}>
+        {vZoom && typeof document !== "undefined" && createPortal(
+          <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/80 p-4" onClick={() => setVZoom(null)}>
             <button type="button" onClick={() => setVZoom(null)} aria-label="Close preview" className="absolute right-4 top-4 inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/10 text-white hover:bg-white/20">
               <X className="h-5 w-5" />
             </button>
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={vZoom} alt="Variant preview" onClick={(e) => e.stopPropagation()} className="max-h-[90vh] max-w-full rounded-xl object-contain" />
-          </div>
+          </div>,
+          document.body,
         )}
       </div>
 

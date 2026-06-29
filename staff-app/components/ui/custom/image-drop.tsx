@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { ImagePlus, X } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -20,20 +21,26 @@ export function ImageDrop({ value, onChange, variant = "full", className, maxSiz
   const [hover, setHover] = useState(false);
   const [zoom, setZoom] = useState(false);   // click the preview → full-screen view
 
-  const lightbox = zoom && value ? (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 p-4" onClick={() => setZoom(false)}>
-      <button
-        type="button"
-        onClick={() => setZoom(false)}
-        aria-label="Close preview"
-        className="absolute right-4 top-4 inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/10 text-white hover:bg-white/20"
-      >
-        <X className="h-5 w-5" />
-      </button>
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src={value} alt="Preview" onClick={(e) => e.stopPropagation()} className="max-h-[90vh] max-w-full rounded-xl object-contain" />
-    </div>
-  ) : null;
+  // Portal to <body> so the overlay escapes the edit Dialog's centering transform
+  // (a `fixed` element inside a transformed ancestor is positioned relative to it,
+  // which trapped/hid the preview inside the modal).
+  const lightbox = zoom && value && typeof document !== "undefined"
+    ? createPortal(
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/80 p-4" onClick={() => setZoom(false)}>
+          <button
+            type="button"
+            onClick={() => setZoom(false)}
+            aria-label="Close preview"
+            className="absolute right-4 top-4 inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/10 text-white hover:bg-white/20"
+          >
+            <X className="h-5 w-5" />
+          </button>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={value} alt="Preview" onClick={(e) => e.stopPropagation()} className="max-h-[90vh] max-w-full rounded-xl object-contain" />
+        </div>,
+        document.body,
+      )
+    : null;
 
   function readFile(file: File) {
     // Accept anything that LOOKS like an image: either the MIME type starts with
