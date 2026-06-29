@@ -30,6 +30,7 @@ type Variant = {
   id: number; name: string; price: number; stock: number;
   sku?: string | null;
   mrp?: number | null;   // strikethrough MRP for this variant (null when not discounted)
+  image?: string | null; // per-variant image (e.g. from the catalog image import)
   options?: Record<string, string>;
 };
 type VType = { name: string; options: string[] };
@@ -669,7 +670,7 @@ function ProductInner() {
         }
         const heroSrc = variantGallery.length > 0
           ? (variantGallery[Math.min(imgIndex, variantGallery.length - 1)] ?? variantGallery[0])
-          : product.image;
+          : (selectedVariant?.image || product.image);   // fall back to the picked variant's own image
 
         return (
           <section className="mx-auto max-w-7xl p-4 pb-24 md:p-8">

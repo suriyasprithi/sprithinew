@@ -601,6 +601,7 @@ class ProductController extends BaseApiController
                     $mainNames = array_values(array_filter(array_merge([trim((string) ($item['image'] ?? ''))], $multi), static fn ($s) => $s !== ''));
                     $main      = $this->resolveImportImage($zipSvc, $imageBatch, $mainNames, $code, $missingImages);
                     if ($main !== null) $item['image'] = $main;
+                    elseif (! $this->looksLikeUrl(trim((string) ($item['image'] ?? '')))) $item['image'] = null;   // unmatched ZIP filename → don't store a broken value
                     $gal = [];
                     foreach (array_merge(array_slice($multi, 1), $this->splitImageList($item['gallery_images'] ?? null)) as $gn) {
                         $u = $this->resolveImportImage($zipSvc, $imageBatch, [$gn], '', $missingImages);
