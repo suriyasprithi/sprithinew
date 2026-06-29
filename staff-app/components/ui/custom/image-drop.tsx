@@ -11,9 +11,11 @@ type Props = {
   /** Visual variant — full has a side preview, compact is just the drop area. */
   variant?: "full" | "compact";
   className?: string;
+  /** Maximum file size in MB (default 5). Shown as a label and enforced on pick/drop. */
+  maxSizeMB?: number;
 };
 
-export function ImageDrop({ value, onChange, variant = "full", className }: Props) {
+export function ImageDrop({ value, onChange, variant = "full", className, maxSizeMB = 5 }: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [hover, setHover] = useState(false);
 
@@ -28,8 +30,8 @@ export function ImageDrop({ value, onChange, variant = "full", className }: Prop
       toast.error("Please drop an image file");
       return;
     }
-    if (file.size > 10 * 1024 * 1024) {
-      toast.error("Image must be under 10 MB");
+    if (file.size > maxSizeMB * 1024 * 1024) {
+      toast.error(`Image must be under ${maxSizeMB} MB`);
       return;
     }
     const reader = new FileReader();
@@ -59,6 +61,7 @@ export function ImageDrop({ value, onChange, variant = "full", className }: Prop
       <ImagePlus className={cn("h-6 w-6", hover ? "text-brand" : "text-muted-foreground")} />
       <p className="text-sm font-medium text-muted-foreground">Drag and drop image here</p>
       <p className="text-[11px] text-muted-foreground">or click to browse</p>
+      <p className="text-[10px] font-medium text-muted-foreground">Max {maxSizeMB} MB</p>
       <input
         ref={inputRef}
         type="file"

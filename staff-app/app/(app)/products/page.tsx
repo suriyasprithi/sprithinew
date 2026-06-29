@@ -1225,7 +1225,7 @@ function VariantsEditor({ draft, onTypesChange, onComboChange, onImagesChange }:
           <Label className="flex items-center gap-1.5"><Layers className="h-3.5 w-3.5 text-brand" /> Variant images</Label>
           <span className="text-[10px] uppercase tracking-wider text-muted-foreground">per option</span>
         </div>
-        <p className="text-[11px] text-muted-foreground">Upload images per option (e.g. Black gets black-front/back). The customer page swaps the gallery when this axis option is picked. Optional — combinations use the product image otherwise.</p>
+        <p className="text-[11px] text-muted-foreground">Upload images per option (e.g. Black gets black-front/back). The customer page swaps the gallery when this axis option is picked. Optional — combinations use the product image otherwise. <span className="font-medium text-foreground">Max 5 MB each.</span></p>
         {types.some((t) => t.name.trim() && t.options.length > 0) ? (
           <div className="space-y-3">
             {types.filter((t) => t.name.trim() && t.options.length > 0).map((t) => (
@@ -1262,7 +1262,12 @@ function VariantsEditor({ draft, onTypesChange, onComboChange, onImagesChange }:
                                 const files = Array.from(e.currentTarget.files ?? []);
                                 e.currentTarget.value = "";
                                 if (!files.length) return;
-                                const newDataUrls = await Promise.all(files.map(readAsDataUrl));
+                                const ok = files.filter((f) => {
+                                  if (f.size > 5 * 1024 * 1024) { toast.error(`${f.name} is over 5 MB — skipped`); return false; }
+                                  return true;
+                                });
+                                if (!ok.length) return;
+                                const newDataUrls = await Promise.all(ok.map(readAsDataUrl));
                                 onImagesChange(t.name, opt, [...imgs, ...newDataUrls]);
                               }}
                             />
