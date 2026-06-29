@@ -51,12 +51,13 @@ DirectoryIndex index.html index.php
 	RewriteCond %{HTTP_HOST} ^www\.(.+)$ [NC]
 	RewriteRule ^ http://%1%{REQUEST_URI} [R=301,L]
 
-	# Next.js static-export RSC prefetch files (__next.*/_next.*.txt) that aren't
-	# on disk must NOT fall through to index.php — their '!' chars trip CI's URI
-	# validator and spam CRITICAL logs. Return 410 (not 404, so ErrorDocument 404
-	# below won't re-route them into CI). Real prefetch files (-f) are unaffected.
+	# Next.js static-export RSC prefetch files (__next.*/_next.*) that aren't on
+	# disk: serve an empty 200 instead of letting them fall through to index.php
+	# (their '!' chars trip CI's URI validator → CRITICAL logs) or 404/410 (which
+	# show red in the browser Network tab). A missing prefetch is harmless — Next
+	# just does a full navigation. Real prefetch files (-f) are served normally.
 	RewriteCond %{REQUEST_FILENAME} !-f
-	RewriteRule (^|/)_{1,2}next\. - [G,L]
+	RewriteRule (^|/)_{1,2}next\. /__rsc_empty.txt [L]
 
 	# Checks to see if the user is attempting to access a valid file,
 	# such as an image or css document, if this isn't true it sends the
