@@ -7,7 +7,7 @@ import { toast } from "sonner";
 import { ProductImage } from "@/components/ui/custom/product-image";
 import { wishlist } from "@/lib/wishlist";
 import { cartBadge } from "@/lib/cart";
-import { api, apiErrorMessage } from "@/lib/api";
+import { api, apiErrorMessage, thumbUrl } from "@/lib/api";
 
 export type MarketplaceProduct = {
   id: number;
@@ -115,7 +115,7 @@ export function ProductCard({ product, onAdd }: {
       {/* Image */}
       <Link href={`/product-public?id=${product.id}`} className="relative block">
         <div className="aspect-square overflow-hidden bg-[var(--mk-surface-2)]">
-          <ProductImage src={product.image} alt={product.name} className="transition-transform group-hover:scale-105" />
+          <ProductImage src={thumbUrl(product.image)} fallbackSrc={product.image} alt={product.name} className="transition-transform group-hover:scale-105" />
         </div>
 
         {/* Badges */}

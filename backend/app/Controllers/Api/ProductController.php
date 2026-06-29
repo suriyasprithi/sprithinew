@@ -757,6 +757,8 @@ class ProductController extends BaseApiController
         if (! is_dir($dir)) @mkdir($dir, 0775, true);
         $name = bin2hex(random_bytes(8)) . '.' . $ext;
         if (! @copy($src, $dir . $name)) return null;
+        // Grid thumbnail alongside the full image (cards use it; detail uses full).
+        \App\Libraries\ImageOptimizer::writeThumbFromFile($dir . $name);
         return base_url('uploads/products/' . $name);
     }
 

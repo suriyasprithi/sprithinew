@@ -19,18 +19,27 @@ type Props = {
   /** Above-the-fold images (e.g. product-detail hero) should load eagerly;
    *  grid/list tiles stay lazy (the default) to keep initial payload small. */
   eager?: boolean;
+  /** Tried if `src` fails to load (e.g. the card passes the thumbnail as `src`
+   *  and the full image here, so a missing thumb falls back to the full one). */
+  fallbackSrc?: string | null;
 };
 
-export function ProductImage({ src, alt, className, eager = false }: Props) {
-  const [failed, setFailed] = useState(false);
-  const url = resolveImg(src);
+export function ProductImage({ src, alt, className, eager = false, fallbackSrc }: Props) {
+  const primary = resolveImg(src);
+  const fallback = resolveImg(fallbackSrc);
+  const [primaryFailed, setPrimaryFailed] = useState(false);
+  const [fallbackFailed, setFallbackFailed] = useState(false);
 
-  if (url && !failed) {
+  const usePrimary  = primary && !primaryFailed;
+  const useFallback = !usePrimary && fallback && fallback !== primary && !fallbackFailed;
+  const url = usePrimary ? primary : useFallback ? fallback : "";
+
+  if (url) {
     return (
       <img
         src={url}
         alt={alt}
-        onError={() => setFailed(true)}
+        onError={() => (usePrimary ? setPrimaryFailed(true) : setFallbackFailed(true))}
         loading={eager ? "eager" : "lazy"}
         decoding="async"
         fetchPriority={eager ? "high" : "auto"}

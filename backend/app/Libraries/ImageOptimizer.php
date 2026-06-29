@@ -24,6 +24,9 @@ class ImageOptimizer
     public const MAX_DIM      = 1280;
     public const JPEG_QUALITY = 80;
     public const PNG_LEVEL    = 7;
+    /** Longest edge for grid/card thumbnails (crisp on 2-col retina, ~10x lighter). */
+    public const THUMB_DIM    = 400;
+    public const THUMB_QUALITY = 72;
 
     /** A base64 `data:` URI → resized local file URL (used on new admin uploads). */
     public static function fromDataUri(?string $value, string $type): ?string
@@ -89,7 +92,52 @@ class ImageOptimizer
             $ok = imagejpeg($img, $full, self::JPEG_QUALITY);
         }
 
-        return ($ok && is_file($full)) ? base_url($rel) : null;
+        if ($ok && is_file($full)) {
+            // Write the sibling grid thumbnail from the same in-memory image.
+            self::saveThumbResource($img, $isPng, self::thumbSibling($full));
+            return base_url($rel);
+        }
+        return null;
+    }
+
+    /** "/a/b/abc.jpg" → "/a/b/abc_thumb.jpg" (works on file paths and URLs). */
+    public static function thumbSibling(string $path): string
+    {
+        $dot = strrpos($path, '.');
+        return $dot === false ? $path . '_thumb' : substr($path, 0, $dot) . '_thumb' . substr($path, $dot);
+    }
+
+    /**
+     * Generate <name>_thumb.<ext> next to a full-size local image file.
+     * Idempotent: skips when the thumb already exists unless $force. Returns true
+     * when a thumb exists afterwards. Used by the importer + backfill command.
+     */
+    public static function writeThumbFromFile(string $fullPath, bool $force = false): bool
+    {
+        if (! function_exists('imagecreatefromstring') || ! is_file($fullPath)) return false;
+        $thumb = self::thumbSibling($fullPath);
+        if (! $force && is_file($thumb)) return true;
+        $bin = @file_get_contents($fullPath);
+        if ($bin === false || $bin === '') return false;
+        $img = @imagecreatefromstring($bin);
+        if ($img === false) return false;
+        return self::saveThumbResource($img, strncmp($bin, "\x89PNG", 4) === 0, $thumb);
+    }
+
+    /** Downscale an in-memory image to THUMB_DIM and write it to $thumbPath. */
+    private static function saveThumbResource($img, bool $isPng, string $thumbPath): bool
+    {
+        $w = imagesx($img); $h = imagesy($img); $max = max($w, $h);
+        if ($max > self::THUMB_DIM) {
+            $scaled = imagescale($img, (int) round($w * self::THUMB_DIM / $max));
+            if ($scaled !== false) $img = $scaled;
+        }
+        if ($isPng) {
+            imagealphablending($img, false);
+            imagesavealpha($img, true);
+            return @imagepng($img, $thumbPath, self::PNG_LEVEL);
+        }
+        return @imagejpeg($img, $thumbPath, self::THUMB_QUALITY);
     }
 
     /** Best-effort download of a remote URL → bytes (cURL, then file_get_contents). */

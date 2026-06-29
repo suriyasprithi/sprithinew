@@ -15,6 +15,18 @@ export function fileUrl(path?: string | null): string | null {
   return `${API_BASE}/${String(path).replace(/^\/+/, "")}`;
 }
 
+// Grid/card thumbnail for a product image. Our own uploads/products/<n>.<ext>
+// files have a sibling <n>_thumb.<ext> (≈10x lighter); everything else (data:
+// URIs, blobs, external URLs) is returned unchanged. Callers should fall back to
+// the full image if the thumb 404s (older images may not have one yet).
+export function thumbUrl(path?: string | null): string | null {
+  if (!path) return null;
+  if (path.startsWith("data:") || path.startsWith("blob:")) return path;
+  const abs = fileUrl(path);
+  if (!abs) return null;
+  return abs.replace(/(\/uploads\/products\/[^/?#]+)\.(jpg|jpeg|png|webp)(?=$|[?#])/i, "$1_thumb.$2");
+}
+
 export const api = axios.create({
   baseURL: `${API_BASE}/api/v1`,
   headers: { "Content-Type": "application/json" },
