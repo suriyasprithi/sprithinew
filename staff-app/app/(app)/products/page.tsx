@@ -701,11 +701,12 @@ export default function VendorProductsPage() {
         )}
 
         <div className="luxe-card overflow-hidden">
-          <div className="hidden grid-cols-[1.4fr_140px_120px_120px_120px_56px] gap-3 border-b border-border bg-surface-2/40 px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground md:grid">
+          <div className="hidden grid-cols-[1.4fr_130px_140px_110px_110px_110px_56px] gap-3 border-b border-border bg-surface-2/40 px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground md:grid">
             <span className="flex items-center gap-2">
               <input type="checkbox" checked={allPageSelected} onChange={toggleSelectPage} aria-label="Select all on page" className="h-4 w-4 accent-rose-500" />
               Product
             </span>
+            <span>Item Code</span>
             <span>Category</span>
             <span>Stock</span>
             <span>Price</span>
@@ -713,7 +714,7 @@ export default function VendorProductsPage() {
             <span className="text-right">Actions</span>
           </div>
           {loading ? (
-            <div className="p-3"><TableSkeleton rows={4} cols={6} /></div>
+            <div className="p-3"><TableSkeleton rows={4} cols={7} /></div>
           ) : items.length === 0 ? (
             <EmptyState
               icon={Package}
@@ -729,7 +730,7 @@ export default function VendorProductsPage() {
                   initial={{ opacity: 0, y: 4 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: i * 0.02 }}
-                  className="grid grid-cols-[1fr_auto] items-center gap-3 px-4 py-3 transition-colors hover:bg-surface-2/40 md:grid-cols-[1.4fr_140px_120px_120px_120px_56px]"
+                  className="grid grid-cols-[1fr_auto] items-center gap-3 px-4 py-3 transition-colors hover:bg-surface-2/40 md:grid-cols-[1.4fr_130px_140px_110px_110px_110px_56px]"
                 >
                   <div className="flex items-center gap-3">
                     <input
@@ -755,7 +756,7 @@ export default function VendorProductsPage() {
                     </span>
                     <div className="min-w-0">
                       <p className="truncate text-sm font-semibold">{p.name}</p>
-                      <p className="truncate text-xs text-muted-foreground md:hidden">{p.category_name} · stock {p.stock}{p.has_variants ? " · variants" : ""}</p>
+                      <p className="truncate text-xs text-muted-foreground md:hidden">{(p.code || p.sku) ? <span className="font-mono">{p.code || p.sku} · </span> : null}{p.category_name} · stock {p.stock}{p.has_variants ? " · variants" : ""}</p>
                       {p.attributes && typeof p.attributes === "object" && Object.keys(p.attributes).length > 0 && (
                         <div className="mt-1 hidden flex-wrap gap-1 md:flex">
                           {Object.entries(p.attributes).slice(0, 3).map(([k, v]) => (
@@ -770,6 +771,7 @@ export default function VendorProductsPage() {
                       )}
                     </div>
                   </div>
+                  <p className="hidden truncate font-mono text-xs text-muted-foreground md:block" title={p.code || p.sku || ""}>{p.code || p.sku || "—"}</p>
                   <p className="hidden text-sm text-muted-foreground md:block">
                     {p.category_name}{p.has_variants ? <span className="ml-1 rounded-full border border-violet-500/30 bg-violet-500/10 px-1.5 py-0.5 text-[9px] font-medium text-violet-400">variants</span> : null}
                   </p>
