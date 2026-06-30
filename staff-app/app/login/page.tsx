@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -167,6 +168,9 @@ export default function LoginPage() {
               >
                 Forgot password?
               </button>
+            </p>
+            <p className="mt-3 text-center text-xs text-muted-foreground">
+              <Link href="/privacy" className="hover:underline">Privacy Policy</Link>
             </p>
           </CardContent>
         </Card>
