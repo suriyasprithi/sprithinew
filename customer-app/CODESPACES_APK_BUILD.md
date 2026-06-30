@@ -123,6 +123,32 @@ Push is the core requirement and needs Firebase for package `com.epey.customer`.
 
 ---
 
+## 4b. App icon + notification icon
+
+Sources live in `customer-app/` (committed): `assets/icon-foreground.png` (the mark)
+\+ `assets/icon-background.png` (white) → adaptive launcher icon, `assets/splash.png`
+→ launch screen, and `notification-res/drawable-*/ic_stat_notification.png` (white
+silhouette) → the status-bar notification icon.
+
+Run **after** `cap add android` / `cap sync` (they write into the regenerated
+`android/`, so re-run these whenever it's rebuilt from scratch):
+
+```bash
+cd /workspaces/sprithinew/customer-app
+
+# 1. Launcher icons + splash (adaptive, generated from assets/)
+npx @capacitor/assets generate --android
+
+# 2. Notification small-icon (white silhouette) → res/drawable-*/
+cp -r notification-res/drawable-* android/app/src/main/res/
+
+# 3. Point FCM at it (idempotent — safe to re-run)
+grep -q 'default_notification_icon' android/app/src/main/AndroidManifest.xml || \
+  sed -i 's#</application>#    <meta-data android:name="com.google.firebase.messaging.default_notification_icon" android:resource="@drawable/ic_stat_notification" />\n</application>#' android/app/src/main/AndroidManifest.xml
+```
+
+Then build (`./gradlew … assembleRelease`).
+
 ## 5. The release keystore
 
 > ⚠️ Play Store updates must be signed with the **same** keystore that signed the
