@@ -80,7 +80,19 @@ export function AdRequestForm({ type }: { type: AdType }) {
       if (inputRef.current) inputRef.current.value = "";
       void refresh();
     } catch (e) {
-      toast.error(apiErrorMessage(e, "Submit failed"));
+      // An over-limit upload is rejected by PHP before our API runs: it comes
+      // back as 413, or as a non-JSON body (a PHP warning) that can't be parsed.
+      // Either way it's a size problem — show a clear toast, not a raw error.
+      const err = e as { response?: { status?: number; data?: unknown } };
+      const status = err?.response?.status;
+      const data = err?.response?.data;
+      const tooLarge = status === 413
+        || (typeof data === "string" && /content-length|post_max|exceed|too large/i.test(data));
+      if (tooLarge) {
+        toast.error(`That ${type} is too large to upload. Try a smaller file (under ${cfg.maxMB} MB).`);
+      } else {
+        toast.error(apiErrorMessage(e, "Submit failed"));
+      }
     } finally {
       setBusy(false);
     }

@@ -23,6 +23,12 @@ class AdRequestController extends BaseApiController
 
         $kind = $this->request->getPost('kind') === 'video' ? 'video' : 'banner';
         $file = $this->request->getFile('file');
+        // PHP silently discards a POST body bigger than post_max_size before this
+        // runs: $_POST/$_FILES arrive empty while Content-Length is still set. Turn
+        // that into a clear "too large" message instead of a confusing "No file".
+        if (! $file && empty($_POST) && (int) ($_SERVER['CONTENT_LENGTH'] ?? 0) > 0) {
+            return $this->fail('That file is too large for the server. Please upload a smaller one.', 413);
+        }
         if (! $file || ! $file->isValid() || $file->hasMoved()) return $this->fail('No file uploaded', 422);
 
         if ($kind === 'video') {
