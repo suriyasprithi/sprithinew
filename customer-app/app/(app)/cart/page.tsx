@@ -11,6 +11,7 @@ import { GradientButton } from "@/components/ui/custom/gradient-button";
 import { ProductImage } from "@/components/ui/custom/product-image";
 import { api, apiErrorMessage } from "@/lib/api";
 import { cartBadge } from "@/lib/cart";
+import { getCached, setCached } from "@/lib/page-cache";
 
 const fmtINR = (n: number) =>
   new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(n);
@@ -31,23 +32,26 @@ type CartRow = {
   variation_label: string | null;
 };
 
+type CartCache = { items: CartRow[]; gstTotal: number };
+
 export default function CartPage() {
-  const [items, setItems] = useState<CartRow[]>([]);
-  const [gstTotal, setGstTotal] = useState(0);
-  const [loading, setLoading] = useState(true);
+  // Show the last-seen cart instantly on tab switch; refresh in the background.
+  const cached = getCached<CartCache>("cart");
+  const [items, setItems] = useState<CartRow[]>(cached?.items ?? []);
+  const [gstTotal, setGstTotal] = useState(cached?.gstTotal ?? 0);
+  const [loading, setLoading] = useState(!cached);   // spinner only on the first-ever load
 
   async function refresh() {
-    setLoading(true);
     try {
       const res = await api.get("/cart");
       const rows = (res.data.data?.items ?? []) as CartRow[];
+      const gst = Number(res.data.data?.gst_total ?? 0);
       setItems(rows);
-      setGstTotal(Number(res.data.data?.gst_total ?? 0));
+      setGstTotal(gst);
+      setCached<CartCache>("cart", { items: rows, gstTotal: gst });
       cartBadge.set(rows.reduce((s, r) => s + (Number(r.qty) || 0), 0));
     } catch (e) {
-      toast.error(apiErrorMessage(e));
-      setItems([]);
-      setGstTotal(0);
+      toast.error(apiErrorMessage(e));   // keep showing the last data on a transient error
     } finally {
       setLoading(false);
     }

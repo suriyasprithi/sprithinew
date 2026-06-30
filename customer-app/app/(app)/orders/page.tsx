@@ -9,6 +9,7 @@ import { LuxuryCard } from "@/components/ui/custom/luxury-card";
 import { ProductImage } from "@/components/ui/custom/product-image";
 import { api, apiErrorMessage, fileUrl } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { getCached, setCached } from "@/lib/page-cache";
 
 const fmtINR = (n: number) =>
   new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(n);
@@ -153,8 +154,10 @@ function groupOrders(rows: OrderRow[]): { key: string; repId: number; orders: Or
 }
 
 export default function OrdersPage() {
-  const [items, setItems] = useState<OrderRow[]>([]);
-  const [loading, setLoading] = useState(true);
+  // Show the last-seen orders instantly on tab switch; refresh in the background.
+  const cachedOrders = getCached<OrderRow[]>("orders");
+  const [items, setItems] = useState<OrderRow[]>(cachedOrders ?? []);
+  const [loading, setLoading] = useState(!cachedOrders);   // spinner only on the first-ever load
   // On-demand driver/ID-card proof, loaded when an order is expanded.
   const [openId, setOpenId] = useState<number | null>(null);
   const [loadingId, setLoadingId] = useState<number | null>(null);
@@ -198,10 +201,11 @@ export default function OrdersPage() {
   async function load() {
     try {
       const res = await api.get("/orders/mine");
-      setItems((res.data.data?.items ?? []) as OrderRow[]);
+      const rows = (res.data.data?.items ?? []) as OrderRow[];
+      setItems(rows);
+      setCached<OrderRow[]>("orders", rows);
     } catch (e) {
-      toast.error(apiErrorMessage(e));
-      setItems([]);
+      toast.error(apiErrorMessage(e));   // keep showing the last data on a transient error
     } finally {
       setLoading(false);
     }

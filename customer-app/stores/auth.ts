@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { api, AuthUser, AuthTokens } from "@/lib/api";
 import { storage, STORAGE_KEYS } from "@/lib/storage";
 import { registerDeviceToken, unregisterDeviceToken } from "@/lib/push";
+import { clearPageCache } from "@/lib/page-cache";
 
 type AuthState = {
   user: AuthUser | null;
@@ -55,6 +56,7 @@ export const useAuth = create<AuthState>((set) => ({
       });
       const tokens = res.data.data as AuthTokens;
       persistTokens(tokens);
+      clearPageCache();   // a new account must not see the previous user's cached pages
       set({ user: tokens.user });
       void registerDeviceToken();
       return tokens.user;
@@ -96,6 +98,7 @@ export const useAuth = create<AuthState>((set) => ({
       // ignore — local clear is what matters
     }
     clearTokens();
+    clearPageCache();
     set({ user: null });
   },
 }));

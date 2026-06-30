@@ -12,6 +12,7 @@ import { ShopCarousel, type ShopBanner } from "@/components/marketplace/shop-car
 import { VideoSubmitCard } from "@/components/marketplace/video-submit-card";
 import { useAuth } from "@/stores/auth";
 import { api, WELCOME_UNLOCK, type WalletKey } from "@/lib/api";
+import { getCached, setCached } from "@/lib/page-cache";
 
 const QUICK = [
   { href: "/wallet/send",     label: "Send",     icon: Send,          tone: "brand" },
@@ -65,12 +66,14 @@ export default function DashboardPage() {
   const balance = user?.wallet_balance ?? 0;
 
   // Shop cover images (admin-approved) for the carousel below the balance card.
-  const [shops, setShops] = useState<ShopBanner[]>([]);
+  const [shops, setShops] = useState<ShopBanner[]>(() => getCached<ShopBanner[]>("dash:shops") ?? []);
   useEffect(() => {
     void (async () => {
       try {
         const res = await api.get("/catalog/shop-banners");
-        setShops((res.data.data?.items ?? []) as ShopBanner[]);
+        const list = (res.data.data?.items ?? []) as ShopBanner[];
+        setShops(list);
+        setCached<ShopBanner[]>("dash:shops", list);
       } catch { /* dashboard still works without the carousel */ }
     })();
   }, []);
@@ -78,7 +81,7 @@ export default function DashboardPage() {
   // Per-level referral-bonus totals, computed exactly like the "Referral Bonus
   // Digital Point" page (sum of welcome-view credits per level) so the LEVELS
   // cards here always show the same L1 / L2 / L3 amounts as that page.
-  const [refByLevel, setRefByLevel] = useState<Record<1 | 2 | 3, number>>({ 1: 0, 2: 0, 3: 0 });
+  const [refByLevel, setRefByLevel] = useState<Record<1 | 2 | 3, number>>(() => getCached<Record<1 | 2 | 3, number>>("dash:refByLevel") ?? { 1: 0, 2: 0, 3: 0 });
   useEffect(() => {
     void (async () => {
       try {
@@ -90,6 +93,7 @@ export default function DashboardPage() {
           if (lvl && it.direction === "credit") t[lvl] += it.amount;
         }
         setRefByLevel(t);
+        setCached<Record<1 | 2 | 3, number>>("dash:refByLevel", t);
       } catch { /* cards fall back to 0 */ }
     })();
   }, []);
