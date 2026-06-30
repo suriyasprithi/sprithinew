@@ -130,22 +130,23 @@ Push is the core requirement and needs Firebase for package `com.epey.customer`.
 > already gitignored). Back up the file **and** its passwords; losing them means
 > you can never update the app under the same listing.
 
-### Option A — you already have a keystore (use THIS for an existing app)
+### Option A — you already have a keystore (USE THIS — the app is already signed)
 
-Copy your existing keystore into the app folder and note its details:
+Your existing keystore is **already in the repo** at
+`customer-app/newww/sprithi-release.jks` — it signed the current
+`customer-app/newww/sprithi-customer.apk` / `.aab`. In Codespaces it arrives with
+`git pull`, so there's nothing to upload.
 
 ```bash
 cd customer-app
-cp /path/to/your-existing.keystore ./sprithi-release.keystore
-
-# Find the alias inside it (and confirm the password works):
-keytool -list -v -keystore ./sprithi-release.keystore
-#   look for "Alias name: <alias>"
+# Confirm the alias and that your password is correct:
+keytool -list -v -keystore newww/sprithi-release.jks
+#   note the "Alias name: <alias>"
 ```
 
-Use that **file name**, **alias**, and the **store/key passwords you already have**
-in step 6. Do **not** generate a new one — a different keystore can't update the
-same Play listing.
+In **step 6** set `storeFile=../../newww/sprithi-release.jks`, the `keyAlias` you
+saw above, and the **store/key passwords you already have**. Do **not** generate a
+new keystore — a different one can never update the same Play listing.
 
 ### Option B — brand-new app, no keystore yet
 
