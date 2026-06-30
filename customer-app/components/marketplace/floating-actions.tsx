@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { MessageCircle, ArrowUp, HelpCircle, X } from "lucide-react";
 
 export function FloatingActions() {
@@ -29,8 +30,7 @@ export function FloatingActions() {
             <div className="space-y-1 p-3 text-sm">
               <a href="tel:+919442025515" className="block rounded-md px-2 py-1.5 text-[var(--mk-text)] hover:bg-[var(--mk-brand-soft)]">📞 Call us</a>
               <a href="mailto:sprithi@gmail.com" className="block rounded-md px-2 py-1.5 text-[var(--mk-text)] hover:bg-[var(--mk-brand-soft)]">✉️ Email</a>
-              <a href="/help" className="block rounded-md px-2 py-1.5 text-[var(--mk-text)] hover:bg-[var(--mk-brand-soft)]">❓ Help center</a>
-              <a href="/orders" className="block rounded-md px-2 py-1.5 text-[var(--mk-text)] hover:bg-[var(--mk-brand-soft)]">📦 Track order</a>
+              <Link href="/orders" onClick={() => setHelpOpen(false)} className="block rounded-md px-2 py-1.5 text-[var(--mk-text)] hover:bg-[var(--mk-brand-soft)]">📦 Track order</Link>
             </div>
           </div>
         )}
