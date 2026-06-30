@@ -7,10 +7,10 @@
     "build": "next build --webpack",
     "start": "next start",
     "lint": "eslint",
-    "cap:add:android": "npm run build && cap add android",
-    "cap:sync": "npm run build && cap sync",
+    "cap:add:android": "cross-env CAPACITOR_BUILD=1 npm run build && cap add android",
+    "cap:sync": "cross-env CAPACITOR_BUILD=1 npm run build && cap sync",
     "cap:open:android": "cap open android",
-    "cap:run:android": "npm run build && cap run android"
+    "cap:run:android": "cross-env CAPACITOR_BUILD=1 npm run build && cap run android"
   },
   "dependencies": {
     "@base-ui/react": "^1.4.1",
@@ -21,6 +21,7 @@
     "@capacitor/ios": "^8.3.3",
     "@capacitor/preferences": "^8.0.1",
     "@capacitor/push-notifications": "^8.0.4",
+    "@capacitor/share": "^8.0.1",
     "@hookform/resolvers": "^5.2.2",
     "axios": "^1.16.0",
     "class-variance-authority": "^0.7.1",

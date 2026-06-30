@@ -136,12 +136,26 @@ export default function ReferPage() {
   }
   async function share() {
     if (!shareUrl) return;
+    // APK (Capacitor WebView): the Web Share API isn't reliable there, so use the
+    // native @capacitor/share plugin to open the Android/iOS system share sheet.
+    const { Capacitor } = await import("@capacitor/core");
+    if (Capacitor.isNativePlatform()) {
+      try {
+        const { Share } = await import("@capacitor/share");
+        // `shareMessage` already ends with the link — do NOT also pass `url`, or
+        // Android appends it again and the link shows twice.
+        await Share.share({ title: "Join me on SPRITHI Digital Mart", text: shareMessage, dialogTitle: "Share your referral" });
+      } catch {
+        navigator.clipboard.writeText(shareMessage).then(() => toast.success("Message copied"));
+      }
+      return;
+    }
+    // Browser: Web Share API (text only → link appears once), else clipboard copy.
     if (typeof navigator !== "undefined" && "share" in navigator) {
       try {
         await (navigator as Navigator & { share?: (data: ShareData) => Promise<void> }).share?.({
           title: "Join me on SPRITHI Digital Mart",
           text: shareMessage,
-          url: shareUrl,
         });
         return;
       } catch {
