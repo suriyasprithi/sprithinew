@@ -67,7 +67,16 @@ export function VideoSubmitCard() {
       setLast("pending");
       if (inputRef.current) inputRef.current.value = "";
     } catch (e) {
-      toast.error(apiErrorMessage(e, "Could not send video"));
+      // PHP rejects an over-limit POST before our API runs: comes back as 413, or
+      // a non-JSON body (a PHP warning) that can't be parsed. Either way it's a
+      // size problem — show a clear toast, not a raw error.
+      const err = e as { response?: { status?: number; data?: unknown } };
+      const data = err?.response?.data;
+      const tooLarge = err?.response?.status === 413
+        || (typeof data === "string" && /content-length|post_max|exceed|too large/i.test(data));
+      toast.error(tooLarge
+        ? `That video is too large to upload. Try a smaller file (under ${MAX_MB} MB).`
+        : apiErrorMessage(e, "Could not send video"));
     } finally {
       setBusy(false);
     }

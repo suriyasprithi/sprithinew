@@ -72,6 +72,12 @@ class CustomerVideoController extends BaseApiController
         if (! $auth) return $this->fail('Unauthorized', 401);
 
         $file = $this->request->getFile('file');
+        // PHP discards a POST body bigger than post_max_size before this runs:
+        // $_POST/$_FILES arrive empty while Content-Length is set. Turn that into
+        // a clear "too large" message instead of a confusing "No file uploaded".
+        if (! $file && empty($_POST) && (int) ($_SERVER['CONTENT_LENGTH'] ?? 0) > 0) {
+            return $this->fail('That video is too large for the server. Please upload a smaller one.', 413);
+        }
         if (! $file || ! $file->isValid() || $file->hasMoved()) return $this->fail('No file uploaded', 422);
         if ($file->getSize() > 100 * 1024 * 1024) return $this->fail('Video must be 100 MB or smaller', 422);
         if (! in_array($file->getMimeType(), ['video/mp4', 'video/webm', 'video/quicktime'], true)) {
@@ -141,6 +147,12 @@ class CustomerVideoController extends BaseApiController
         if ($r = $this->requireAdmin()) return $r;
 
         $file = $this->request->getFile('file');
+        // PHP discards a POST body bigger than post_max_size before this runs:
+        // $_POST/$_FILES arrive empty while Content-Length is set. Turn that into
+        // a clear "too large" message instead of a confusing "No file uploaded".
+        if (! $file && empty($_POST) && (int) ($_SERVER['CONTENT_LENGTH'] ?? 0) > 0) {
+            return $this->fail('That video is too large for the server. Please upload a smaller one.', 413);
+        }
         if (! $file || ! $file->isValid() || $file->hasMoved()) return $this->fail('No file uploaded', 422);
         if ($file->getSize() > 100 * 1024 * 1024) return $this->fail('Video must be 100 MB or smaller', 422);
         if (! in_array($file->getMimeType(), ['video/mp4', 'video/webm', 'video/quicktime'], true)) {
