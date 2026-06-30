@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Toaster } from "@/components/ui/sonner";
 import { AuthInit } from "@/components/auth-init";
 import { ThemeProvider } from "@/components/theme-provider";
@@ -12,6 +12,15 @@ const SYSTEM_FONT_STACK =
 export const metadata: Metadata = {
   title: "SPRITHI Digital Mart",
   description: "SPRITHI Digital Mart customer app",
+};
+
+// App-like behaviour: lock the viewport so the WebView/browser can't pinch- or
+// double-tap-zoom the UI (initial-scale=1, maximum-scale=1, user-scalable=no).
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
 };
 
 export default function RootLayout({
