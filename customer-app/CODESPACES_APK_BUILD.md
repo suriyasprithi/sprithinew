@@ -86,18 +86,19 @@ You now have a fresh `android/` project with the web assets copied in.
 
 ---
 
-## 3. Camera permission (QR scanner)
+## 3. Camera permission (QR scanner) — REQUIRED
 
-Edit **`android/app/src/main/AndroidManifest.xml`** — add these lines just inside
-`<manifest>`, above `<application>`:
+Without this the WebView `getUserMedia` call is denied instantly ("permission
+denied" on *Tap to scan*). Run after `cap add` (idempotent):
 
-```xml
-<uses-permission android:name="android.permission.CAMERA" />
-<uses-feature android:name="android.hardware.camera" android:required="false" />
+```bash
+grep -q 'android.permission.CAMERA' android/app/src/main/AndroidManifest.xml || \
+  sed -i 's#<application#<uses-permission android:name="android.permission.CAMERA" />\n    <uses-feature android:name="android.hardware.camera" android:required="false" />\n\n    <application#' android/app/src/main/AndroidManifest.xml
 ```
 
 `INTERNET` and `POST_NOTIFICATIONS` are added automatically by Capacitor + the push
-plugin. The WebView grants the camera prompt once the runtime permission is allowed.
+plugin. With `CAMERA` in the manifest, Capacitor's WebView prompts for the runtime
+permission the first time the scanner opens — tap **Allow**.
 
 ---
 
