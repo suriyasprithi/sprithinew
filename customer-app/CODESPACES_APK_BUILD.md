@@ -149,6 +149,20 @@ grep -q 'default_notification_icon' android/app/src/main/AndroidManifest.xml || 
 
 Then build (`./gradlew … assembleRelease`).
 
+## 4c. Version code (bump before every Play upload)
+
+`android/` regenerates with `versionCode 1`. Play rejects an upload whose code
+isn't higher than the last, so set it after `cap sync` (currently **5**):
+
+```bash
+cd /workspaces/sprithinew/customer-app
+sed -i -E 's/versionCode[[:space:]]+[0-9]+/versionCode 5/' android/app/build.gradle
+sed -i -E 's/versionName[[:space:]]+"[^"]*"/versionName "1.0.5"/' android/app/build.gradle   # optional display version
+grep -nE 'versionCode|versionName' android/app/build.gradle
+```
+
+Increment the number (6, 7, …) for each later release.
+
 ## 5. The release keystore
 
 > ⚠️ Play Store updates must be signed with the **same** keystore that signed the
