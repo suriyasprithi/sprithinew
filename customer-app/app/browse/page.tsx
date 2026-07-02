@@ -327,14 +327,14 @@ export default function BrowsePage() {
                 {!prodLoading && products.length > 0 && <span className="shrink-0 text-xs font-medium text-[var(--mk-text-muted)]">{products.length}{hasMore ? "+" : ""} items</span>}
               </div>
               {prodLoading ? (
-                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
                   {Array.from({ length: 8 }).map((_, i) => <div key={i} className="h-64 animate-pulse rounded-2xl bg-[var(--mk-surface-3)]" />)}
                 </div>
               ) : products.length === 0 ? (
                 <EmptyState icon={<Package className="h-6 w-6" />} title={debouncedQ ? "No matching products" : "No products here"} sub={debouncedQ ? "Try another search term." : "This shop has no products in this category yet."} />
               ) : (
                 <>
-                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
                     {products.map((p) => (
                       // content-visibility: skip rendering off-screen cards (native
                       // virtualization) so very large lists stay smooth — no extra deps.
