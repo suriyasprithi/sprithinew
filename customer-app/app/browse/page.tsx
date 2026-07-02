@@ -32,6 +32,19 @@ const browseCache: { vendorCats: VendorCategory[] | null; shops: Map<number, Sho
 const ALL = 0; // sentinel for "All Shops" / "All Products"
 const PAGE_SIZE = 24;
 
+// Static export is served under a basePath (/customer on web) with trailing
+// slashes. Raw history.pushState/replaceState do NOT apply either, so the URL
+// must be built with both — otherwise a refresh hits a path the server can't
+// resolve and 404s.
+const BP = process.env.NEXT_PUBLIC_BASE_PATH || "";
+const browseUrl = (vc: number, shop?: number) => {
+  const p = new URLSearchParams();
+  if (vc !== ALL) p.set("vc", String(vc));
+  if (shop) p.set("shop", String(shop));
+  const qs = p.toString();
+  return `${BP}/browse/${qs ? `?${qs}` : ""}`;
+};
+
 export default function BrowsePage() {
   const router = useRouter();
   const [level, setLevel] = useState<"vendor" | "shop">("vendor");
@@ -122,7 +135,7 @@ export default function BrowsePage() {
     };
     void run();
     if (typeof window !== "undefined" && level === "vendor") {
-      window.history.replaceState(null, "", activeCat === ALL ? "/browse" : `/browse?vc=${activeCat}`);
+      window.history.replaceState(null, "", browseUrl(activeCat));
     }
     return () => { cancelled = true; };
   }, [activeCat]);
@@ -206,7 +219,7 @@ export default function BrowsePage() {
     setLevel("shop");
     if (typeof window !== "undefined") {
       window.scrollTo(0, 0);
-      window.history.pushState(null, "", `/browse?vc=${activeCat}&shop=${shop.id}`);
+      window.history.pushState(null, "", browseUrl(activeCat, shop.id));
     }
   }
   function backToVendor() {
@@ -219,7 +232,7 @@ export default function BrowsePage() {
     setProducts([]);
     setQuery("");
     if (typeof window !== "undefined") {
-      window.history.replaceState(null, "", activeCat === ALL ? "/browse" : `/browse?vc=${activeCat}`);
+      window.history.replaceState(null, "", browseUrl(activeCat));
     }
   }
 
