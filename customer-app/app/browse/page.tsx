@@ -351,13 +351,7 @@ export default function BrowsePage() {
                 <>
                   <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
                     {products.map((p) => (
-                      // content-visibility: skip rendering off-screen cards (native
-                      // virtualization) so very large lists stay smooth — no extra deps.
-                      // `grid` makes the card stretch to the equalized row height so
-                      // the ADD buttons line up regardless of name/badge/chip height.
-                      <div key={p.id} className="grid [content-visibility:auto] [contain-intrinsic-size:auto_320px]">
-                        <ProductCard product={p} />
-                      </div>
+                      <ProductCard key={p.id} product={p} />
                     ))}
                   </div>
                   {/* Infinite-scroll sentinel + spinner */}
