@@ -186,6 +186,9 @@ class ProductController extends BaseApiController
         $variants  = $productIds ? (new ProductVariantModel())->whereIn('product_id', $productIds)->orderBy('id', 'ASC')->findAll() : [];
         $catName   = []; foreach ($cats     as $c) $catName[(int) $c['id']]      = $c['name'];
         $catParent = []; foreach ($cats     as $c) $catParent[(int) $c['id']]    = isset($c['parent_id']) && $c['parent_id'] !== null ? (int) $c['parent_id'] : null;
+        $subCatIds = array_unique(array_filter(array_map(static fn ($r) => (int) ($r['sub_category_id'] ?? 0), $rows)));
+        $subCats   = $subCatIds ? (new \App\Models\SubCategoryModel())->whereIn('id', $subCatIds)->findAll() : [];
+        $subName   = []; foreach ($subCats  as $s) $subName[(int) $s['id']]      = $s['name'];
         $vendName  = []; foreach ($vendors  as $v) $vendName[(int) $v['id']]     = $v['name'];
         $shopName  = []; foreach ($profiles as $p) $shopName[(int) $p['user_id']] = $p['shop_name'];
         $variantsByProduct = [];
@@ -197,7 +200,7 @@ class ProductController extends BaseApiController
             $v['stock']   = (int) ($v['stock'] ?? 0);
             $variantsByProduct[$pid][] = $v;
         }
-        return array_map(static function ($r) use ($catName, $catParent, $vendName, $shopName, $variantsByProduct) {
+        return array_map(static function ($r) use ($catName, $catParent, $subName, $vendName, $shopName, $variantsByProduct) {
             $rawAttrs = $r['attributes'] ?? null;
             $attrs    = is_string($rawAttrs) ? (json_decode($rawAttrs, true) ?: null) : (is_array($rawAttrs) ? $rawAttrs : null);
             $rawTypes = $r['variant_types'] ?? null;
@@ -207,6 +210,8 @@ class ProductController extends BaseApiController
             return array_merge($r, [
                 'category_name'      => $catName[(int) ($r['category_id'] ?? 0)]  ?? null,
                 'category_parent_id' => $catParent[(int) ($r['category_id'] ?? 0)] ?? null,
+                'sub_category_id'    => isset($r['sub_category_id']) ? (int) $r['sub_category_id'] : null,
+                'sub_category_name'  => $subName[(int) ($r['sub_category_id'] ?? 0)] ?? null,
                 'vendor_name'    => $shopName[(int) ($r['vendor_id'] ?? 0)] ?? $vendName[(int) ($r['vendor_id'] ?? 0)] ?? null,
                 'price'          => (float) ($r['price'] ?? 0),
                 // Strikethrough MRP for the customer card (₹offer / ₹mrp / N% OFF). Only when mrp > price.
@@ -521,6 +526,24 @@ class ProductController extends BaseApiController
             return $id;
         };
 
+        // Sub-category resolver: find/create a sub_categories row by (categoryId,
+        // name), cached for the run. Only invoked when the CSV has a `sub_category`
+        // cell — products without one keep sub_category_id NULL.
+        $subModel = new \App\Models\SubCategoryModel();
+        $subMap   = [];
+        foreach ($subModel->findAll() as $s) {
+            $subMap[((int) $s['category_id']) . '|' . mb_strtolower(trim((string) $s['name']))] = (int) $s['id'];
+        }
+        $resolveSub = static function (string $name, int $categoryId) use (&$subMap, $subModel): ?int {
+            $name = trim($name);
+            if ($name === '' || $categoryId <= 0) return null;
+            $key = $categoryId . '|' . mb_strtolower($name);
+            if (isset($subMap[$key])) return $subMap[$key];
+            $id = (int) $subModel->insert(['category_id' => $categoryId, 'name' => $name, 'status' => 'active'], true);
+            $subMap[$key] = $id;
+            return $id;
+        };
+
         // Existing products for THIS batch only (scale): look up by the codes present,
         // not the whole vendor catalog. ci collation makes whereIn case-insensitive.
         $rawCodes = [];
@@ -586,10 +609,13 @@ class ProductController extends BaseApiController
                 }
                 [$discPct, $discAmt] = $this->computeDiscount($mrp, $price);
 
-                // Category is required (sub-category removed). Skip rows with none.
+                // Category is required. Sub-category is optional: when the CSV has a
+                // `sub_category` cell it's created/reused under the resolved category.
                 $parentName = trim((string) ($item['category'] ?? ''));
                 if ($parentName === '') { $failed[] = ['row' => $line, 'name' => $name, 'reason' => 'category required']; continue; }
-                $catId = $resolveCat($parentName, 0);
+                $catId    = $resolveCat($parentName, 0);
+                $subName  = trim((string) ($item['sub_category'] ?? ''));
+                $subCatId = $subName !== '' ? $resolveSub($subName, (int) $catId) : null;
 
                 $statusRaw = mb_strtolower(trim((string) ($item['status'] ?? '')));
                 $status    = $statusRaw === '' ? null : (in_array($statusRaw, ['inactive', '0', 'no', 'disabled', 'off'], true) ? 'inactive' : 'active');
@@ -622,6 +648,7 @@ class ProductController extends BaseApiController
 
                 $base = [
                     'category_id'      => $catId,
+                    'sub_category_id'  => $subCatId,
                     'name'             => $name,
                     'description'      => trim((string) ($item['description'] ?? '')) !== '' ? trim((string) $item['description']) : null,
                     'price'            => $price,
@@ -994,6 +1021,7 @@ class ProductController extends BaseApiController
         $payload = [
             'vendor_id'          => $vendorId,
             'category_id'        => $d['category_id'] ?? null,
+            'sub_category_id'    => isset($d['sub_category_id']) && $d['sub_category_id'] !== '' ? (int) $d['sub_category_id'] : null,
             'vendor_category_id' => isset($d['vendor_category_id']) ? (int) $d['vendor_category_id'] : null,
             'name'               => $d['name'],
             'description'        => $d['description'] ?? null,
@@ -1028,6 +1056,7 @@ class ProductController extends BaseApiController
         $vImages  = $this->normalizeVariantImages($d['variant_images'] ?? null, $vTypes);
         (new ProductModel())->update($id, [
             'category_id'    => $d['category_id'] ?? null,
+            'sub_category_id' => isset($d['sub_category_id']) && $d['sub_category_id'] !== '' ? (int) $d['sub_category_id'] : null,
             'name'           => $d['name'],
             'description'    => $d['description'] ?? null,
             'price'          => $d['price'],
@@ -1270,7 +1299,12 @@ class ProductController extends BaseApiController
         if (array_key_exists('category_id', $d)) {
             $d['category_id'] = $this->applySubCategory($d);
         }
-        $payload = array_intersect_key($d, array_flip(['name', 'description', 'price', 'stock', 'image', 'status', 'category_id', 'vendor_category_id']));
+        $payload = array_intersect_key($d, array_flip(['name', 'description', 'price', 'stock', 'image', 'status', 'category_id', 'sub_category_id', 'vendor_category_id']));
+        // Sub-category is optional: "" / 0 / missing → NULL (product keeps only its category).
+        if (array_key_exists('sub_category_id', $payload)) {
+            $payload['sub_category_id'] = $payload['sub_category_id'] !== '' && (int) $payload['sub_category_id'] > 0
+                ? (int) $payload['sub_category_id'] : null;
+        }
 
         // A freshly-uploaded image arrives as a base64 data: URI — persist it as a small
         // file under uploads/products/ and store only the URL. Existing URLs / null pass through.

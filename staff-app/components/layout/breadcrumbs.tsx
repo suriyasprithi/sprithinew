@@ -27,6 +27,7 @@ const LABEL: Record<string, string> = {
   "token-request": "Token Requests",
   "vendor-categories": "Vendor Categories",
   categories: "Product Categories",
+  "sub-categories": "Sub Categories",
   banners: "Home Banners",
   pincodes: "Pincodes",
   payments: "Manual Top-ups",

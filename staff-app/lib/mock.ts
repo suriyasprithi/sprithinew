@@ -246,6 +246,8 @@ export type VendorProduct = {
   category_id?: number | null;
   category_name: string;
   category_parent_id?: number | null;
+  sub_category_id?: number | null;
+  sub_category_name?: string | null;
   vendor_category_id: number;
   status: "active" | "inactive";
   has_variants: boolean;

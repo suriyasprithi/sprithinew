@@ -661,7 +661,7 @@ export default function AdminCustomersPage() {
             <DialogDescription>Creates an active customer directly — no OTP needed.</DialogDescription>
           </DialogHeader>
           <div className="grid gap-3 sm:grid-cols-2">
-            <div className="space-y-1.5 sm:col-span-2"><Label>Full name *</Label><Input value={creating?.name ?? ""} onChange={(e) => setCreating((p) => p && ({ ...p, name: e.target.value }))} placeholder="Ramesh Kumar" /></div>
+            <div className="space-y-1.5 sm:col-span-2"><Label>Full name *</Label><Input value={creating?.name ?? ""} onChange={(e) => setCreating((p) => p && ({ ...p, name: e.target.value }))} placeholder="Enter full name" /></div>
             <div className="space-y-1.5"><Label>Mobile *</Label><Input inputMode="numeric" maxLength={10} value={creating?.mobile ?? ""} onChange={(e) => setCreating((p) => p && ({ ...p, mobile: e.target.value.replace(/\D/g, "").slice(0, 10) }))} placeholder="10-digit" /></div>
             <div className="space-y-1.5"><Label>Password *</Label><PasswordInput type="password" autoComplete="new-password" value={creating?.password ?? ""} onChange={(e) => setCreating((p) => p && ({ ...p, password: e.target.value }))} placeholder="Min 6 characters" /></div>
             <div className="space-y-1.5"><Label>Email</Label><Input type="email" value={creating?.email ?? ""} onChange={(e) => setCreating((p) => p && ({ ...p, email: e.target.value }))} placeholder="you@example.com" /></div>

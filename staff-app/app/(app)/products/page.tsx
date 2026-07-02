@@ -66,6 +66,7 @@ type Draft = {
   status: "active" | "inactive";
   vendor_category_id: number | null;
   category_id: number | null;      // selected product category (parent)
+  sub_category_id: number | null;  // optional sub-category under the product category
   image: string | null;            // dataURL or absolute URL — stored in products.image (TEXT)
   attributes: ProductAttributes;
   variant_types: VType[];
@@ -96,6 +97,7 @@ type Draft = {
 };
 
 type ProductCategory = { id: number; name: string; commission_pct: number; vendor_category_id: number | null; status: "active" | "inactive" };
+type SubCategory = { id: number; name: string; category_id: number; status: "active" | "inactive" };
 
 // The catalog-detail fields, all blank.
 const blankCatalog = () => ({
@@ -112,6 +114,7 @@ function blankDraft(defaultCategoryId: number | null): Draft {
     sku: "", delivery_time: "", status: "active",
     vendor_category_id: defaultCategoryId,
     category_id: null,
+    sub_category_id: null,
     image: null,
     attributes: {},
     variant_types: [],
@@ -143,9 +146,9 @@ function catalogDraftFrom(p: VendorProduct): ReturnType<typeof blankCatalog> {
   };
 }
 
-// Resolve the Category picker value from a product (flat — no sub-category).
-function categorySplit(p: VendorProduct): { category_id: number | null } {
-  return { category_id: p.category_id ?? null };
+// Resolve the Category + Sub-Category picker values from a product.
+function categorySplit(p: VendorProduct): { category_id: number | null; sub_category_id: number | null } {
+  return { category_id: p.category_id ?? null, sub_category_id: p.sub_category_id ?? null };
 }
 
 function code(s: string, max: number): string {
@@ -245,6 +248,8 @@ export default function VendorProductsPage() {
   const [items, setItems] = useState<VendorProduct[]>([]);
   const [vendorCategory, setVendorCategory] = useState<VendorCategoryFull | null>(null);
   const [productCategories, setProductCategories] = useState<ProductCategory[]>([]);
+  // Sub-categories for the currently-selected product category (3rd cascade).
+  const [subCategories, setSubCategories] = useState<SubCategory[]>([]);
   const [newCat, setNewCat] = useState("");
   const [creatingCat, setCreatingCat] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -315,6 +320,21 @@ export default function VendorProductsPage() {
     })();
   }, []);
 
+  // Load the sub-categories for the product category chosen in the open form.
+  // Cleared when no category is picked; re-fetched whenever the category changes.
+  const editingCategoryId = editing?.category_id ?? null;
+  useEffect(() => {
+    if (!editingCategoryId) { setSubCategories([]); return; }
+    let cancelled = false;
+    void (async () => {
+      const subs = await api.get("/catalog/sub-categories", { params: { category_id: editingCategoryId } })
+        .then((res) => (Array.isArray(res.data.data?.items) ? (res.data.data.items as SubCategory[]) : []))
+        .catch(() => [] as SubCategory[]);
+      if (!cancelled) setSubCategories(subs);
+    })();
+    return () => { cancelled = true; };
+  }, [editingCategoryId]);
+
   // One server page of products — the backend owns filtering, paging and the
   // aggregate stat counts (a vendor can have 14k+ products).
   const PAGE_SIZE = 50;
@@ -379,6 +399,19 @@ export default function VendorProductsPage() {
     }
     return opts;
   }, [productCategories, editing?.category_id, editing?.id, items]);
+
+  // Sub-category options for the chosen product category. Always include the
+  // product's CURRENT sub-category so an edit pre-selects it even if it's not in
+  // the freshly-loaded list yet.
+  const subCategoryOptions = useMemo(() => {
+    const opts = subCategories.map((s) => ({ value: String(s.id), label: s.name }));
+    const sid = editing?.sub_category_id;
+    if (sid != null && !opts.some((o) => o.value === String(sid))) {
+      const prod = items.find((p) => p.id === editing?.id);
+      opts.unshift({ value: String(sid), label: prod?.sub_category_name ?? `Sub-category #${sid}` });
+    }
+    return opts;
+  }, [subCategories, editing?.sub_category_id, editing?.id, items]);
 
   function startNew() {
     setEditing(blankDraft(vendorCategory?.id ?? null));
@@ -456,6 +489,7 @@ export default function VendorProductsPage() {
       status: p.status,
       vendor_category_id: p.vendor_category_id ?? vendorCategory?.id ?? null,
       category_id: cs.category_id,
+      sub_category_id: cs.sub_category_id,
       image: (p as VendorProduct & { image?: string | null }).image ?? null,
       attributes: { ...(p.attributes ?? {}) },
       variant_types: (p.variant_types ?? []).map((t) => ({ name: t.name, options: [...t.options] })),
@@ -486,6 +520,7 @@ export default function VendorProductsPage() {
       status: "active",
       vendor_category_id: p.vendor_category_id ?? vendorCategory?.id ?? null,
       category_id: cs.category_id,
+      sub_category_id: cs.sub_category_id,
       image: (p as VendorProduct & { image?: string | null }).image ?? null,
       attributes: { ...(p.attributes ?? {}) },
       variant_types: (p.variant_types ?? []).map((t) => ({ name: t.name, options: [...t.options] })),
@@ -521,7 +556,7 @@ export default function VendorProductsPage() {
           ? prev
           : [...prev, { id, name, commission_pct: 0, vendor_category_id: vendorCategory?.id ?? null, status: "active" }],
       );
-      setEditing((p) => (p ? { ...p, category_id: id, attributes: {} } : p));
+      setEditing((p) => (p ? { ...p, category_id: id, sub_category_id: null, attributes: {} } : p));
       setNewCat("");
       toast.success(item?.created ? `Category "${name}" created` : `Using existing "${name}"`);
     } catch (e) { toast.error(apiErrorMessage(e, "Could not create category")); }
@@ -577,6 +612,7 @@ export default function VendorProductsPage() {
       stock: Number(stock),
       status: editing.status,
       category_id: editing.category_id,                       // product category (drives commission)
+      sub_category_id: editing.sub_category_id,               // optional sub-category (nullable)
       vendor_category_id: editing.vendor_category_id,         // auto from logged-in vendor
       image: editing.image,                                   // dataURL or null
       attributes,
@@ -970,7 +1006,8 @@ export default function VendorProductsPage() {
                   if (!p) return p;
                   const newId = Number(v);
                   if (p.category_id === newId) return p;
-                  return { ...p, category_id: newId, attributes: {} };
+                  // Category changed → its sub-categories no longer apply; clear the pick.
+                  return { ...p, category_id: newId, sub_category_id: null, attributes: {} };
                 })}
                 options={categoryOptions}
                 placeholder={categoryOptions.length === 0 ? "No categories available for your vendor category" : "Pick a category — Vegetables, Fruits, Rice…"}
@@ -992,6 +1029,21 @@ export default function VendorProductsPage() {
                   {creatingCat ? "Creating…" : <><Plus className="h-3.5 w-3.5" /> Create</>}
                 </Button>
               </div>
+            </div>
+
+            {/* SUB CATEGORY — optional, filtered to the chosen product category */}
+            <div className="space-y-1.5">
+              <Label>Sub category <span className="text-[11px] font-normal text-muted-foreground">(optional)</span></Label>
+              <Combobox
+                value={editing?.sub_category_id != null ? String(editing.sub_category_id) : ""}
+                onValueChange={(v) => setEditing((p) => p && ({ ...p, sub_category_id: v && v !== "none" ? Number(v) : null }))}
+                options={editing?.sub_category_id != null ? [{ value: "none", label: "— No sub-category —" }, ...subCategoryOptions] : subCategoryOptions}
+                placeholder={!editing?.category_id ? "Pick a product category first" : subCategoryOptions.length === 0 ? "No sub-categories for this category" : "Optional — pick a sub-category"}
+                searchPlaceholder="Search sub-category…"
+                emptyText="No sub-categories — the admin can add them under this category"
+                className="h-11 w-full rounded-xl bg-surface-2/60"
+              />
+              <p className="text-[11px] text-muted-foreground">A finer level under the product category. Leave empty if not needed.</p>
             </div>
 
             {/* COMMON FIELDS — image left, details right on md+ */}

@@ -17,7 +17,8 @@ import { readSavedLocation } from "@/components/marketplace/location-picker";
 
 type ApiProduct = {
   id: number; name: string; price: number | string; old_price?: number | string | null; image: string | null;
-  stock: number; category_id: number | null; category_name?: string | null; vendor_name?: string | null;
+  stock: number; category_id: number | null; category_name?: string | null;
+  sub_category_id?: number | null; sub_category_name?: string | null; vendor_name?: string | null;
   has_variants?: boolean;
   default_variant_id?: number | null;
   min_price?: number | string | null;
@@ -47,6 +48,8 @@ function adapt(raw: ApiProduct): MarketplaceProduct {
     variant_axes: Array.isArray(raw.variant_axes) ? raw.variant_axes : undefined,
     category_id: raw.category_id != null ? Number(raw.category_id) : null,
     category_name: raw.category_name ?? null,
+    sub_category_id: raw.sub_category_id != null ? Number(raw.sub_category_id) : null,
+    sub_category_name: raw.sub_category_name ?? null,
   };
 }
 
@@ -121,8 +124,25 @@ function PublicShopInner() {
   // The shop currently in view (when scoped to one). Pharmacies accept a
   // prescription-only order, so we surface that entry below.
   const selectedVendor = vendorId ? vendors.find((v) => v.id === vendorId) ?? null : null;
-  // Grid filtered by the active in-shop product-category tab (client-side).
-  const shownItems = activeCat != null ? items.filter((p) => p.category_id === activeCat) : items;
+  // Active in-shop sub-category tab (client-side, only when a category is active).
+  const [activeSub, setActiveSub] = useState<number | null>(null);
+  // Grid filtered by the active product-category tab, then the sub-category tab.
+  const shownItems = (() => {
+    let base = activeCat != null ? items.filter((p) => p.category_id === activeCat) : items;
+    if (activeCat != null && activeSub != null) base = base.filter((p) => p.sub_category_id === activeSub);
+    return base;
+  })();
+  // Sub-categories present in the loaded items for the active category → 2nd row.
+  const subCats = useMemo<Category[]>(() => {
+    if (activeCat == null) return [];
+    const m = new Map<number, string>();
+    items.forEach((p) => {
+      if (p.category_id === activeCat && p.sub_category_id != null && p.sub_category_name) {
+        m.set(Number(p.sub_category_id), p.sub_category_name);
+      }
+    });
+    return [...m].map(([id, name]) => ({ id, name }));
+  }, [items, activeCat]);
   // Infinite scroll is active only while browsing all products (no in-shop tab,
   // since that filters the loaded set client-side and the server can't page it).
   const canPaginate = !loading && items.length > 0 && activeCat == null;
@@ -172,6 +192,7 @@ function PublicShopInner() {
       setHasMore(Boolean(r.data.data?.has_more));
       setTotal(Number(r.data.data?.total ?? raws.length));
       setActiveCat(null);
+      setActiveSub(null);
     } catch (err) { toast.error(apiErrorMessage(err)); }
     finally { setLoading(false); }
   }
@@ -329,9 +350,22 @@ function PublicShopInner() {
         <section className="mx-auto max-w-7xl px-4 pt-3">
           <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-[var(--mk-text-muted)]">Categories</p>
           <div className="flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-            <CategoryPill active={activeCat === null} onClick={() => setActiveCat(null)}>All</CategoryPill>
+            <CategoryPill active={activeCat === null} onClick={() => { setActiveCat(null); setActiveSub(null); }}>All</CategoryPill>
             {productCats.map((c) => (
-              <CategoryPill key={c.id} active={activeCat === c.id} onClick={() => setActiveCat(c.id)}>{c.name}</CategoryPill>
+              <CategoryPill key={c.id} active={activeCat === c.id} onClick={() => { setActiveCat(c.id); setActiveSub(null); }}>{c.name}</CategoryPill>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* Sub-category tabs — only when a category with sub-categories is active */}
+      {activeCat != null && subCats.length > 0 && (
+        <section className="mx-auto max-w-7xl px-4 pt-2">
+          <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-[var(--mk-text-muted)]">Sub-categories</p>
+          <div className="flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            <CategoryPill active={activeSub === null} onClick={() => setActiveSub(null)}>All</CategoryPill>
+            {subCats.map((s) => (
+              <CategoryPill key={s.id} active={activeSub === s.id} onClick={() => setActiveSub(s.id)}>{s.name}</CategoryPill>
             ))}
           </div>
         </section>

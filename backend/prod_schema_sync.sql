@@ -211,3 +211,21 @@ ALTER TABLE `users` ADD COLUMN IF NOT EXISTS `account_holder` varchar(150) DEFAU
 -- Admin reserves: surplus buyback + orphan L1/L2/L3 commission held on the admin row.
 ALTER TABLE `users` ADD COLUMN IF NOT EXISTS `buyback_reserve` decimal(12,2) NOT NULL DEFAULT 0;
 ALTER TABLE `users` ADD COLUMN IF NOT EXISTS `level_reserve`   decimal(12,2) NOT NULL DEFAULT 0;
+
+-- Sub Categories (Vendor Category → Product Category → Sub Category), 2026-07-02.
+CREATE TABLE IF NOT EXISTS `sub_categories` (
+  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `category_id` int(10) unsigned NOT NULL,
+  `name` varchar(100) NOT NULL,
+  `status` enum('active','inactive') NOT NULL DEFAULT 'active',
+  `created_at` datetime DEFAULT NULL,
+  `updated_at` datetime DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  KEY `category_id` (`category_id`),
+  KEY `category_id_name` (`category_id`,`name`),
+  CONSTRAINT `fk_subcat_category` FOREIGN KEY (`category_id`) REFERENCES `categories` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+ALTER TABLE `products` ADD COLUMN IF NOT EXISTS `sub_category_id` int(10) unsigned DEFAULT NULL AFTER `category_id`;
+-- Index + FK (ignore errors if they already exist):
+ALTER TABLE `products` ADD INDEX `idx_products_sub_category` (`sub_category_id`);
+ALTER TABLE `products` ADD CONSTRAINT `fk_products_sub_category` FOREIGN KEY (`sub_category_id`) REFERENCES `sub_categories` (`id`) ON DELETE SET NULL ON UPDATE CASCADE;

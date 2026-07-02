@@ -8,6 +8,7 @@ use App\Models\PincodeModel;
 use App\Models\ProductModel;
 use App\Models\ProductVariantModel;
 use App\Models\StateModel;
+use App\Models\SubCategoryModel;
 use App\Models\TalukModel;
 use App\Models\UserModel;
 use App\Models\VariantTypeGroupModel;
@@ -90,6 +91,7 @@ class PublicController extends BaseApiController
     {
         $q              = (string) $this->request->getGet('q');
         $catId          = (int)    $this->request->getGet('category_id');
+        $subCatId       = (int)    $this->request->getGet('sub_category_id');
         $vendorCatId    = (int)    $this->request->getGet('vendor_category_id');
         $vendorId       = (int)    $this->request->getGet('vendor_id');
         $pincode        = (string) $this->request->getGet('pincode');
@@ -138,6 +140,7 @@ class PublicController extends BaseApiController
             $model->orderBy('name', 'ASC');
         }
         if ($catId)     $model->where('category_id', $catId);
+        if ($subCatId)  $model->where('sub_category_id', $subCatId);
         if ($vendorId)  $model->where('vendor_id', $vendorId);
         if ($priceMin !== null && $priceMin !== '') $model->where('price >=', (float) $priceMin);
         if ($priceMax !== null && $priceMax !== '') $model->where('price <=', (float) $priceMax);
@@ -333,6 +336,9 @@ class PublicController extends BaseApiController
         $vendors   = $vendorIds ? (new UserModel())->whereIn('id', $vendorIds)->findAll() : [];
         $catName   = []; foreach ($cats    as $c) $catName[(int) $c['id']] = $c['name'];
         $vendName  = []; foreach ($vendors as $v) $vendName[(int) $v['id']] = $v['name'];
+        $subCatIds = array_unique(array_filter(array_map(static fn ($r) => (int) ($r['sub_category_id'] ?? 0), $rows)));
+        $subCats   = $subCatIds ? (new SubCategoryModel())->whereIn('id', $subCatIds)->findAll() : [];
+        $subName   = []; foreach ($subCats as $s) $subName[(int) $s['id']] = $s['name'];
         $vendorProfiles = $vendorIds ? (new VendorProfileModel())->whereIn('user_id', $vendorIds)->findAll() : [];
         $shopName  = []; foreach ($vendorProfiles as $p) $shopName[(int) $p['user_id']] = $p['shop_name'];
 
@@ -372,7 +378,7 @@ class PublicController extends BaseApiController
             }
         }
 
-        return array_map(static function ($r) use ($catName, $vendName, $shopName, $defaultVariant, $variantInfo) {
+        return array_map(static function ($r) use ($catName, $subName, $vendName, $shopName, $defaultVariant, $variantInfo) {
             $rawAttrs = $r['attributes'] ?? null;
             $attrs    = is_string($rawAttrs) ? (json_decode($rawAttrs, true) ?: null) : (is_array($rawAttrs) ? $rawAttrs : null);
             $pid   = (int) ($r['id'] ?? 0);
@@ -403,6 +409,8 @@ class PublicController extends BaseApiController
 
             return array_merge($r, [
                 'category_name'      => $catName[(int) ($r['category_id'] ?? 0)]  ?? null,
+                'sub_category_id'    => isset($r['sub_category_id']) ? (int) $r['sub_category_id'] : null,
+                'sub_category_name'  => $subName[(int) ($r['sub_category_id'] ?? 0)] ?? null,
                 'vendor_name'        => $shopName[(int) ($r['vendor_id'] ?? 0)] ?? $vendName[(int) ($r['vendor_id'] ?? 0)] ?? null,
                 'price'              => $price,
                 'old_price'          => $oldPrice,

@@ -28,6 +28,8 @@ export type MarketplaceProduct = {
   variant_axes?: { name: string; count: number; options?: string[] }[];  // e.g. [{name:"size",count:4,options:["100ml","250ml"]}]
   category_id?: number | null;         // product category — for the in-shop category filter tabs
   category_name?: string | null;
+  sub_category_id?: number | null;     // sub-category — for the secondary in-shop filter tabs
+  sub_category_name?: string | null;
 };
 
 const fmtINR = (n: number) =>

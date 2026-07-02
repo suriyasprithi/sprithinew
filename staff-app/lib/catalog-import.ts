@@ -11,7 +11,8 @@ const RESERVED: Record<string, string> = {
   itemcode: "code", productcode: "code", code: "code",
   productname: "name", name: "name",
   sku: "sku", variantsku: "sku", variantname: "variant_name",
-  category: "category",
+  category: "category", productcategory: "category",
+  subcategory: "sub_category", subcat: "sub_category", subcategoryname: "sub_category",
   brand: "brand", description: "description", shortdescription: "short_description", tags: "tags",
   hsncode: "hsn_code", hsn: "hsn_code", barcode: "barcode",
   mrp: "mrp", offerprice: "price", price: "price", sellingprice: "price", salesprice: "price",
@@ -34,7 +35,7 @@ export type Variant = {
   image: string; images: string;   // per-variant image filename(s) — resolved from the ZIP server-side
 };
 export type Group = {
-  code: string; name: string; category: string; brand: string;
+  code: string; name: string; category: string; sub_category: string; brand: string;
   description: string; short_description: string; tags: string; hsn_code: string;
   status: string; featured: string; image: string; images: string; gallery_images: string;
   tax_type: string; tax_percentage: string;
@@ -44,7 +45,7 @@ export type Group = {
 };
 
 const blankGroup = (code: string): Group => ({
-  code, name: "", category: "", brand: "", description: "", short_description: "",
+  code, name: "", category: "", sub_category: "", brand: "", description: "", short_description: "",
   tags: "", hsn_code: "", status: "", featured: "", image: "", images: "", gallery_images: "", tax_type: "",
   tax_percentage: "", price: "", mrp: "", stock: "", barcode: "", variants: [],
 });
@@ -142,7 +143,7 @@ function axisValue(options: Record<string, string>): string {
 function buildGroup(members: ParsedRow[]): Group {
   const first = members[0].f;
   const g = blankGroup((first.code ?? "").trim());
-  g.name = first.name ?? ""; g.category = first.category ?? ""; g.brand = first.brand ?? "";
+  g.name = first.name ?? ""; g.category = first.category ?? ""; g.sub_category = first.sub_category ?? ""; g.brand = first.brand ?? "";
   g.description = first.description ?? ""; g.short_description = first.short_description ?? "";
   g.tags = first.tags ?? ""; g.hsn_code = first.hsn_code ?? ""; g.status = first.status ?? "";
   g.featured = first.featured ?? ""; g.image = first.image ?? ""; g.images = first.images ?? ""; g.gallery_images = first.gallery_images ?? "";
@@ -246,7 +247,7 @@ const num = (s: string) => (s.trim() !== "" && !Number.isNaN(Number(s)) ? Number
 /** Convert a Group to the API item (product + variants[]) the universal engine consumes. */
 export function groupToItem(g: Group): Record<string, unknown> {
   return {
-    code: g.code, name: g.name, category: g.category,
+    code: g.code, name: g.name, category: g.category, sub_category: g.sub_category,
     brand: g.brand, description: g.description, short_description: g.short_description, tags: g.tags,
     hsn_code: g.hsn_code, status: g.status, featured: g.featured, image: g.image, images: g.images,
     gallery_images: g.gallery_images, tax_type: g.tax_type, tax_percentage: num(g.tax_percentage),

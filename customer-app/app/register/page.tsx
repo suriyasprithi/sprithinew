@@ -299,7 +299,7 @@ function RegisterInner() {
             <form onSubmit={register} className="mt-6 grid gap-3 sm:grid-cols-2">
               <div className="space-y-1.5 sm:col-span-2">
                 <Label htmlFor="name">Full name</Label>
-                <Input id="name" autoComplete="name" placeholder="Ramesh Kumar" value={name} onChange={(e) => setName(e.target.value)} disabled={busy || isLoading} className="h-11 rounded-xl bg-surface-2/60" />
+                <Input id="name" autoComplete="name" placeholder="Enter full name" value={name} onChange={(e) => setName(e.target.value)} disabled={busy || isLoading} className="h-11 rounded-xl bg-surface-2/60" />
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="mobile">Mobile</Label>

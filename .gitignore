@@ -68,3 +68,7 @@ $RECYCLE.BIN/
 
 # Gradle (in case it leaks above the android/ folder)
 .gradle/
+
+# User-uploaded media (kept on server, not in git)
+backend/public/uploads/ad-requests/
+backend/public/uploads/customer-videos/

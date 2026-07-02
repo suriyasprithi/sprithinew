@@ -79,6 +79,7 @@ $routes->group('api/v1', ['filter' => 'cors'], static function ($routes) {
     // ===== Catalog + cart + orders (Phase 2/3 will rebuild — routes kept so controllers are reachable) =====
     $routes->group('catalog', ['filter' => 'auth'], static function ($routes) {
         $routes->get('categories',               'Api\CategoryController::index');
+        $routes->get('sub-categories',           'Api\SubCategoryController::index');   // ?category_id=N → product-form 3rd cascade + filters
         $routes->get('products',                 'Api\ProductController::index');
         $routes->get('products/(:num)',          'Api\ProductController::show/$1');
         $routes->get('products/(:num)/options',  'Api\ProductVariantController::listForProduct/$1');
@@ -213,6 +214,7 @@ $routes->group('api/v1', ['filter' => 'cors'], static function ($routes) {
         $routes->delete('products/(:num)','Api\ProductController::delete/$1');
         $routes->post('products/bulk-delete', 'Api\ProductController::bulkDelete');   // vendor: soft-delete many at once
         $routes->post('categories',      'Api\CategoryController::ensure');
+        $routes->post('sub-categories',  'Api\SubCategoryController::ensure');   // CSV import: create/reuse sub-cats under a category
         $routes->get('me/category',      'Api\VendorCategoryController::mine');
     });
 
@@ -342,6 +344,12 @@ $routes->group('api/v1', ['filter' => 'cors'], static function ($routes) {
         $routes->post('categories',         'Api\CategoryController::create');
         $routes->patch('categories/(:num)', 'Api\CategoryController::update/$1');
         $routes->delete('categories/(:num)','Api\CategoryController::delete/$1');
+
+        // sub categories (Vendor Category → Product Category → Sub Category)
+        $routes->get('sub-categories',          'Api\SubCategoryController::adminIndex');
+        $routes->post('sub-categories',         'Api\SubCategoryController::create');
+        $routes->patch('sub-categories/(:num)', 'Api\SubCategoryController::update/$1');
+        $routes->delete('sub-categories/(:num)','Api\SubCategoryController::delete/$1');
 
         // vendor categories (with attribute_schema for dynamic product fields)
         $routes->get('vendor-categories',          'Api\VendorCategoryController::adminIndex');

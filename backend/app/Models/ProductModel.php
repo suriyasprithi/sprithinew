@@ -14,7 +14,7 @@ class ProductModel extends Model
     protected $protectFields    = true;
 
     protected $allowedFields = [
-        'vendor_id','category_id','vendor_category_id','name','description','price','mrp','code','barcode',
+        'vendor_id','category_id','sub_category_id','vendor_category_id','name','description','price','mrp','code','barcode',
         'stock','has_variants','variant_types','variant_images','image','attributes','status',
         // Material Master import (admin) — stored data, not shown to customers.
         'cost_price','profit_percent','profit','basic_price','discount_percent','discount',

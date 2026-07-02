@@ -22,6 +22,7 @@ type Product = {
   id: number; name: string; description: string | null; price: number; stock: number;
   image: string | null; vendor_name: string | null; category_name: string | null;
   category_id: number | null;
+  sub_category_name?: string | null;
   has_variants: boolean;
   old_price?: number | null;   // product-level strikethrough MRP (non-variant fallback)
   attributes?: Record<string, AttrValue> | null;
@@ -723,6 +724,7 @@ function ProductInner() {
                             {(product.vendor_name || product.category_name) && (
                               <p className="mt-1 text-xs text-muted-foreground">
                                 {product.vendor_name}{product.vendor_name && product.category_name ? " · " : ""}{product.category_name}
+                                {product.sub_category_name ? ` › ${product.sub_category_name}` : ""}
                               </p>
                             )}
                             <div className="mt-3 flex flex-wrap items-center gap-2">
