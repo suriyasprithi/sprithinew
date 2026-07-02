@@ -292,6 +292,7 @@ class PublicController extends BaseApiController
             $cntRows = \Config\Database::connect()->table('products')
                 ->select('vendor_id, COUNT(*) AS c')
                 ->where('status', 'active')
+                ->where('deleted_at', null)   // match ProductModel's soft-delete scope
                 ->whereIn('vendor_id', $ids)
                 ->groupBy('vendor_id')
                 ->get()->getResultArray();

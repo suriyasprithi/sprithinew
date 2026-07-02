@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, Search, ShoppingCart, LayoutGrid, ChevronRight, Store, Pill, Package, Loader2 } from "lucide-react";
@@ -93,17 +93,10 @@ export default function BrowsePage() {
     return () => { cancelled = true; };
   }, [activeCat]);
 
-  // Entering a shop → load its product categories for the left rail.
-  useEffect(() => {
-    if (level !== "shop" || !activeShop) return;
-    let cancelled = false;
-    api.get(`/catalog/shops/${activeShop.id}`)
-      .then((res) => { if (!cancelled) setShopCats((res.data.data?.categories ?? []) as ProductCategory[]); })
-      .catch(() => { if (!cancelled) setShopCats([]); });
-    return () => { cancelled = true; };
-  }, [level, activeShop]);
-
-  // Products for the active shop + product category (page 1).
+  // Products for the active shop + product category (page 1). The PUBLIC
+  // /public/products response also carries the shop's real product categories
+  // (only the ones it actually stocks) — use those for the left rail instead of
+  // the auth-gated /catalog/shops/:id, so guests can browse without a login bounce.
   useEffect(() => {
     if (level !== "shop" || !activeShop) return;
     let cancelled = false;
@@ -114,30 +107,42 @@ export default function BrowsePage() {
     api.get("/public/products", { params })
       .then((res) => {
         if (cancelled) return;
-        setProducts((res.data.data?.items ?? []) as MarketplaceProduct[]);
-        setHasMore(Boolean(res.data.data?.has_more));
+        const data = res.data.data ?? {};
+        setProducts((data.items ?? []) as MarketplaceProduct[]);
+        setHasMore(Boolean(data.has_more));
         setPage(1);
+        // Rail categories come from the unfiltered (All Products) response only,
+        // where the payload lists every category the shop stocks.
+        if (activeProdCat === ALL) setShopCats((data.categories ?? []) as ProductCategory[]);
       })
       .catch(() => { if (!cancelled) { setProducts([]); setHasMore(false); } })
       .finally(() => { if (!cancelled) setProdLoading(false); });
     return () => { cancelled = true; };
   }, [level, activeShop, activeProdCat]);
 
+  // Current selection, tracked in a ref so an in-flight loadMore can detect that
+  // the shop/category changed while its request was pending and discard the stale
+  // page (otherwise it would append the old category's items onto the new list).
+  const selRef = useRef<{ shopId: number; cat: number }>({ shopId: 0, cat: ALL });
+  useEffect(() => { selRef.current = { shopId: activeShop?.id ?? 0, cat: activeProdCat }; }, [activeShop, activeProdCat]);
+
   // Hardware back while in a shop → return to the vendor/shop-list level.
   useEffect(() => {
-    const onPop = () => { setLevel("vendor"); setActiveShop(null); };
+    const onPop = () => { setLevel("vendor"); setActiveShop(null); setShopCats([]); setProducts([]); };
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
   }, []);
 
   async function loadMore() {
-    if (!activeShop || loadingMore || !hasMore) return;
+    if (!activeShop || loadingMore || prodLoading || !hasMore) return;
+    const shopId = activeShop.id, cat = activeProdCat, next = page + 1;
     setLoadingMore(true);
     try {
-      const next = page + 1;
-      const params: Record<string, string | number> = { vendor_id: activeShop.id, page: next, limit: PAGE_SIZE };
-      if (activeProdCat !== ALL) params.category_id = activeProdCat;
+      const params: Record<string, string | number> = { vendor_id: shopId, page: next, limit: PAGE_SIZE };
+      if (cat !== ALL) params.category_id = cat;
       const res = await api.get("/public/products", { params });
+      // Selection changed while this page was loading — drop the stale result.
+      if (selRef.current.shopId !== shopId || selRef.current.cat !== cat) return;
       setProducts((cur) => [...cur, ...((res.data.data?.items ?? []) as MarketplaceProduct[])]);
       setHasMore(Boolean(res.data.data?.has_more));
       setPage(next);
@@ -155,13 +160,9 @@ export default function BrowsePage() {
     }
   }
   function backToVendor() {
-    setLevel("vendor");
-    setActiveShop(null);
-    setShopCats([]);
-    setProducts([]);
-    if (typeof window !== "undefined") {
-      window.history.pushState(null, "", activeCat === ALL ? "/browse" : `/browse?vc=${activeCat}`);
-    }
+    // Unwind the entry that openShop() pushed; the popstate handler resets the
+    // level + clears shop state, keeping the URL and the UI in sync.
+    if (typeof window !== "undefined") window.history.back();
   }
 
   const activeVendorName = useMemo(
