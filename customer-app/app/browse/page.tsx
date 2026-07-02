@@ -289,7 +289,7 @@ export default function BrowsePage() {
       <header className="sticky top-0 z-30 flex items-center gap-2 border-b border-[var(--mk-border)] bg-[var(--mk-brand)] px-3 py-2.5 text-white">
         <button
           type="button"
-          onClick={() => (level === "shop" ? backToVendor() : router.back())}
+          onClick={() => (level === "shop" ? backToVendor() : router.push("/home"))}
           aria-label="Back"
           className="grid h-9 w-9 place-items-center rounded-full hover:bg-white/15"
         >
