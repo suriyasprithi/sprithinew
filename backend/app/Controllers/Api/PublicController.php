@@ -104,12 +104,38 @@ class PublicController extends BaseApiController
         if ($q) {
             // Match the product name OR the vendor's shop/owner name, so a
             // customer can search by shop ("SF Shop") as well as product ("rice").
+            //
+            // Product-name matching is WORD-BOUNDARY, not a raw substring: the term
+            // must START a word ("oil" -> "Hair Oil", "Oil Filter") so it does not
+            // match mid-word ("oil" living inside "tOILet"). Vendor matching stays a
+            // plain contains-search.
             $vNameIds = (new UserModel())->where('role', 'vendor')->like('name', $q)->findColumn('id') ?: [];
             $vShopIds = (new VendorProfileModel())->like('shop_name', $q)->findColumn('user_id') ?: [];
             $vIds     = array_values(array_unique(array_merge($vNameIds, $vShopIds)));
-            $model->groupStart()->like('name', $q);
+            $model->groupStart()
+                  ->like('name', $q, 'after')          // name starts with the term  -> LIKE 'oil%'
+                  ->orLike('name', ' ' . $q, 'both');   // a later word starts with it -> LIKE '% oil%'
             if (! empty($vIds)) $model->orWhereIn('vendor_id', $vIds);
             $model->groupEnd();
+
+            // Relevance ranking: exact name > starts-with > word-start > matched
+            // only via vendor name, then alphabetical. Literals are escaped, so the
+            // raw ORDER BY is injection-safe. The "id DESC" below stays as the final
+            // tiebreak.
+            $db      = db_connect();
+            $eqLit   = $db->escape($q);
+            $pfxLit  = $db->escape($q . '%');
+            $wordLit = $db->escape('% ' . $q . '%');
+            $model->orderBy(
+                'CASE'
+                . " WHEN LOWER(name) = LOWER($eqLit) THEN 0"
+                . " WHEN LOWER(name) LIKE LOWER($pfxLit) THEN 1"
+                . " WHEN LOWER(name) LIKE LOWER($wordLit) THEN 2"
+                . ' ELSE 3 END',
+                'ASC',
+                false
+            );
+            $model->orderBy('name', 'ASC');
         }
         if ($catId)     $model->where('category_id', $catId);
         if ($vendorId)  $model->where('vendor_id', $vendorId);

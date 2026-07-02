@@ -16,6 +16,24 @@ const fmtINR = (n: number) => new Intl.NumberFormat("en-IN", { style: "currency"
 // Search-suggestion thumbnail: shows the product image, but falls back to the
 // search icon if it's missing OR fails to load (broken URL / 404), so the
 // dropdown never shows the browser's broken-image glyph.
+// Bold the part of a suggestion name that matches what the customer typed, so
+// the reason it surfaced is obvious. Case-insensitive; the term is regex-escaped.
+function Highlighted({ text, term }: { text: string; term: string }) {
+  const t = term.trim();
+  if (!t) return <>{text}</>;
+  const esc = t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const parts = text.split(new RegExp(`(${esc})`, "ig"));
+  return (
+    <>
+      {parts.map((part, i) =>
+        part.toLowerCase() === t.toLowerCase()
+          ? <mark key={i} className="bg-transparent font-bold text-[var(--mk-brand-deep)]">{part}</mark>
+          : <span key={i}>{part}</span>,
+      )}
+    </>
+  );
+}
+
 function SuggestionThumb({ image }: { image: string | null }) {
   const [failed, setFailed] = useState(false);
   const url = fileUrl(image);
@@ -186,7 +204,7 @@ export function MarketplaceHeader({ cartCount = 0, wishlistCount = 0, unreadCoun
                         className="flex w-full items-center gap-3 px-3 py-2 text-left hover:bg-[var(--mk-surface-2)]"
                       >
                         <SuggestionThumb image={s.image} />
-                        <span className="min-w-0 flex-1 truncate text-sm text-[var(--mk-text)]">{s.name}</span>
+                        <span className="min-w-0 flex-1 truncate text-sm text-[var(--mk-text)]"><Highlighted text={s.name} term={q} /></span>
                         <span className="shrink-0 text-xs font-semibold text-[var(--mk-text)]">{fmtINR(s.price)}</span>
                       </button>
                     </li>
