@@ -266,13 +266,13 @@ const esc = (v: string) => (/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v)
 export function buildTemplateCsv(attributes: string[], category = ""): string {
   const attrs = attributes.map((a) => a.trim()).filter(Boolean);
   const headers = [
-    "item_code", "product_name", "category", "brand", "hsn_code", "description",
+    "item_code", "product_name", "category", "sub_category", "brand", "hsn_code", "description",
     ...attrs, "sku", "barcode", "mrp", "offer_price", "stock", "status",
   ];
   // Two sample variant rows for one product (or one plain row if no attributes selected).
   const sampleVals = (i: number): Record<string, string> => {
     const base: Record<string, string> = {
-      item_code: "P001", product_name: "Sample Product", category, brand: "Acme",
+      item_code: "P001", product_name: "Sample Product", category, sub_category: "", brand: "Acme",
       hsn_code: "1006", description: "Sample description",
       sku: `P001-${i + 1}`, barcode: "", mrp: "499", offer_price: "399", stock: String(50 - i * 10), status: "active",
     };
@@ -290,7 +290,7 @@ export function buildTemplateCsv(attributes: string[], category = ""): string {
 
 /** Minimal product shape needed to export to the import CSV format. */
 export type ExportProduct = {
-  id: number; name: string; category_name?: string; brand?: string | null; hsn_code?: string | null;
+  id: number; name: string; category_name?: string; sub_category_name?: string | null; brand?: string | null; hsn_code?: string | null;
   description?: string; code?: string | null; barcode?: string | null; mrp?: number | null;
   price: number; stock: number; status: string;
   variants?: { sku: string | null; options: Record<string, string>; price: number; stock: number }[];
@@ -301,13 +301,13 @@ export function productsToCsv(products: ExportProduct[]): string {
   const attrSet = new Set<string>();
   for (const p of products) for (const v of p.variants ?? []) for (const k of Object.keys(v.options ?? {})) attrSet.add(k);
   const attrs = [...attrSet];
-  const headers = ["item_code", "product_name", "category", "brand", "hsn_code", "description",
+  const headers = ["item_code", "product_name", "category", "sub_category", "brand", "hsn_code", "description",
     ...attrs, "sku", "barcode", "mrp", "offer_price", "stock", "status"];
   const cell = (v: unknown) => (v == null ? "" : String(v));
   const lines = [headers.map(esc).join(",")];
   for (const p of products) {
     const code = (p.code && String(p.code).trim()) || `P${p.id}`;
-    const head = [code, cell(p.name), cell(p.category_name), cell(p.brand), cell(p.hsn_code), cell(p.description)];
+    const head = [code, cell(p.name), cell(p.category_name), cell(p.sub_category_name), cell(p.brand), cell(p.hsn_code), cell(p.description)];
     const tail = (sku: string, price: unknown, stock: unknown) =>
       [sku, cell(p.barcode), cell(p.mrp), cell(price), cell(stock), p.status || "active"];
     const vs = p.variants ?? [];
