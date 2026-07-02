@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Upload, Loader2, Package } from "lucide-react";
+import { Upload, Loader2, Package, FileUp } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -31,6 +31,8 @@ export default function ImportProductsPage() {
   const [progress, setProgress] = useState("");
   const [result, setResult] = useState<ImportSummary | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const [zipFile, setZipFile] = useState<File | null>(null);   // optional product-images ZIP
+  const zipRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     void (async () => {
@@ -75,10 +77,20 @@ export default function ImportProductsPage() {
     if (!valid.length) { toast.error("No valid products to import"); return; }
     setImporting(true);
     setResult(null);
+    let imageBatch = "";
     try {
+      // 1. Upload the images ZIP first (optional) → batch token.
+      if (zipFile) {
+        setProgress("Uploading images…");
+        const fd = new FormData();
+        fd.append("zip", zipFile);
+        const up = await api.post("/admin/products/import-images", fd, { headers: { "Content-Type": "multipart/form-data" }, timeout: 600000 });
+        imageBatch = String(up.data.data?.token ?? "");
+      }
+      // 2. Chunked row import — passes the token so each chunk resolves its images.
       const agg = await runChunkedImport(
         api.post, "/admin/products/import", valid,
-        { vendor_id: Number(vendorId) },
+        { vendor_id: Number(vendorId), ...(imageBatch ? { image_batch: imageBatch } : {}) },
         (done, total) => setProgress(`Importing ${done} / ${total} products…`),
       );
       setResult({
@@ -91,12 +103,16 @@ export default function ImportProductsPage() {
       setProgress("");
       toast.success(`Products ${agg.products.created}+${agg.products.updated}, variants ${agg.variants.created}+${agg.variants.updated}` + (agg.failed ? `, ${agg.failed} failed` : ""));
       setGroups([]); setReview([]); setTotalRows(0); setFileName("");
+      setZipFile(null);
       if (inputRef.current) inputRef.current.value = "";
+      if (zipRef.current) zipRef.current.value = "";
     } catch (e) {
       setProgress("");
       toast.error(apiErrorMessage(e, "Import failed"));
     } finally {
       setImporting(false);
+      // Best-effort cleanup of the extracted ZIP temp on the server.
+      if (imageBatch) { try { await api.post("/admin/products/import-images/cleanup", { token: imageBatch }); } catch { /* ignore */ } }
     }
   }
 
@@ -134,6 +150,20 @@ export default function ImportProductsPage() {
             <Button variant="outline" className="w-full" onClick={() => inputRef.current?.click()} disabled={importing}>
               <Upload className="h-4 w-4" /> {fileName || "Choose CSV / Excel"}
             </Button>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label>Product Images ZIP <span className="text-[11px] font-normal text-muted-foreground">(optional)</span></Label>
+            <input ref={zipRef} type="file" accept=".zip,application/zip" onChange={(e) => setZipFile(e.target.files?.[0] ?? null)} className="hidden" />
+            <div className="flex items-center gap-2">
+              <Button variant="outline" className="w-full justify-start truncate" onClick={() => zipRef.current?.click()} disabled={importing}>
+                <FileUp className="h-4 w-4 shrink-0" /> {zipFile ? zipFile.name : "Choose images ZIP"}
+              </Button>
+              {zipFile && (
+                <Button type="button" variant="ghost" size="sm" className="shrink-0 text-xs text-muted-foreground" disabled={importing} onClick={() => { setZipFile(null); if (zipRef.current) zipRef.current.value = ""; }}>Clear</Button>
+              )}
+            </div>
+            <p className="text-[11px] text-muted-foreground">Matched to each row by the <code>image</code> filename (or SKU). jpg, png, webp. Max 300 MB.</p>
           </div>
 
           {groups.length > 0 && (
