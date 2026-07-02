@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Search, ShoppingCart, LayoutGrid, ChevronRight, Store, Pill, Package, Loader2 } from "lucide-react";
+import { ArrowLeft, Search, ShoppingCart, LayoutGrid, ChevronRight, Store, Pill, Package, Loader2, X } from "lucide-react";
 import { api } from "@/lib/api";
 import { cartBadge } from "@/lib/cart";
 import { ProductCard, type MarketplaceProduct } from "@/components/marketplace/product-card";
@@ -22,6 +22,11 @@ function geoParams(): Record<string, string> {
   else if (loc?.state_id)    p.state_id    = String(loc.state_id);
   return p;
 }
+
+// Session cache so switching back to a vendor category is instant (no refetch).
+// Cleared when the delivery location changes. Products are not cached (paginated
+// + searchable), only the vendor rail and the per-category shop lists.
+const browseCache: { vendorCats: VendorCategory[] | null; shops: Map<number, Shop[]> } = { vendorCats: null, shops: new Map() };
 
 const ALL = 0; // sentinel for "All Shops" / "All Products"
 const PAGE_SIZE = 24;
@@ -47,6 +52,14 @@ export default function BrowsePage() {
   const [hasMore, setHasMore] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
 
+  // ---- search (one box; filters shops on the vendor level, products on the shop level) ----
+  const [query, setQuery] = useState("");
+  const [debouncedQ, setDebouncedQ] = useState("");
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedQ(query.trim()), 350);
+    return () => clearTimeout(t);
+  }, [query]);
+
   // ---- cart bar ----
   const [cartCount, setCartCount] = useState(0);
   useEffect(() => {
@@ -55,35 +68,43 @@ export default function BrowsePage() {
     return cartBadge.subscribe(sync);
   }, []);
 
-  // Vendor categories (left rail, vendor level). Re-fetch on location change.
+  // Vendor categories (left rail). Cached for the session; re-fetch on location change.
   useEffect(() => {
-    const run = async () => {
+    const run = async (force = false) => {
+      if (!force && browseCache.vendorCats) { setCats(browseCache.vendorCats); setCatsLoading(false); return; }
       setCatsLoading(true);
       try {
         const res = await api.get("/vendor-categories", { params: geoParams() });
-        setCats((res.data.data?.items ?? []) as VendorCategory[]);
+        const items = (res.data.data?.items ?? []) as VendorCategory[];
+        browseCache.vendorCats = items;
+        setCats(items);
       } catch { setCats([]); } finally { setCatsLoading(false); }
     };
     void run();
     if (typeof window !== "undefined") {
       const vc = Number(new URLSearchParams(window.location.search).get("vc") || 0);
       if (vc > 0) setActiveCat(vc);
-      const onLoc = () => { void run(); };
+      const onLoc = () => { browseCache.vendorCats = null; browseCache.shops.clear(); void run(true); };
       window.addEventListener("epey-location-changed", onLoc);
       return () => window.removeEventListener("epey-location-changed", onLoc);
     }
   }, []);
 
-  // Shops for the active vendor category.
+  // Shops for the active vendor category (cached per category).
   useEffect(() => {
     let cancelled = false;
     const run = async () => {
+      const cached = browseCache.shops.get(activeCat);
+      if (cached) { setShops(cached); setShopsLoading(false); return; }
       setShopsLoading(true);
       try {
         const params = geoParams();
         if (activeCat !== ALL) params.vendor_category_id = String(activeCat);
         const res = await api.get("/public/vendors", { params });
-        if (!cancelled) setShops((res.data.data?.items ?? []) as Shop[]);
+        const items = (res.data.data?.items ?? []) as Shop[];
+        if (cancelled) return;
+        browseCache.shops.set(activeCat, items);
+        setShops(items);
       } catch { if (!cancelled) setShops([]); } finally { if (!cancelled) setShopsLoading(false); }
     };
     void run();
@@ -93,10 +114,9 @@ export default function BrowsePage() {
     return () => { cancelled = true; };
   }, [activeCat]);
 
-  // Products for the active shop + product category (page 1). The PUBLIC
-  // /public/products response also carries the shop's real product categories
-  // (only the ones it actually stocks) — use those for the left rail instead of
-  // the auth-gated /catalog/shops/:id, so guests can browse without a login bounce.
+  // Products for the active shop + product category + search (page 1). The PUBLIC
+  // /public/products response also carries the shop's real product categories —
+  // use those for the rail (guest-safe; only categories the shop actually stocks).
   useEffect(() => {
     if (level !== "shop" || !activeShop) return;
     let cancelled = false;
@@ -104,6 +124,7 @@ export default function BrowsePage() {
     setProducts([]);
     const params: Record<string, string | number> = { vendor_id: activeShop.id, page: 1, limit: PAGE_SIZE };
     if (activeProdCat !== ALL) params.category_id = activeProdCat;
+    if (debouncedQ) params.q = debouncedQ;
     api.get("/public/products", { params })
       .then((res) => {
         if (cancelled) return;
@@ -111,48 +132,61 @@ export default function BrowsePage() {
         setProducts((data.items ?? []) as MarketplaceProduct[]);
         setHasMore(Boolean(data.has_more));
         setPage(1);
-        // Rail categories come from the unfiltered (All Products) response only,
-        // where the payload lists every category the shop stocks.
-        if (activeProdCat === ALL) setShopCats((data.categories ?? []) as ProductCategory[]);
+        // Rail categories only from the unfiltered (All Products, no search) response.
+        if (activeProdCat === ALL && !debouncedQ) setShopCats((data.categories ?? []) as ProductCategory[]);
       })
       .catch(() => { if (!cancelled) { setProducts([]); setHasMore(false); } })
       .finally(() => { if (!cancelled) setProdLoading(false); });
     return () => { cancelled = true; };
-  }, [level, activeShop, activeProdCat]);
+  }, [level, activeShop, activeProdCat, debouncedQ]);
 
-  // Current selection, tracked in a ref so an in-flight loadMore can detect that
-  // the shop/category changed while its request was pending and discard the stale
-  // page (otherwise it would append the old category's items onto the new list).
-  const selRef = useRef<{ shopId: number; cat: number }>({ shopId: 0, cat: ALL });
-  useEffect(() => { selRef.current = { shopId: activeShop?.id ?? 0, cat: activeProdCat }; }, [activeShop, activeProdCat]);
+  // Current selection (+ search), tracked in a ref so an in-flight loadMore can
+  // detect a change and discard its stale page.
+  const selRef = useRef<{ shopId: number; cat: number; q: string }>({ shopId: 0, cat: ALL, q: "" });
+  useEffect(() => { selRef.current = { shopId: activeShop?.id ?? 0, cat: activeProdCat, q: debouncedQ }; }, [activeShop, activeProdCat, debouncedQ]);
 
   // Hardware back while in a shop → return to the vendor/shop-list level.
   useEffect(() => {
-    const onPop = () => { setLevel("vendor"); setActiveShop(null); setShopCats([]); setProducts([]); };
+    const onPop = () => { setLevel("vendor"); setActiveShop(null); setShopCats([]); setProducts([]); setQuery(""); };
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
   }, []);
 
   async function loadMore() {
     if (!activeShop || loadingMore || prodLoading || !hasMore) return;
-    const shopId = activeShop.id, cat = activeProdCat, next = page + 1;
+    const shopId = activeShop.id, cat = activeProdCat, q = debouncedQ, next = page + 1;
     setLoadingMore(true);
     try {
       const params: Record<string, string | number> = { vendor_id: shopId, page: next, limit: PAGE_SIZE };
       if (cat !== ALL) params.category_id = cat;
+      if (q) params.q = q;
       const res = await api.get("/public/products", { params });
-      // Selection changed while this page was loading — drop the stale result.
-      if (selRef.current.shopId !== shopId || selRef.current.cat !== cat) return;
+      if (selRef.current.shopId !== shopId || selRef.current.cat !== cat || selRef.current.q !== q) return; // stale
       setProducts((cur) => [...cur, ...((res.data.data?.items ?? []) as MarketplaceProduct[])]);
       setHasMore(Boolean(res.data.data?.has_more));
       setPage(next);
     } catch { /* keep current list */ } finally { setLoadingMore(false); }
   }
 
+  // Infinite scroll — auto-load the next page when the sentinel nears the viewport.
+  // loadMore's own guards make repeat firings safe no-ops.
+  const loadMoreRef = useRef(loadMore);
+  loadMoreRef.current = loadMore;
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (level !== "shop") return;
+    const el = sentinelRef.current;
+    if (!el || typeof IntersectionObserver === "undefined") return;
+    const io = new IntersectionObserver((entries) => { if (entries[0]?.isIntersecting) void loadMoreRef.current(); }, { rootMargin: "600px" });
+    io.observe(el);
+    return () => io.disconnect();
+  }, [level, activeShop]);
+
   function openShop(shop: Shop) {
     setActiveShop(shop);
     setActiveProdCat(ALL);
     setShopCats([]);
+    setQuery("");
     setLevel("shop");
     if (typeof window !== "undefined") {
       window.scrollTo(0, 0);
@@ -160,8 +194,7 @@ export default function BrowsePage() {
     }
   }
   function backToVendor() {
-    // Unwind the entry that openShop() pushed; the popstate handler resets the
-    // level + clears shop state, keeping the URL and the UI in sync.
+    // Unwind the entry openShop() pushed; popstate resets the level + clears state.
     if (typeof window !== "undefined") window.history.back();
   }
 
@@ -171,6 +204,13 @@ export default function BrowsePage() {
   );
   const activeShopName = activeShop?.shop_name || activeShop?.name || "Shop";
   const activeProdCatName = activeProdCat === ALL ? "All Products" : shopCats.find((c) => c.id === activeProdCat)?.name ?? "Products";
+
+  // Vendor-level shop search is client-side over the (≤100) loaded shops.
+  const shownShops = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return shops;
+    return shops.filter((s) => (s.shop_name || s.name || "").toLowerCase().includes(q) || (s.area || "").toLowerCase().includes(q));
+  }, [shops, query]);
 
   return (
     <div className="min-h-dvh bg-[var(--mk-surface)] pb-16">
@@ -185,11 +225,6 @@ export default function BrowsePage() {
           <ArrowLeft className="h-5 w-5" />
         </button>
         <h1 className="flex-1 truncate text-base font-bold">{level === "shop" ? activeShopName : "Browse"}</h1>
-        {level === "vendor" && (
-          <Link href="/shop-public" aria-label="Search" className="grid h-9 w-9 place-items-center rounded-full hover:bg-white/15">
-            <Search className="h-5 w-5" />
-          </Link>
-        )}
         <Link href="/cart" aria-label="Cart" className="relative grid h-9 w-9 place-items-center rounded-full hover:bg-white/15">
           <ShoppingCart className="h-5 w-5" />
           {cartCount > 0 && (
@@ -232,52 +267,67 @@ export default function BrowsePage() {
 
         {/* RIGHT content */}
         <section className="min-h-[calc(100dvh-53px)] px-3 py-4 md:px-5">
+          {/* Search box (adapts to the current level) */}
+          <div className="relative mb-3">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--mk-text-muted)]" />
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder={level === "shop" ? `Search in ${activeShopName}…` : "Search shops…"}
+              className="h-11 w-full rounded-xl border border-[var(--mk-border)] bg-white pl-9 pr-9 text-sm outline-none focus:border-[var(--mk-brand)]/50"
+            />
+            {query && (
+              <button type="button" onClick={() => setQuery("")} aria-label="Clear" className="absolute right-2 top-1/2 grid h-7 w-7 -translate-y-1/2 place-items-center rounded-full text-[var(--mk-text-muted)] hover:bg-[var(--mk-surface-2)]">
+                <X className="h-4 w-4" />
+              </button>
+            )}
+          </div>
+
           {level === "vendor" ? (
             <>
               <div className="mb-3 flex items-baseline justify-between gap-2">
                 <h2 className="truncate text-lg font-bold">{activeVendorName}</h2>
-                {!shopsLoading && shops.length > 0 && <span className="shrink-0 text-xs font-medium text-[var(--mk-text-muted)]">{shops.length} shops</span>}
+                {!shopsLoading && shownShops.length > 0 && <span className="shrink-0 text-xs font-medium text-[var(--mk-text-muted)]">{shownShops.length} shops</span>}
               </div>
               {shopsLoading ? (
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
                   {Array.from({ length: 6 }).map((_, i) => <div key={i} className="h-[84px] animate-pulse rounded-2xl bg-[var(--mk-surface-3)]" />)}
                 </div>
-              ) : shops.length === 0 ? (
-                <EmptyState icon={<Store className="h-6 w-6" />} title={`No shops in ${activeVendorName}`} sub="Nothing here for your delivery area yet. Try another category or change your location." />
+              ) : shownShops.length === 0 ? (
+                <EmptyState icon={<Store className="h-6 w-6" />} title={query ? "No shops match your search" : `No shops in ${activeVendorName}`} sub={query ? "Try a different name." : "Nothing here for your delivery area yet. Try another category or change your location."} />
               ) : (
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                  {shops.map((s) => <ShopCard key={s.id} shop={s} onOpen={() => openShop(s)} />)}
+                  {shownShops.map((s) => <ShopCard key={s.id} shop={s} onOpen={() => openShop(s)} />)}
                 </div>
               )}
             </>
           ) : (
             <>
               <div className="mb-3 flex items-baseline justify-between gap-2">
-                <h2 className="truncate text-lg font-bold">{activeProdCatName}</h2>
-                {!prodLoading && products.length > 0 && <span className="shrink-0 text-xs font-medium text-[var(--mk-text-muted)]">{products.length} items</span>}
+                <h2 className="truncate text-lg font-bold">{debouncedQ ? `“${debouncedQ}”` : activeProdCatName}</h2>
+                {!prodLoading && products.length > 0 && <span className="shrink-0 text-xs font-medium text-[var(--mk-text-muted)]">{products.length}{hasMore ? "+" : ""} items</span>}
               </div>
               {prodLoading ? (
                 <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
                   {Array.from({ length: 8 }).map((_, i) => <div key={i} className="h-64 animate-pulse rounded-2xl bg-[var(--mk-surface-3)]" />)}
                 </div>
               ) : products.length === 0 ? (
-                <EmptyState icon={<Package className="h-6 w-6" />} title="No products here" sub="This shop has no products in this category yet." />
+                <EmptyState icon={<Package className="h-6 w-6" />} title={debouncedQ ? "No matching products" : "No products here"} sub={debouncedQ ? "Try another search term." : "This shop has no products in this category yet."} />
               ) : (
                 <>
                   <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-                    {products.map((p) => <ProductCard key={p.id} product={p} />)}
+                    {products.map((p) => (
+                      // content-visibility: skip rendering off-screen cards (native
+                      // virtualization) so very large lists stay smooth — no extra deps.
+                      <div key={p.id} className="[content-visibility:auto] [contain-intrinsic-size:auto_320px]">
+                        <ProductCard product={p} />
+                      </div>
+                    ))}
                   </div>
-                  {hasMore && (
-                    <div className="mt-5 flex justify-center">
-                      <button
-                        type="button"
-                        onClick={() => void loadMore()}
-                        disabled={loadingMore}
-                        className="inline-flex items-center gap-1.5 rounded-full border border-[var(--mk-border)] bg-white px-5 py-2 text-sm font-semibold text-[var(--mk-text)] shadow-[var(--mk-shadow-sm)] hover:border-[var(--mk-brand)]/40 hover:text-[var(--mk-brand-deep)] disabled:opacity-60"
-                      >
-                        {loadingMore ? <Loader2 className="h-4 w-4 animate-spin" /> : "Load more"}
-                      </button>
-                    </div>
+                  {/* Infinite-scroll sentinel + spinner */}
+                  <div ref={sentinelRef} className="h-10" />
+                  {loadingMore && (
+                    <div className="flex justify-center py-3"><Loader2 className="h-5 w-5 animate-spin text-[var(--mk-brand)]" /></div>
                   )}
                 </>
               )}
