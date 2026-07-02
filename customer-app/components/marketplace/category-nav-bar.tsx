@@ -44,8 +44,18 @@ function emojiFor(name: string): string {
 export function CategoryNavBar() {
   const [cats, setCats] = useState<VendorCategory[]>([]);
   const [open, setOpen] = useState(false);
+  // Only wire hover-to-open on real pointer devices. On touch a single tap
+  // fires BOTH mouseenter (open) and click (toggle) → the menu opened then
+  // closed, so it took a second tap. On touch we rely on the tap toggle only.
+  const [canHover, setCanHover] = useState(false);
   const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const wrapperRef = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    if (typeof window !== "undefined" && window.matchMedia) {
+      setCanHover(window.matchMedia("(hover: hover) and (pointer: fine)").matches);
+    }
+  }, []);
 
   useEffect(() => {
     const fetchCats = async () => {
@@ -117,7 +127,7 @@ export function CategoryNavBar() {
     <nav
       ref={wrapperRef}
       className="relative border-b border-[var(--mk-border)] bg-[var(--mk-surface)]"
-      onMouseLeave={scheduleClose}
+      onMouseLeave={canHover ? scheduleClose : undefined}
     >
       <div
         className="flex w-full items-center gap-2 px-4"
@@ -125,7 +135,7 @@ export function CategoryNavBar() {
         {/* Shop by Category trigger */}
         <div
           className="relative"
-          onMouseEnter={() => { cancelClose(); setOpen(true); }}
+          onMouseEnter={canHover ? () => { cancelClose(); setOpen(true); } : undefined}
         >
           <button
             type="button"
@@ -171,8 +181,8 @@ export function CategoryNavBar() {
       {open && (
         <div
           className="absolute inset-x-0 top-full z-40 border-t border-[var(--mk-border)] bg-white shadow-[var(--mk-shadow-md)]"
-          onMouseEnter={cancelClose}
-          onMouseLeave={scheduleClose}
+          onMouseEnter={canHover ? cancelClose : undefined}
+          onMouseLeave={canHover ? scheduleClose : undefined}
         >
           <div className="mx-auto max-w-7xl px-4 py-5">
             <div className="mb-3 flex items-center justify-between">
