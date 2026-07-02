@@ -260,7 +260,21 @@ class VendorManagementController extends BaseApiController
         }
 
         $d = $this->request->getJSON(true) ?? $this->request->getPost();
-        $userPayload = array_intersect_key($d, array_flip(['name', 'email', 'status']));
+
+        // Mobile number is the vendor's login id — validate the format and reject
+        // a number already taken by another vendor. Only checked when it changes.
+        if (isset($d['mobile_number']) && (string) $d['mobile_number'] !== (string) ($u['mobile_number'] ?? '')) {
+            if (! preg_match('/^[0-9]{10}$/', (string) $d['mobile_number'])) {
+                return $this->fail('Enter a valid 10-digit mobile number', 422);
+            }
+            $clash = $users->where('mobile_number', $d['mobile_number'])
+                ->where('role', 'vendor')
+                ->where('id !=', $id)
+                ->first();
+            if ($clash) return $this->fail('Mobile already used for vendor', 409);
+        }
+
+        $userPayload = array_intersect_key($d, array_flip(['name', 'mobile_number', 'email', 'status']));
         if ($userPayload) $users->update($id, $userPayload);
 
         $profileFields = ['shop_name', 'address', 'area', 'district_id', 'taluk_id', 'gst', 'vendor_category_id', 'commission_pct'];

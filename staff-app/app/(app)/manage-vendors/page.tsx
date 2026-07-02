@@ -38,7 +38,7 @@ const kycPill = (s: string | null) =>
   : "bg-surface-2 text-muted-foreground";
 
 type NewVendor = { name: string; mobile: string; shop_name: string; password: string; vendor_category_id: string; commission_pct: string };
-type EditVendor = { id: number; name: string; shop_name: string; vendor_category_id: string; commission_pct: string };
+type EditVendor = { id: number; name: string; mobile: string; shop_name: string; vendor_category_id: string; commission_pct: string };
 type ResetPw = { id: number; shop_name: string; password: string };
 type VendorCategoryOption = { id: number; name: string };
 type VendorTemplate = { id: number; name: string; vendor_category_id: number | null; commission_pct: number };
@@ -242,6 +242,7 @@ export default function ManageVendorsPage() {
     setEditing({
       id: v.id,
       name: v.name,
+      mobile: v.mobile,
       shop_name: v.shop_name,
       vendor_category_id: v.vendor_category_id ? String(v.vendor_category_id) : "",
       commission_pct: String(v.commission_pct ?? 10),
@@ -254,6 +255,7 @@ export default function ManageVendorsPage() {
       toast.error("All fields required");
       return;
     }
+    if (!isMobile(editing.mobile)) { toast.error("Enter a valid 10-digit mobile number"); return; }
     const commissionPct = editing.commission_pct === "" ? 10 : Number(editing.commission_pct);
     if (Number.isNaN(commissionPct) || commissionPct < 0 || commissionPct > 100) {
       toast.error("Commission must be 0–100");
@@ -263,12 +265,13 @@ export default function ManageVendorsPage() {
     try {
       await api.patch(`/vendors/${editing.id}`, {
         name: editing.name,
+        mobile_number: editing.mobile,
         shop_name: editing.shop_name,
         vendor_category_id: Number(editing.vendor_category_id),
         commission_pct: commissionPct,
       });
       setItems((cur) => cur.map((x) => (x.id === editing.id
-        ? { ...x, name: editing.name, shop_name: editing.shop_name, vendor_category_id: Number(editing.vendor_category_id), commission_pct: commissionPct }
+        ? { ...x, name: editing.name, mobile: editing.mobile, shop_name: editing.shop_name, vendor_category_id: Number(editing.vendor_category_id), commission_pct: commissionPct }
         : x)));
       toast.success("Vendor updated");
       setEditing(null);
@@ -644,10 +647,11 @@ export default function ManageVendorsPage() {
         <DialogContent className="rounded-2xl border-border bg-popover">
           <DialogHeader>
             <DialogTitle>Edit vendor</DialogTitle>
-            <DialogDescription>Update owner name, shop name, or category.</DialogDescription>
+            <DialogDescription>Update owner name, mobile, shop name, or category.</DialogDescription>
           </DialogHeader>
           <div className="grid gap-3">
             <div className="space-y-1.5"><Label>Owner name</Label><Input value={editing?.name ?? ""} onChange={(e) => setEditing((p) => p && ({ ...p, name: e.target.value }))} /></div>
+            <div className="space-y-1.5"><Label>Mobile <span className="text-muted-foreground">(login number)</span></Label><Input inputMode="numeric" maxLength={10} value={editing?.mobile ?? ""} onChange={(e) => setEditing((p) => p && ({ ...p, mobile: cleanMobile(e.target.value) }))} /></div>
             <div className="space-y-1.5"><Label>Shop name</Label><Input value={editing?.shop_name ?? ""} onChange={(e) => setEditing((p) => p && ({ ...p, shop_name: e.target.value }))} /></div>
             <div className="space-y-1.5">
               <Label>Vendor category</Label>
