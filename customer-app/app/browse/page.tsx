@@ -319,7 +319,9 @@ export default function BrowsePage() {
                     {products.map((p) => (
                       // content-visibility: skip rendering off-screen cards (native
                       // virtualization) so very large lists stay smooth — no extra deps.
-                      <div key={p.id} className="[content-visibility:auto] [contain-intrinsic-size:auto_320px]">
+                      // `grid` makes the card stretch to the equalized row height so
+                      // the ADD buttons line up regardless of name/badge/chip height.
+                      <div key={p.id} className="grid [content-visibility:auto] [contain-intrinsic-size:auto_320px]">
                         <ProductCard product={p} />
                       </div>
                     ))}
