@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { ChevronDown } from "lucide-react";
 import { api } from "@/lib/api";
 import { readSavedLocation } from "./location-picker";
 
@@ -12,6 +13,9 @@ type VendorCategory = {
   product_count?: number | string;
   status: string;
 };
+
+// How many tiles to show collapsed — 2 rows on the 4-column mobile grid.
+const COLLAPSED = 8;
 
 const PALETTE = ["bg-[#FCEBC5]", "bg-[#FBE4DE]", "bg-[#E8F2D8]", "bg-[#FFEAD2]", "bg-[#FFD9CE]", "bg-[#F8C6BD]"];
 
@@ -38,8 +42,9 @@ function emojiFor(name: string): string {
 export function FeaturedCategories() {
   const [cats, setCats] = useState<VendorCategory[]>([]);
   const [loading, setLoading] = useState(true);
+  const [expanded, setExpanded] = useState(false);
 
-  // Filtered by chosen delivery location. Show up to 16 tiles in the grid.
+  // Filtered by chosen delivery location.
   useEffect(() => {
     const fetchCats = async () => {
       setLoading(true);
@@ -51,7 +56,7 @@ export function FeaturedCategories() {
         else if (loc?.state_id)    params.state_id    = String(loc.state_id);
         const res = await api.get("/vendor-categories", { params });
         const items = (res.data.data?.items ?? []) as VendorCategory[];
-        setCats(items.slice(0, 16));
+        setCats(items);
       } catch {
         setCats([]);
       } finally {
@@ -74,9 +79,9 @@ export function FeaturedCategories() {
           <div className="h-3 w-24 animate-pulse rounded bg-[var(--mk-surface-3)]" />
           <div className="h-6 w-48 animate-pulse rounded bg-[var(--mk-surface-3)]" />
         </div>
-        <div className="grid grid-cols-4 gap-x-3 gap-y-4 sm:grid-cols-6 lg:grid-cols-8">
+        <div className="grid grid-cols-4 gap-x-3 gap-y-5 sm:grid-cols-6 lg:grid-cols-8">
           {Array.from({ length: 8 }).map((_, i) => (
-            <div key={i} className="flex flex-col items-center gap-1.5">
+            <div key={i} className="flex flex-col items-center gap-2">
               <div className="aspect-square w-full animate-pulse rounded-2xl bg-[var(--mk-surface-3)]" />
               <div className="h-3 w-12 animate-pulse rounded bg-[var(--mk-surface-3)]" />
             </div>
@@ -89,9 +94,12 @@ export function FeaturedCategories() {
     return null;
   }
 
+  const shown = expanded ? cats : cats.slice(0, COLLAPSED);
+  const hiddenCount = cats.length - COLLAPSED;
+
   return (
     <section className="mx-auto max-w-7xl px-4 py-6">
-      <div className="mb-4 flex items-center justify-between gap-3">
+      <div className="mb-5 flex items-center justify-between gap-3">
         <div className="min-w-0">
           <p className="text-[11px] font-semibold uppercase tracking-wider text-[var(--mk-text-muted)]">Our Collection</p>
           <h2 className="text-xl font-bold tracking-tight md:text-2xl">Featured Categories</h2>
@@ -105,18 +113,18 @@ export function FeaturedCategories() {
       </div>
 
       {/* Compact tile grid — rounded image square + name below */}
-      <div className="grid grid-cols-4 gap-x-3 gap-y-4 sm:grid-cols-6 lg:grid-cols-8">
-        {cats.map((c, i) => {
+      <div className="grid grid-cols-4 gap-x-3 gap-y-5 sm:grid-cols-6 lg:grid-cols-8">
+        {shown.map((c, i) => {
           const bg = PALETTE[i % PALETTE.length];
           const hasImage = typeof c.image === "string" && c.image.length > 0;
           return (
             <Link
               key={c.id}
               href={`/shop-public?vendor_category_id=${c.id}`}
-              className="group flex flex-col items-center gap-1.5 text-center"
+              className="group flex flex-col items-center gap-2 text-center"
             >
               <div
-                className={`aspect-square w-full overflow-hidden rounded-2xl shadow-[var(--mk-shadow-sm)] transition-transform duration-200 group-hover:-translate-y-0.5 group-hover:shadow-[var(--mk-shadow-md)] ${hasImage ? "bg-black" : bg}`}
+                className={`aspect-square w-full overflow-hidden rounded-2xl ring-1 ring-black/5 shadow-[var(--mk-shadow-sm)] transition-all duration-200 group-hover:-translate-y-1 group-hover:shadow-[var(--mk-shadow-md)] group-hover:ring-[var(--mk-brand)]/30 ${hasImage ? "bg-[var(--mk-surface-2)]" : bg}`}
               >
                 {hasImage ? (
                   // eslint-disable-next-line @next/next/no-img-element
@@ -124,7 +132,7 @@ export function FeaturedCategories() {
                     src={c.image as string}
                     alt={c.name}
                     loading="lazy"
-                    className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+                    className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-110"
                   />
                 ) : (
                   <span className="flex h-full w-full items-center justify-center text-3xl leading-none">
@@ -132,13 +140,28 @@ export function FeaturedCategories() {
                   </span>
                 )}
               </div>
-              <span className="line-clamp-2 text-xs font-medium leading-tight text-[var(--mk-text)] group-hover:text-[var(--mk-brand-deep)] md:text-sm">
+              {/* Fixed 2-line height so every tile in a row lines up neatly. */}
+              <span className="line-clamp-2 min-h-[2.1rem] text-xs font-medium leading-tight text-[var(--mk-text)] transition-colors group-hover:text-[var(--mk-brand-deep)] md:text-[13px]">
                 {c.name}
               </span>
             </Link>
           );
         })}
       </div>
+
+      {hiddenCount > 0 && (
+        <div className="mt-5 flex justify-center">
+          <button
+            type="button"
+            onClick={() => setExpanded((v) => !v)}
+            aria-expanded={expanded}
+            className="inline-flex items-center gap-1.5 rounded-full border border-[var(--mk-border)] bg-white px-5 py-2 text-sm font-semibold text-[var(--mk-text)] shadow-[var(--mk-shadow-sm)] transition-colors hover:border-[var(--mk-brand)]/40 hover:text-[var(--mk-brand-deep)]"
+          >
+            {expanded ? "Show less" : `More (${hiddenCount})`}
+            <ChevronDown className={`h-4 w-4 transition-transform duration-200 ${expanded ? "rotate-180" : ""}`} />
+          </button>
+        </div>
+      )}
     </section>
   );
 }
