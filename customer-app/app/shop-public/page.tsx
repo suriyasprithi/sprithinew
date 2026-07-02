@@ -290,9 +290,10 @@ function PublicShopInner() {
             </div>
             <button
               type="submit"
-              className="inline-flex h-11 items-center gap-1.5 rounded-xl bg-[var(--mk-brand)] px-4 text-sm font-semibold text-white shadow-[var(--mk-shadow-sm)] transition-colors hover:bg-[var(--mk-brand-deep)]"
+              aria-label="Search"
+              className="inline-flex h-11 items-center justify-center rounded-xl bg-[var(--mk-brand)] px-4 text-white shadow-[var(--mk-shadow-sm)] transition-colors hover:bg-[var(--mk-brand-deep)]"
             >
-              <Search className="h-4 w-4" /> Search
+              <Search className="h-5 w-5" />
             </button>
           </form>
         </div>
