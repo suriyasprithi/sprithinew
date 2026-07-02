@@ -145,8 +145,9 @@ export default function ImportProductsPage() {
 
           <p className="text-[11px] text-muted-foreground">
             Reserved columns: item_code, product_name, category, sub_category, brand, hsn_code, description, sku,
-            barcode, mrp, offer_price, stock, status. Every other column is treated as a variant attribute.
+            barcode, mrp, offer_price, stock, status, image. Every other column is treated as a variant attribute.
             <span className="text-foreground"> sub_category is optional</span> — created under its category on import.
+            <span className="text-foreground"> image</span> = a filename inside the uploaded ZIP (or a full URL).
             Discount % is auto-computed from MRP &amp; offer price.
           </p>
         </LuxuryCard>
