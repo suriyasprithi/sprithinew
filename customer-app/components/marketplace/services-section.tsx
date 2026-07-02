@@ -21,7 +21,7 @@ export function ServicesSection() {
           <p className="text-[11px] font-semibold uppercase tracking-wider text-[var(--mk-text-muted)]">Beyond products</p>
           <h2 className="text-xl font-bold tracking-tight md:text-2xl">Services marketplace</h2>
         </div>
-        <Link href="/shop-public" className="text-sm font-semibold text-[var(--mk-brand)] hover:underline">
+        <Link href="/browse" className="text-sm font-semibold text-[var(--mk-brand)] hover:underline">
           See all →
         </Link>
       </div>
@@ -32,7 +32,7 @@ export function ServicesSection() {
           return (
             <Link
               key={s.label}
-              href="/shop-public"
+              href="/browse"
               className="group flex flex-col gap-2 rounded-2xl border border-[var(--mk-border)] bg-[var(--mk-surface)] p-4 transition-all hover:-translate-y-0.5 hover:border-[var(--mk-brand)]/40 hover:shadow-[var(--mk-shadow-md)]"
             >
               <span className={`inline-flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br ${s.gradient} text-white shadow-sm transition-transform group-hover:scale-105`}>

@@ -156,6 +156,10 @@ export default function PublicHomePage() {
         />
       )}
       <FeaturedCategories />
+
+      {/* Local vendors — placed directly under Featured Categories */}
+      <VendorsRow vendors={vendors} loading={loading} />
+
       {(customerVideos.length > 0 || vendorVideos.length > 0) && (
         <section className="mx-auto max-w-7xl px-4 py-6">
           <div className={`grid gap-4 ${customerVideos.length > 0 && vendorVideos.length > 0 ? "md:grid-cols-2" : "grid-cols-1"}`}>
@@ -188,8 +192,6 @@ export default function PublicHomePage() {
       {products.length > 0 && <FlashSale products={products} loading={loading} />}
 
       <ServicesSection />
-
-      <VendorsRow vendors={vendors} loading={loading} />
 
       <MarketplaceFooter />
       <FloatingActions />

@@ -146,6 +146,10 @@ function PublicShopInner() {
   const stateId    = sp?.get("state_id")    ? Number(sp.get("state_id"))    : null;
   // Vendor-category scope (Featured Categories click).
   const vendorCategoryId = sp?.get("vendor_category_id") ? Number(sp.get("vendor_category_id")) : null;
+  // "Products" nav opens a clean, products-only listing (?products=1): hide the
+  // browse chrome — vendor-category tabs, Shops pills, category/sub-category tabs —
+  // and keep just the search bar + "All products" grid + infinite scroll.
+  const productsOnly = sp?.get("products") === "1";
   // The shop currently in view (when scoped to one). Pharmacies accept a
   // prescription-only order, so we surface that entry below.
   const selectedVendor = vendorId ? vendors.find((v) => v.id === vendorId) ?? null : null;
@@ -346,7 +350,7 @@ function PublicShopInner() {
       </section>
 
       {/* Category tabs (vendor categories — same taxonomy as Shop by Category) */}
-      {vcats.length > 0 && (
+      {!productsOnly && vcats.length > 0 && (
         <section className="mx-auto max-w-7xl px-4 pt-4">
           <div className="flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             <CategoryPill active={vendorCategoryId === null} onClick={() => setVendorCategory(null)}>All</CategoryPill>
@@ -358,7 +362,7 @@ function PublicShopInner() {
       )}
 
       {/* Shop (vendor) pills — pick a shop to see only its products */}
-      {vendors.length > 0 && (
+      {!productsOnly && vendors.length > 0 && (
         <section className="mx-auto max-w-7xl px-4 pt-3">
           <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-[var(--mk-text-muted)]">Shops</p>
           <div className="flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
@@ -371,7 +375,7 @@ function PublicShopInner() {
       )}
 
       {/* Product-category tabs — filter the products in view by their category */}
-      {productCats.length > 1 && (
+      {!productsOnly && productCats.length > 1 && (
         <section className="mx-auto max-w-7xl px-4 pt-3">
           <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-[var(--mk-text-muted)]">Categories</p>
           <div className="flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
@@ -384,7 +388,7 @@ function PublicShopInner() {
       )}
 
       {/* Sub-category tabs — only when a category with sub-categories is active */}
-      {activeCat != null && subCats.length > 0 && (
+      {!productsOnly && activeCat != null && subCats.length > 0 && (
         <section className="mx-auto max-w-7xl px-4 pt-2">
           <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-[var(--mk-text-muted)]">Sub-categories</p>
           <div className="flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">

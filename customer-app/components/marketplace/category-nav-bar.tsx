@@ -9,7 +9,7 @@ import { readSavedLocation } from "./location-picker";
 const PRIMARY = [
   { label: "Home",     href: "/home",         icon: Home },
   { label: "Shop",     href: "/browse",       icon: ShoppingBag },
-  { label: "Products", href: "/shop-public",  icon: Package },
+  { label: "Products", href: "/shop-public?products=1",  icon: Package },
   { label: "Blogs",    href: "/blog",         icon: Newspaper },
 ];
 
