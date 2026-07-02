@@ -1,9 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
-import useEmblaCarousel from "embla-carousel-react";
-import { ArrowRight, ChevronLeft, ChevronRight } from "lucide-react";
 import { api } from "@/lib/api";
 import { readSavedLocation } from "./location-picker";
 
@@ -17,7 +15,7 @@ type VendorCategory = {
 
 const PALETTE = ["bg-[#FCEBC5]", "bg-[#FBE4DE]", "bg-[#E8F2D8]", "bg-[#FFEAD2]", "bg-[#FFD9CE]", "bg-[#F8C6BD]"];
 
-// Pick a sensible emoji from the category name. Tweak as you add categories.
+// Fallback emoji for categories that don't have an image yet.
 function emojiFor(name: string): string {
   const n = name.toLowerCase();
   if (/(pastry|pastries|croissant)/.test(n))    return "🥐";
@@ -41,8 +39,7 @@ export function FeaturedCategories() {
   const [cats, setCats] = useState<VendorCategory[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Show up to 12 in the carousel so there's something to swipe through when the
-  // user has more than fit on screen at once. Filters by chosen delivery location.
+  // Filtered by chosen delivery location. Show up to 16 tiles in the grid.
   useEffect(() => {
     const fetchCats = async () => {
       setLoading(true);
@@ -54,7 +51,7 @@ export function FeaturedCategories() {
         else if (loc?.state_id)    params.state_id    = String(loc.state_id);
         const res = await api.get("/vendor-categories", { params });
         const items = (res.data.data?.items ?? []) as VendorCategory[];
-        setCats(items.slice(0, 12));
+        setCats(items.slice(0, 16));
       } catch {
         setCats([]);
       } finally {
@@ -69,9 +66,7 @@ export function FeaturedCategories() {
     }
   }, []);
 
-  // While loading, reserve the section's height with a skeleton so the page
-  // doesn't shift (CLS) when categories arrive. Only collapse to null once the
-  // fetch has finished and there genuinely are no categories.
+  // Reserve height with a matching skeleton grid so the page doesn't shift (CLS).
   if (loading) {
     return (
       <section className="mx-auto max-w-7xl px-4 py-6">
@@ -79,15 +74,13 @@ export function FeaturedCategories() {
           <div className="h-3 w-24 animate-pulse rounded bg-[var(--mk-surface-3)]" />
           <div className="h-6 w-48 animate-pulse rounded bg-[var(--mk-surface-3)]" />
         </div>
-        <div className="overflow-hidden">
-          <div className="flex gap-3 md:gap-4">
-            {Array.from({ length: 6 }).map((_, i) => (
-              <div
-                key={i}
-                className="aspect-[3/4] min-w-0 shrink-0 grow-0 basis-1/2 animate-pulse rounded-2xl bg-[var(--mk-surface-3)] sm:basis-1/3 md:basis-1/4 lg:basis-1/6"
-              />
-            ))}
-          </div>
+        <div className="grid grid-cols-4 gap-x-3 gap-y-4 sm:grid-cols-6 lg:grid-cols-8">
+          {Array.from({ length: 8 }).map((_, i) => (
+            <div key={i} className="flex flex-col items-center gap-1.5">
+              <div className="aspect-square w-full animate-pulse rounded-2xl bg-[var(--mk-surface-3)]" />
+              <div className="h-3 w-12 animate-pulse rounded bg-[var(--mk-surface-3)]" />
+            </div>
+          ))}
         </div>
       </section>
     );
@@ -98,122 +91,54 @@ export function FeaturedCategories() {
 
   return (
     <section className="mx-auto max-w-7xl px-4 py-6">
-      <CategoryCarousel cats={cats} />
-    </section>
-  );
-}
-
-function CategoryCarousel({ cats }: { cats: VendorCategory[] }) {
-  const [emblaRef, emblaApi] = useEmblaCarousel({
-    align: "start",
-    loop: false,
-    containScroll: "trimSnaps",
-    dragFree: true,
-  });
-  const [canPrev, setCanPrev] = useState(false);
-  const [canNext, setCanNext] = useState(false);
-
-  useEffect(() => {
-    if (!emblaApi) return;
-    const update = () => {
-      setCanPrev(emblaApi.canScrollPrev());
-      setCanNext(emblaApi.canScrollNext());
-    };
-    emblaApi.on("select", update);
-    emblaApi.on("reInit", update);
-    update();
-    return () => {
-      emblaApi.off("select", update);
-      emblaApi.off("reInit", update);
-    };
-  }, [emblaApi]);
-
-  const scrollPrev = useCallback(() => emblaApi?.scrollPrev(), [emblaApi]);
-  const scrollNext = useCallback(() => emblaApi?.scrollNext(), [emblaApi]);
-
-  return (
-    <div>
-      <div className="mb-4 flex items-end justify-between gap-3">
+      <div className="mb-4 flex items-center justify-between gap-3">
         <div className="min-w-0">
           <p className="text-[11px] font-semibold uppercase tracking-wider text-[var(--mk-text-muted)]">Our Collection</p>
           <h2 className="text-xl font-bold tracking-tight md:text-2xl">Featured Categories</h2>
         </div>
-        <div className="flex shrink-0 items-center gap-2">
-          <button
-            type="button"
-            onClick={scrollPrev}
-            disabled={!canPrev}
-            aria-label="Previous categories"
-            className="hidden h-9 w-9 items-center justify-center rounded-full border border-[var(--mk-border)] bg-white text-[var(--mk-text)] transition-opacity hover:border-[var(--mk-brand)]/40 disabled:opacity-30 sm:flex"
-          >
-            <ChevronLeft className="h-4 w-4" />
-          </button>
-          <button
-            type="button"
-            onClick={scrollNext}
-            disabled={!canNext}
-            aria-label="Next categories"
-            className="hidden h-9 w-9 items-center justify-center rounded-full border border-[var(--mk-border)] bg-white text-[var(--mk-text)] transition-opacity hover:border-[var(--mk-brand)]/40 disabled:opacity-30 sm:flex"
-          >
-            <ChevronRight className="h-4 w-4" />
-          </button>
-          <Link
-            href="/shop-public"
-            className="flex h-9 w-9 items-center justify-center rounded-full bg-[var(--mk-brand)] text-white hover:opacity-90"
-            aria-label="See all categories"
-          >
-            <ArrowRight className="h-4 w-4" />
-          </Link>
-        </div>
+        <Link
+          href="/shop-public"
+          className="shrink-0 text-sm font-semibold text-[var(--mk-brand)] transition-opacity hover:opacity-80"
+        >
+          See all
+        </Link>
       </div>
 
-      <div ref={emblaRef} className="overflow-hidden">
-        <div className="flex gap-3 md:gap-4">
-          {cats.map((c, i) => {
-            const bg = PALETTE[i % PALETTE.length];
-            const count = Number(c.product_count ?? 0);
-            const hasImage = typeof c.image === "string" && c.image.length > 0;
-            return (
-              <Link
-                key={c.id}
-                href={`/shop-public?vendor_category_id=${c.id}`}
-                className={`group relative flex min-w-0 shrink-0 grow-0 basis-1/2 overflow-hidden rounded-2xl shadow-[var(--mk-shadow-sm)] transition-transform hover:-translate-y-1 hover:shadow-[var(--mk-shadow-md)] sm:basis-1/3 md:basis-1/4 lg:basis-1/6 ${hasImage ? "bg-black" : bg}`}
+      {/* Compact tile grid — rounded image square + name below */}
+      <div className="grid grid-cols-4 gap-x-3 gap-y-4 sm:grid-cols-6 lg:grid-cols-8">
+        {cats.map((c, i) => {
+          const bg = PALETTE[i % PALETTE.length];
+          const hasImage = typeof c.image === "string" && c.image.length > 0;
+          return (
+            <Link
+              key={c.id}
+              href={`/shop-public?vendor_category_id=${c.id}`}
+              className="group flex flex-col items-center gap-1.5 text-center"
+            >
+              <div
+                className={`aspect-square w-full overflow-hidden rounded-2xl shadow-[var(--mk-shadow-sm)] transition-transform duration-200 group-hover:-translate-y-0.5 group-hover:shadow-[var(--mk-shadow-md)] ${hasImage ? "bg-black" : bg}`}
               >
-                <div className="aspect-[3/4] w-full">
-                  {hasImage ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={c.image as string}
-                      alt={c.name}
-                      loading="lazy"
-                      className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
-                    />
-                  ) : (
-                    <div className="flex h-full w-full items-center justify-center">
-                      <span className="text-6xl leading-none">{emojiFor(c.name)}</span>
-                    </div>
-                  )}
-                </div>
-                {/* Bottom gradient + text overlay */}
-                <div className={`pointer-events-none absolute inset-x-0 bottom-0 px-3 pb-3 pt-10 ${hasImage ? "bg-gradient-to-t from-black/95 via-black/70 to-transparent text-white" : "bg-gradient-to-t from-white/95 via-white/75 to-transparent text-[var(--mk-text)]"}`}>
-                  <p
-                    className="text-sm font-bold leading-tight md:text-base"
-                    style={hasImage ? { textShadow: "0 1px 2px rgba(0,0,0,0.7)" } : undefined}
-                  >
-                    {c.name}
-                  </p>
-                  <p
-                    className={`text-[11px] font-medium ${hasImage ? "text-white/95" : "text-[var(--mk-text-muted)]"}`}
-                    style={hasImage ? { textShadow: "0 1px 2px rgba(0,0,0,0.6)" } : undefined}
-                  >
-                    {count} {count === 1 ? "Product" : "Products"}
-                  </p>
-                </div>
-              </Link>
-            );
-          })}
-        </div>
+                {hasImage ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={c.image as string}
+                    alt={c.name}
+                    loading="lazy"
+                    className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+                  />
+                ) : (
+                  <span className="flex h-full w-full items-center justify-center text-3xl leading-none">
+                    {emojiFor(c.name)}
+                  </span>
+                )}
+              </div>
+              <span className="line-clamp-2 text-xs font-medium leading-tight text-[var(--mk-text)] group-hover:text-[var(--mk-brand-deep)] md:text-sm">
+                {c.name}
+              </span>
+            </Link>
+          );
+        })}
       </div>
-    </div>
+    </section>
   );
 }
