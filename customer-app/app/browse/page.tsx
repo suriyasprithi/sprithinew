@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, Search, ShoppingCart, LayoutGrid, ChevronRight, Store, Pill, Package, Loader2, X } from "lucide-react";
@@ -175,18 +175,21 @@ export default function BrowsePage() {
   }
 
   // Infinite scroll — auto-load the next page when the sentinel nears the viewport.
-  // loadMore's own guards make repeat firings safe no-ops.
+  // loadMore's own guards make repeat firings safe no-ops. A CALLBACK ref attaches
+  // the observer the instant the sentinel mounts (it only renders once products
+  // exist), so scrolling actually triggers the next page.
   const loadMoreRef = useRef(loadMore);
   loadMoreRef.current = loadMore;
-  const sentinelRef = useRef<HTMLDivElement | null>(null);
-  useEffect(() => {
-    if (level !== "shop") return;
-    const el = sentinelRef.current;
+  const observerRef = useRef<IntersectionObserver | null>(null);
+  const setSentinel = useCallback((el: HTMLDivElement | null) => {
+    observerRef.current?.disconnect();
     if (!el || typeof IntersectionObserver === "undefined") return;
-    const io = new IntersectionObserver((entries) => { if (entries[0]?.isIntersecting) void loadMoreRef.current(); }, { rootMargin: "600px" });
-    io.observe(el);
-    return () => io.disconnect();
-  }, [level, activeShop]);
+    observerRef.current = new IntersectionObserver(
+      (entries) => { if (entries[0]?.isIntersecting) void loadMoreRef.current(); },
+      { rootMargin: "600px" },
+    );
+    observerRef.current.observe(el);
+  }, []);
 
   function openShop(shop: Shop) {
     setActiveShop(shop);
@@ -343,7 +346,7 @@ export default function BrowsePage() {
                     ))}
                   </div>
                   {/* Infinite-scroll sentinel + spinner */}
-                  <div ref={sentinelRef} className="h-10" />
+                  <div ref={setSentinel} className="h-10" />
                   {loadingMore && (
                     <div className="flex justify-center py-3"><Loader2 className="h-5 w-5 animate-spin text-[var(--mk-brand)]" /></div>
                   )}
