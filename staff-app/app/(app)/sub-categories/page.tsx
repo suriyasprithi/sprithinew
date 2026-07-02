@@ -154,13 +154,15 @@ export default function SubCategoriesPage() {
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search sub-category…" className="h-10 rounded-xl bg-surface-2/60 pl-9" />
             </div>
-            <Select value={catFilter} onValueChange={(v) => v && setCatFilter(v)}>
-              <SelectTrigger className="h-10 rounded-xl bg-surface-2/60"><SelectValue placeholder="Any category" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Any category</SelectItem>
-                {categories.map((c) => <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>)}
-              </SelectContent>
-            </Select>
+            <Combobox
+              value={catFilter}
+              onValueChange={(v) => setCatFilter(v || "all")}
+              options={[{ value: "all", label: "Any category" }, ...categories.map((c) => ({ value: String(c.id), label: c.name }))]}
+              placeholder="Any category"
+              searchPlaceholder="Search category…"
+              emptyText="No category found."
+              className="h-10 rounded-xl bg-surface-2/60"
+            />
             <Select value={status} onValueChange={(v) => v && setStatus(v as "all" | "active" | "inactive")}>
               <SelectTrigger className="h-10 rounded-xl bg-surface-2/60"><SelectValue /></SelectTrigger>
               <SelectContent>
