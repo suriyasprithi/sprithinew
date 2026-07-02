@@ -105,7 +105,7 @@ export function FeaturedCategories() {
           <h2 className="text-xl font-bold tracking-tight md:text-2xl">Featured Categories</h2>
         </div>
         <Link
-          href="/shop-public"
+          href="/browse"
           className="shrink-0 text-sm font-semibold text-[var(--mk-brand)] transition-opacity hover:opacity-80"
         >
           See all
@@ -120,7 +120,7 @@ export function FeaturedCategories() {
           return (
             <Link
               key={c.id}
-              href={`/shop-public?vendor_category_id=${c.id}`}
+              href={`/browse?vc=${c.id}`}
               className="group flex flex-col items-center gap-2 text-center"
             >
               <div

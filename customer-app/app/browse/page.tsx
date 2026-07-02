@@ -82,8 +82,14 @@ export default function BrowsePage() {
     };
     void run();
     if (typeof window !== "undefined") {
-      const vc = Number(new URLSearchParams(window.location.search).get("vc") || 0);
+      // Restore from the URL (e.g. redirected here from /shop-public).
+      const sp = new URLSearchParams(window.location.search);
+      const vc = Number(sp.get("vc") || 0);
       if (vc > 0) setActiveCat(vc);
+      const q = sp.get("q") || "";
+      if (q) setQuery(q);
+      const shopId = Number(sp.get("shop") || 0);
+      if (shopId > 0) { setActiveShop({ id: shopId, name: "" }); setLevel("shop"); } // name fills from products
       const onLoc = () => { browseCache.vendorCats = null; browseCache.shops.clear(); void run(true); };
       window.addEventListener("epey-location-changed", onLoc);
       return () => window.removeEventListener("epey-location-changed", onLoc);
@@ -194,15 +200,25 @@ export default function BrowsePage() {
     }
   }
   function backToVendor() {
-    // Unwind the entry openShop() pushed; popstate resets the level + clears state.
-    if (typeof window !== "undefined") window.history.back();
+    // In-page transition + replaceState (not pushState) so the URL matches the
+    // level without growing the history stack — works whether the shop was opened
+    // in-page (openShop pushed) or reached via a ?shop= deep link (no push).
+    setLevel("vendor");
+    setActiveShop(null);
+    setShopCats([]);
+    setProducts([]);
+    setQuery("");
+    if (typeof window !== "undefined") {
+      window.history.replaceState(null, "", activeCat === ALL ? "/browse" : `/browse?vc=${activeCat}`);
+    }
   }
 
   const activeVendorName = useMemo(
     () => (activeCat === ALL ? "All Shops" : cats.find((c) => c.id === activeCat)?.name ?? "Shops"),
     [activeCat, cats],
   );
-  const activeShopName = activeShop?.shop_name || activeShop?.name || "Shop";
+  // Deep-linked shops (?shop=) start nameless — fill the header from the products.
+  const activeShopName = activeShop?.shop_name || activeShop?.name || products[0]?.vendor_name || "Shop";
   const activeProdCatName = activeProdCat === ALL ? "All Products" : shopCats.find((c) => c.id === activeProdCat)?.name ?? "Products";
 
   // Vendor-level shop search is client-side over the (≤100) loaded shops.

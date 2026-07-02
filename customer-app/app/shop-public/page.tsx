@@ -56,9 +56,34 @@ function adapt(raw: ApiProduct): MarketplaceProduct {
 export default function PublicShopPage() {
   return (
     <Suspense fallback={<div className="marketplace-theme flex min-h-screen items-center justify-center text-sm text-[var(--mk-text-muted)]">Loading…</div>}>
-      <PublicShopInner />
+      <ShopPublicGate />
     </Suspense>
   );
+}
+
+// Category / shop browsing now lives on the unified /browse page, so redirect
+// those links there (vendor_category_id→vc, vendor_id→shop, q carried along).
+// A bare page and global product search (?q only) keep the shop-public UI, since
+// /browse searches within a single shop, not across all shops.
+function ShopPublicGate() {
+  const router = useRouter();
+  const [render, setRender] = useState(false);
+  useEffect(() => {
+    const sp = new URLSearchParams(window.location.search);
+    const vc = sp.get("vendor_category_id");
+    const shop = sp.get("vendor_id");
+    if (vc || shop) {
+      const out = new URLSearchParams();
+      if (vc) out.set("vc", vc);
+      if (shop) out.set("shop", shop);
+      const q = sp.get("q"); if (q) out.set("q", q);
+      router.replace(`/browse?${out.toString()}`);
+    } else {
+      setRender(true);
+    }
+  }, [router]);
+  if (!render) return <div className="marketplace-theme flex min-h-dvh items-center justify-center text-sm text-[var(--mk-text-muted)]">Opening…</div>;
+  return <PublicShopInner />;
 }
 
 function PublicShopInner() {

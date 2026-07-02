@@ -207,7 +207,7 @@ export function CategoryNavBar() {
                   return (
                     <Link
                       key={c.id}
-                      href={`/shop-public?vendor_category_id=${c.id}`}
+                      href={`/browse?vc=${c.id}`}
                       className="group flex items-center gap-3 rounded-xl border border-[var(--mk-border)] bg-white p-2.5 transition-colors hover:border-[var(--mk-brand)]/40 hover:bg-[var(--mk-brand-soft)]/40"
                     >
                       <span className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-[var(--mk-brand-soft)]">
