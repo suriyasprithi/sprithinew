@@ -5,6 +5,7 @@ import { Upload, Loader2, Package } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
+import { Combobox } from "@/components/ui/combobox";
 import { GradientButton } from "@/components/ui/custom/gradient-button";
 import { LuxuryCard } from "@/components/ui/custom/luxury-card";
 import { MobileHeader } from "@/components/layout/mobile-nav";
@@ -17,7 +18,7 @@ import {
   fileToRows, groupRows, isValidGroup, runChunkedImport,
 } from "@/lib/catalog-import";
 
-type Vendor = { id: number; name: string };
+type Vendor = { id: number; label: string };
 
 export default function ImportProductsPage() {
   const [vendors, setVendors] = useState<Vendor[]>([]);
@@ -36,7 +37,16 @@ export default function ImportProductsPage() {
       try {
         const res = await api.get("/vendors");
         const raw = (res.data.data?.items ?? res.data.data ?? []) as Record<string, unknown>[];
-        setVendors(raw.map((v) => ({ id: Number(v.id ?? 0), name: String(v.shop_name || v.name || `Vendor #${v.id}`) })));
+        // Label = shop/owner name · mobile · taluk, so the searchable dropdown
+        // can tell duplicate shop names apart (search matches any of the three).
+        setVendors(raw.map((v) => {
+          const profile = (v.profile ?? {}) as Record<string, unknown>;
+          const shop   = String(profile.shop_name || v.name || `Vendor #${v.id}`);
+          const mobile = v.mobile_number ? String(v.mobile_number) : "";
+          const taluk  = profile.taluk_name ? String(profile.taluk_name) : "";
+          const label  = [shop, mobile, taluk].filter(Boolean).join(" · ");
+          return { id: Number(v.id ?? 0), label };
+        }));
       } catch (e) { toast.error(apiErrorMessage(e, "Could not load vendors")); }
     })();
   }, []);
@@ -106,14 +116,15 @@ export default function ImportProductsPage() {
         <LuxuryCard className="space-y-4 p-5">
           <div className="space-y-1.5">
             <Label>Vendor</Label>
-            <select
+            <Combobox
               value={vendorId}
-              onChange={(e) => setVendorId(e.target.value)}
-              className="h-10 w-full appearance-none rounded-xl border border-input bg-surface-2/60 px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
-            >
-              <option value="">{vendors.length ? "Select a vendor" : "Loading…"}</option>
-              {vendors.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
-            </select>
+              onValueChange={(v) => setVendorId(v || "")}
+              options={vendors.map((v) => ({ value: String(v.id), label: v.label }))}
+              placeholder={vendors.length ? "Select a vendor" : "Loading…"}
+              searchPlaceholder="Search by shop, mobile or taluk…"
+              emptyText="No vendor found."
+              className="h-10 w-full rounded-xl bg-surface-2/60"
+            />
             <p className="text-[11px] text-muted-foreground">All products in the file are imported under this vendor.</p>
           </div>
 
