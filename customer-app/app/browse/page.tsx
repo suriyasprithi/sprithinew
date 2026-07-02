@@ -3,9 +3,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Search, ShoppingCart, LayoutGrid, ChevronRight, Store, Pill, Package, Loader2, X } from "lucide-react";
+import { ArrowLeft, Search, ShoppingCart, Heart, LayoutGrid, ChevronRight, Store, Pill, Package, Loader2, X } from "lucide-react";
 import { api } from "@/lib/api";
 import { cartBadge } from "@/lib/cart";
+import { wishlist } from "@/lib/wishlist";
 import { ProductCard, type MarketplaceProduct } from "@/components/marketplace/product-card";
 import { readSavedLocation } from "@/components/marketplace/location-picker";
 
@@ -66,6 +67,12 @@ export default function BrowsePage() {
     const sync = () => setCartCount(cartBadge.get());
     sync();
     return cartBadge.subscribe(sync);
+  }, []);
+  const [wishCount, setWishCount] = useState(0);
+  useEffect(() => {
+    const sync = () => setWishCount(wishlist.ids().length);
+    sync();
+    return wishlist.subscribe(sync);
   }, []);
 
   // Vendor categories (left rail). Cached for the session; re-fetch on location change.
@@ -244,6 +251,14 @@ export default function BrowsePage() {
           <ArrowLeft className="h-5 w-5" />
         </button>
         <h1 className="flex-1 truncate text-base font-bold">{level === "shop" ? activeShopName : "Browse"}</h1>
+        <Link href="/wishlist" aria-label="Wishlist" className="relative grid h-9 w-9 place-items-center rounded-full hover:bg-white/15">
+          <Heart className="h-5 w-5" />
+          {wishCount > 0 && (
+            <span className="absolute -right-0.5 -top-0.5 grid h-4 min-w-4 place-items-center rounded-full bg-white px-1 text-[10px] font-bold text-[var(--mk-brand)]">
+              {wishCount > 9 ? "9+" : wishCount}
+            </span>
+          )}
+        </Link>
         <Link href="/cart" aria-label="Cart" className="relative grid h-9 w-9 place-items-center rounded-full hover:bg-white/15">
           <ShoppingCart className="h-5 w-5" />
           {cartCount > 0 && (
