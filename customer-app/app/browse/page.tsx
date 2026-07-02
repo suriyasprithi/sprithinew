@@ -13,6 +13,38 @@ import { readSavedLocation } from "@/components/marketplace/location-picker";
 type VendorCategory = { id: number; name: string; image?: string | null; product_count?: number | string; status?: string };
 type Shop = { id: number; name: string; shop_name?: string | null; image?: string | null; area?: string | null; pincode?: string | null; product_count?: number | string; requires_prescription?: boolean };
 type ProductCategory = { id: number; name: string; status?: string };
+type ApiProduct = {
+  id: number | string; name: string; price: number | string; old_price?: number | string | null;
+  image: string | null; stock?: number | string; vendor_name?: string | null; has_variants?: boolean;
+  default_variant_id?: number | string | null; min_price?: number | string | null; max_price?: number | string | null;
+  variant_axes?: { name: string; count: number; options?: string[] }[];
+  category_id?: number | string | null; category_name?: string | null;
+  sub_category_id?: number | string | null; sub_category_name?: string | null;
+};
+
+// CI4/MySQLi returns numeric columns as STRINGS. Coerce them: the wishlist stores
+// numeric ids and drops non-numbers (so a string id silently never persists), and
+// the price/discount math needs real numbers too.
+function adapt(raw: ApiProduct): MarketplaceProduct {
+  return {
+    id: Number(raw.id),
+    name: raw.name,
+    price: Number(raw.price),
+    old_price: raw.old_price != null ? Number(raw.old_price) : undefined,
+    image: raw.image,
+    vendor_name: raw.vendor_name ?? null,
+    stock: raw.stock != null ? Number(raw.stock) : undefined,
+    has_variants: !!raw.has_variants,
+    default_variant_id: raw.default_variant_id != null ? Number(raw.default_variant_id) : null,
+    min_price: raw.min_price != null ? Number(raw.min_price) : undefined,
+    max_price: raw.max_price != null ? Number(raw.max_price) : undefined,
+    variant_axes: Array.isArray(raw.variant_axes) ? raw.variant_axes : undefined,
+    category_id: raw.category_id != null ? Number(raw.category_id) : null,
+    category_name: raw.category_name ?? null,
+    sub_category_id: raw.sub_category_id != null ? Number(raw.sub_category_id) : null,
+    sub_category_name: raw.sub_category_name ?? null,
+  };
+}
 
 // Location → API geo params (most specific wins).
 function geoParams(): Record<string, string> {
@@ -155,7 +187,7 @@ export default function BrowsePage() {
       .then((res) => {
         if (cancelled) return;
         const data = res.data.data ?? {};
-        setProducts((data.items ?? []) as MarketplaceProduct[]);
+        setProducts(((data.items ?? []) as ApiProduct[]).map(adapt));
         setHasMore(Boolean(data.has_more));
         setPage(1);
         // Rail categories only from the unfiltered (All Products, no search) response.
@@ -188,7 +220,7 @@ export default function BrowsePage() {
       if (q) params.q = q;
       const res = await api.get("/public/products", { params });
       if (selRef.current.shopId !== shopId || selRef.current.cat !== cat || selRef.current.q !== q) return; // stale
-      setProducts((cur) => [...cur, ...((res.data.data?.items ?? []) as MarketplaceProduct[])]);
+      setProducts((cur) => [...cur, ...((res.data.data?.items ?? []) as ApiProduct[]).map(adapt)]);
       setHasMore(Boolean(res.data.data?.has_more));
       setPage(next);
     } catch { /* keep current list */ } finally { setLoadingMore(false); }
