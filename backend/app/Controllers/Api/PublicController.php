@@ -286,9 +286,21 @@ class PublicController extends BaseApiController
         $profiles = $ids ? (new VendorProfileModel())->whereIn('user_id', $ids)->findAll() : [];
         $byId     = []; foreach ($profiles as $p) $byId[(int) $p['user_id']] = $p;
 
+        // Active product count per shop, for the browse shop cards.
+        $countByVendor = [];
+        if ($ids) {
+            $cntRows = \Config\Database::connect()->table('products')
+                ->select('vendor_id, COUNT(*) AS c')
+                ->where('status', 'active')
+                ->whereIn('vendor_id', $ids)
+                ->groupBy('vendor_id')
+                ->get()->getResultArray();
+            foreach ($cntRows as $rc) $countByVendor[(int) $rc['vendor_id']] = (int) $rc['c'];
+        }
+
         // Pharmacy/medicine shops accept a prescription-only order (no item pick).
         $rxCatIds = PrescriptionPolicy::categoryIds();
-        $items = array_map(static function ($u) use ($byId, $rxCatIds) {
+        $items = array_map(static function ($u) use ($byId, $rxCatIds, $countByVendor) {
             $p = $byId[(int) $u['id']] ?? [];
             return [
                 'id'        => (int) $u['id'],
@@ -300,6 +312,7 @@ class PublicController extends BaseApiController
                 'pincode'   => $p['pincode']   ?? null,
                 'image'     => (($p['image_status'] ?? '') === 'inactive') ? null : ($p['image'] ?? null),
                 'gst'       => $p['gst']       ?? null,
+                'product_count' => $countByVendor[(int) $u['id']] ?? 0,
                 'requires_prescription' => in_array((int) ($p['vendor_category_id'] ?? 0), $rxCatIds, true),
             ];
         }, $rows);
