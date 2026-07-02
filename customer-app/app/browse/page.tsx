@@ -213,7 +213,7 @@ export default function BrowsePage() {
   }, [shops, query]);
 
   return (
-    <div className="min-h-dvh bg-[var(--mk-surface)] pb-16">
+    <div className="marketplace-theme min-h-dvh bg-[var(--mk-bg)] pb-16">
       {/* Sticky header */}
       <header className="sticky top-0 z-30 flex items-center gap-2 border-b border-[var(--mk-border)] bg-[var(--mk-brand)] px-3 py-2.5 text-white">
         <button
