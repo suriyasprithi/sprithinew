@@ -620,31 +620,30 @@ class ProductController extends BaseApiController
                 $statusRaw = mb_strtolower(trim((string) ($item['status'] ?? '')));
                 $status    = $statusRaw === '' ? null : (in_array($statusRaw, ['inactive', '0', 'no', 'disabled', 'off'], true) ? 'inactive' : 'active');
 
-                // Resolve images from the uploaded ZIP (Option A: explicit filename
-                // first, SKU fallback). Product image ← image/images cell; each
-                // variant ← its own image cell. Missing CSV-named files are logged.
-                if ($zipSvc) {
-                    $multi     = $this->splitImageList($item['images'] ?? null);
-                    $mainNames = array_values(array_filter(array_merge([trim((string) ($item['image'] ?? ''))], $multi), static fn ($s) => $s !== ''));
-                    $main      = $this->resolveImportImage($zipSvc, $imageBatch, $mainNames, $code, $missingImages);
-                    if ($main !== null) $item['image'] = $main;
-                    elseif (! $this->looksLikeUrl(trim((string) ($item['image'] ?? '')))) $item['image'] = null;   // unmatched ZIP filename → don't store a broken value
-                    $gal = [];
-                    foreach (array_merge(array_slice($multi, 1), $this->splitImageList($item['gallery_images'] ?? null)) as $gn) {
-                        $u = $this->resolveImportImage($zipSvc, $imageBatch, [$gn], '', $missingImages);
-                        if ($u !== null) $gal[] = $u;
-                    }
-                    if ($gal) $item['gallery_images'] = implode("\n", $gal);
-                    foreach ($variants as &$vrow) {
-                        $vNames = $this->splitImageList($vrow['image'] ?? null);
-                        $vimg   = $this->resolveImportImage($zipSvc, $imageBatch, $vNames, $vrow['sku'] !== '' ? $vrow['sku'] : $code, $missingImages);
-                        $vrow['image'] = $vimg;   // URL or null (null = leave existing on update)
-                    }
-                    unset($vrow);
-                } else {
-                    foreach ($variants as &$vrow) { $vrow['image'] = null; }
-                    unset($vrow);
+                // Resolve images: explicit filename first, then SKU fallback. Each
+                // name is looked up in the uploaded ZIP, then (if absent) against
+                // images already on disk from a PREVIOUS import of the same filename
+                // — so a re-import connects to the existing path without re-uploading
+                // the ZIP. Runs even with no ZIP this time. A bare filename that
+                // matches nothing becomes null (which keeps the existing image on an
+                // update, instead of overwriting it with a broken value).
+                $multi     = $this->splitImageList($item['images'] ?? null);
+                $mainNames = array_values(array_filter(array_merge([trim((string) ($item['image'] ?? ''))], $multi), static fn ($s) => $s !== ''));
+                $main      = $this->resolveImportImage($zipSvc, $imageBatch, $mainNames, $code, $vendorId, $missingImages);
+                if ($main !== null) $item['image'] = $main;
+                elseif (! $this->looksLikeUrl(trim((string) ($item['image'] ?? '')))) $item['image'] = null;
+                $gal = [];
+                foreach (array_merge(array_slice($multi, 1), $this->splitImageList($item['gallery_images'] ?? null)) as $gn) {
+                    $u = $this->resolveImportImage($zipSvc, $imageBatch, [$gn], '', $vendorId, $missingImages);
+                    if ($u !== null) $gal[] = $u;
                 }
+                if ($gal) $item['gallery_images'] = implode("\n", $gal);
+                foreach ($variants as &$vrow) {
+                    $vNames = $this->splitImageList($vrow['image'] ?? null);
+                    $vimg   = $this->resolveImportImage($zipSvc, $imageBatch, $vNames, $vrow['sku'] !== '' ? $vrow['sku'] : $code, $vendorId, $missingImages);
+                    $vrow['image'] = $vimg;   // URL or null (null = leave existing on update)
+                }
+                unset($vrow);
 
                 $base = [
                     'category_id'      => $catId,
@@ -755,7 +754,15 @@ class ProductController extends BaseApiController
      * public/uploads/products/ and its absolute URL returned. CSV-named files that
      * aren't in the ZIP are recorded in $missing (the SKU fallback is silent).
      */
-    private function resolveImportImage(ZipImportService $svc, string $token, array $names, string $skuFallback, array &$missing): ?string
+    /**
+     * Resolve a CSV image reference to a stored URL. Order per name:
+     *   1. already a URL/base64 → use as-is;
+     *   2. found in the uploaded ZIP → store (vendor-scoped, deterministic name);
+     *   3. ALREADY on disk from a previous import of the same filename → reuse it
+     *      (so re-imports connect to the existing path without re-uploading the ZIP).
+     * $svc may be null (no ZIP this run) — then only steps 1 & 3 apply.
+     */
+    private function resolveImportImage(?ZipImportService $svc, string $token, array $names, string $skuFallback, int $vendorId, array &$missing): ?string
     {
         $explicit = [];
         foreach ($names as $n) {
@@ -763,27 +770,58 @@ class ProductController extends BaseApiController
             if ($n === '') continue;
             if ($this->looksLikeUrl($n)) return $n;          // already a URL/base64
             $explicit[] = $n;
-            $src = $svc->resolve($token, $n);
-            if ($src) { $u = $this->storeImportImage($src); if ($u) return $u; }
+            if ($svc && ($src = $svc->resolve($token, $n))) { $u = $this->storeImportImage($src, $vendorId, $n); if ($u) return $u; }
+            if ($u = $this->existingUploadUrl($vendorId, $n)) return $u;   // reuse a prior import
         }
         if ($skuFallback !== '') {
             foreach (ZipImportService::SUPPORTED as $ext) {
-                $src = $svc->resolve($token, $skuFallback . '.' . $ext);
-                if ($src) { $u = $this->storeImportImage($src); if ($u) return $u; }
+                $fname = $skuFallback . '.' . $ext;
+                if ($svc && ($src = $svc->resolve($token, $fname))) { $u = $this->storeImportImage($src, $vendorId, $fname); if ($u) return $u; }
+                if ($u = $this->existingUploadUrl($vendorId, $fname)) return $u;
             }
         }
         foreach ($explicit as $n) $missing[] = $n;           // log only CSV-named misses
         return null;
     }
 
+    /** Vendor-scoped, sanitized base name for a CSV image filename (no extension). */
+    private function importImageBase(int $vendorId, string $filename): string
+    {
+        $b = strtolower((string) pathinfo($filename, PATHINFO_FILENAME));
+        $b = trim((string) preg_replace('/[^a-z0-9._-]+/', '-', $b), '-._');
+        return $b === '' ? '' : $vendorId . '-' . $b;
+    }
+
+    /**
+     * URL of an already-uploaded image whose original filename matches (checked
+     * across supported extensions, so a CSV "PEN.jpg" still finds a stored
+     * PEN.png). Returns null when nothing matches on disk.
+     */
+    private function existingUploadUrl(int $vendorId, string $filename): ?string
+    {
+        if ($vendorId <= 0) return null;
+        $base = $this->importImageBase($vendorId, $filename);
+        if ($base === '') return null;
+        foreach (ZipImportService::SUPPORTED as $ext) {
+            if (is_file(FCPATH . 'uploads/products/' . $base . '.' . $ext)) {
+                return base_url('uploads/products/' . $base . '.' . $ext);
+            }
+        }
+        return null;
+    }
+
     /** Copy an extracted temp image into public/uploads/products/ → absolute URL. */
-    private function storeImportImage(string $src): ?string
+    private function storeImportImage(string $src, int $vendorId = 0, string $preferredName = ''): ?string
     {
         $ext = strtolower(pathinfo($src, PATHINFO_EXTENSION));
         if (! in_array($ext, ZipImportService::SUPPORTED, true)) return null;
         $dir = FCPATH . 'uploads/products/';
         if (! is_dir($dir)) @mkdir($dir, 0775, true);
-        $name = bin2hex(random_bytes(8)) . '.' . $ext;
+        // Deterministic vendor-scoped name from the original filename, so a later
+        // import that names the same file finds + reuses it (existingUploadUrl).
+        // Same filename re-imported = same target (updates the image in place).
+        $base = ($vendorId > 0 && $preferredName !== '') ? $this->importImageBase($vendorId, $preferredName) : '';
+        $name = $base !== '' ? $base . '.' . $ext : bin2hex(random_bytes(8)) . '.' . $ext;
         if (! @copy($src, $dir . $name)) return null;
         // Grid thumbnail alongside the full image (cards use it; detail uses full).
         \App\Libraries\ImageOptimizer::writeThumbFromFile($dir . $name);
