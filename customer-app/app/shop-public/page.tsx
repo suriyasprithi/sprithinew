@@ -2,7 +2,7 @@
 
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Search, Filter, Sparkles } from "lucide-react";
+import { Search, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import { TopInfoBar } from "@/components/marketplace/top-info-bar";
 import { MarketplaceHeader } from "@/components/marketplace/marketplace-header";
@@ -292,7 +292,7 @@ function PublicShopInner() {
               type="submit"
               className="inline-flex h-11 items-center gap-1.5 rounded-xl bg-[var(--mk-brand)] px-4 text-sm font-semibold text-white shadow-[var(--mk-shadow-sm)] transition-colors hover:bg-[var(--mk-brand-deep)]"
             >
-              <Filter className="h-4 w-4" /> Filter
+              <Search className="h-4 w-4" /> Search
             </button>
           </form>
         </div>
