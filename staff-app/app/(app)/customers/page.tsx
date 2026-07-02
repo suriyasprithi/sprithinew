@@ -140,6 +140,7 @@ export default function AdminCustomersPage() {
   const [creating, setCreating] = useState<CreateForm | null>(null);
   const [geo, setGeo] = useState<GeoData>({ states: [], districts: [], taluks: [] });
   const [saving, setSaving] = useState(false);
+  const [mobileTaken, setMobileTaken] = useState(false);   // create form: mobile already a customer
   const [viewing, setViewing] = useState<ManagedCustomer | null>(null);
   const [detail, setDetail] = useState<CustomerDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -324,10 +325,27 @@ export default function AdminCustomersPage() {
     }
   }
 
+  // Live check: as the admin types a 10-digit mobile, flag if it's already a customer.
+  useEffect(() => {
+    const m = creating?.mobile ?? "";
+    setMobileTaken(false);
+    if (!/^[0-9]{10}$/.test(m)) return;
+    let cancelled = false;
+    const t = setTimeout(async () => {
+      try {
+        const res = await api.get("/admin/customers", { params: { q: m } });
+        const items = (res.data.data?.items ?? []) as Array<{ mobile_number?: string }>;
+        if (!cancelled) setMobileTaken(items.some((it) => String(it.mobile_number ?? "") === m));
+      } catch { /* ignore — the create call re-validates server-side */ }
+    }, 350);
+    return () => { cancelled = true; clearTimeout(t); };
+  }, [creating?.mobile]);
+
   async function saveCreate() {
     if (!creating) return;
     if (!creating.name.trim()) { toast.error("Name is required"); return; }
     if (!/^[0-9]{10}$/.test(creating.mobile.trim())) { toast.error("Enter a valid 10-digit mobile"); return; }
+    if (mobileTaken) { toast.error("This mobile is already registered"); return; }
     if (creating.password.length < 6) { toast.error("Password must be at least 6 characters"); return; }
     setSaving(true);
     try {
@@ -350,7 +368,9 @@ export default function AdminCustomersPage() {
       toast.success("Customer created");
       setCreating(null);
     } catch (err) {
-      toast.error(apiErrorMessage(err, "Could not create customer"));
+      const msg = apiErrorMessage(err, "Could not create customer");
+      if (/already registered/i.test(msg)) setMobileTaken(true);   // surface it under the field
+      toast.error(msg);
     } finally {
       setSaving(false);
     }
@@ -662,7 +682,11 @@ export default function AdminCustomersPage() {
           </DialogHeader>
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="space-y-1.5 sm:col-span-2"><Label>Full name *</Label><Input value={creating?.name ?? ""} onChange={(e) => setCreating((p) => p && ({ ...p, name: e.target.value }))} placeholder="Enter full name" /></div>
-            <div className="space-y-1.5"><Label>Mobile *</Label><Input inputMode="numeric" maxLength={10} value={creating?.mobile ?? ""} onChange={(e) => setCreating((p) => p && ({ ...p, mobile: e.target.value.replace(/\D/g, "").slice(0, 10) }))} placeholder="10-digit" /></div>
+            <div className="space-y-1.5">
+              <Label>Mobile *</Label>
+              <Input inputMode="numeric" maxLength={10} value={creating?.mobile ?? ""} onChange={(e) => setCreating((p) => p && ({ ...p, mobile: e.target.value.replace(/\D/g, "").slice(0, 10) }))} placeholder="10-digit" aria-invalid={mobileTaken} className={mobileTaken ? "border-rose-500 focus-visible:ring-rose-500/40" : undefined} />
+              {mobileTaken && <p className="text-xs font-medium text-rose-600">This mobile is already registered</p>}
+            </div>
             <div className="space-y-1.5"><Label>Password *</Label><PasswordInput type="password" autoComplete="new-password" value={creating?.password ?? ""} onChange={(e) => setCreating((p) => p && ({ ...p, password: e.target.value }))} placeholder="Min 6 characters" /></div>
             <div className="space-y-1.5"><Label>Email</Label><Input type="email" value={creating?.email ?? ""} onChange={(e) => setCreating((p) => p && ({ ...p, email: e.target.value }))} placeholder="you@example.com" /></div>
             <div className="space-y-1.5"><Label>Pincode</Label><Input inputMode="numeric" maxLength={6} value={creating?.pincode ?? ""} onChange={(e) => setCreating((p) => p && ({ ...p, pincode: e.target.value.replace(/\D/g, "").slice(0, 6) }))} /></div>
@@ -692,7 +716,7 @@ export default function AdminCustomersPage() {
           </div>
           <DialogFooter>
             <Button variant="ghost" onClick={() => setCreating(null)} disabled={saving}>Cancel</Button>
-            <GradientButton onClick={saveCreate} disabled={saving}>{saving ? "Creating…" : "Create customer"}</GradientButton>
+            <GradientButton onClick={saveCreate} disabled={saving || mobileTaken}>{saving ? "Creating…" : "Create customer"}</GradientButton>
           </DialogFooter>
         </DialogContent>
       </Dialog>
