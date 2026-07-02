@@ -138,8 +138,9 @@ class AdminUsersController extends BaseApiController
             return $this->fail('Mobile number already registered', 409);
         }
 
-        // Link the referrer (by mobile) but do NOT fire the welcome bonus or the
-        // upline-count bump — admin-created accounts must not trigger payouts.
+        // Link the referrer (by mobile). Admin-created customers get the SAME
+        // referral benefits as a self-signup (welcome bonus + upline counts),
+        // fired after insert below — only OTP is skipped here.
         $referrerId = null;
         if (! empty($d['referrer_code'])) {
             $ref = $users->where('mobile_number', $d['referrer_code'])
@@ -162,6 +163,14 @@ class AdminUsersController extends BaseApiController
             'taluk_id'      => ! empty($d['taluk_id']) ? (int) $d['taluk_id'] : null,
         ], true);
         if (! $userId) return $this->fail('Could not create customer', 422, $users->errors());
+
+        // Mirror the self-signup referral benefits (the account is created active):
+        // attach to the referrer's 3-level upline chain (counts + referrals rows)
+        // and award the welcome bonus. No OTP — admin creation never requires it.
+        if ($referrerId) {
+            (new \App\Services\ReferralChainService())->attach($referrerId, (int) $userId);
+            (new \App\Services\WelcomeBonusService())->award($referrerId, (int) $userId);
+        }
 
         $fresh  = $users->find($userId);
         return $this->ok($this->formatCustomer($fresh, $this->referrerMap([$fresh])), 'Customer created');
