@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, ChevronLeft, ChevronRight } from "lucide-react";
 import { api } from "@/lib/api";
 import { readSavedLocation } from "./location-picker";
 
@@ -14,7 +14,7 @@ type VendorCategory = {
   status: string;
 };
 
-// How many tiles to show collapsed — 2 rows on the 4-column mobile grid.
+// How many tiles to show collapsed on the mobile/tablet grid — 2 rows.
 const COLLAPSED = 8;
 
 const PALETTE = ["bg-[#FCEBC5]", "bg-[#FBE4DE]", "bg-[#E8F2D8]", "bg-[#FFEAD2]", "bg-[#FFD9CE]", "bg-[#F8C6BD]"];
@@ -39,10 +39,46 @@ function emojiFor(name: string): string {
   return "🏪";
 }
 
+// One category tile — rounded image square + name below. Shared by the
+// mobile grid and the desktop slider.
+function CategoryTile({ c, i }: { c: VendorCategory; i: number }) {
+  const bg = PALETTE[i % PALETTE.length];
+  const hasImage = typeof c.image === "string" && c.image.length > 0;
+  return (
+    <Link
+      href={`/browse?vc=${c.id}`}
+      className="group flex flex-col items-center gap-2 text-center"
+    >
+      <div
+        className={`aspect-square w-full overflow-hidden rounded-2xl ring-1 ring-black/5 shadow-[var(--mk-shadow-sm)] transition-all duration-200 group-hover:-translate-y-1 group-hover:shadow-[var(--mk-shadow-md)] group-hover:ring-[var(--mk-brand)]/30 ${hasImage ? "bg-[var(--mk-surface-2)]" : bg}`}
+      >
+        {hasImage ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={c.image as string}
+            alt={c.name}
+            loading="lazy"
+            className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-110"
+          />
+        ) : (
+          <span className="flex h-full w-full items-center justify-center text-3xl leading-none">
+            {emojiFor(c.name)}
+          </span>
+        )}
+      </div>
+      {/* Fixed 2-line height so every tile in a row lines up neatly. */}
+      <span className="line-clamp-2 min-h-[2.1rem] text-xs font-medium leading-tight text-[var(--mk-text)] transition-colors group-hover:text-[var(--mk-brand-deep)] md:text-[13px]">
+        {c.name}
+      </span>
+    </Link>
+  );
+}
+
 export function FeaturedCategories() {
   const [cats, setCats] = useState<VendorCategory[]>([]);
   const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState(false);
+  const sliderRef = useRef<HTMLDivElement | null>(null);
 
   // Filtered by chosen delivery location.
   useEffect(() => {
@@ -97,6 +133,12 @@ export function FeaturedCategories() {
   const shown = expanded ? cats : cats.slice(0, COLLAPSED);
   const hiddenCount = cats.length - COLLAPSED;
 
+  // Desktop slider: scroll by ~85% of the visible width per arrow tap.
+  const slide = (dir: number) => {
+    const el = sliderRef.current;
+    if (el) el.scrollBy({ left: dir * Math.round(el.clientWidth * 0.85), behavior: "smooth" });
+  };
+
   return (
     <section className="mx-auto max-w-7xl px-4 py-6">
       <div className="mb-5 flex items-center justify-between gap-3">
@@ -112,56 +154,56 @@ export function FeaturedCategories() {
         </Link>
       </div>
 
-      {/* Compact tile grid — rounded image square + name below */}
-      <div className="grid grid-cols-4 gap-x-3 gap-y-5 sm:grid-cols-6 lg:grid-cols-8">
-        {shown.map((c, i) => {
-          const bg = PALETTE[i % PALETTE.length];
-          const hasImage = typeof c.image === "string" && c.image.length > 0;
-          return (
-            <Link
-              key={c.id}
-              href={`/browse?vc=${c.id}`}
-              className="group flex flex-col items-center gap-2 text-center"
+      {/* Mobile / tablet: compact grid + "More" expander (unchanged) */}
+      <div className="lg:hidden">
+        <div className="grid grid-cols-4 gap-x-3 gap-y-5 sm:grid-cols-6">
+          {shown.map((c, i) => <CategoryTile key={c.id} c={c} i={i} />)}
+        </div>
+        {hiddenCount > 0 && (
+          <div className="mt-5 flex justify-center">
+            <button
+              type="button"
+              onClick={() => setExpanded((v) => !v)}
+              aria-expanded={expanded}
+              className="inline-flex items-center gap-1.5 rounded-full border border-[var(--mk-border)] bg-white px-5 py-2 text-sm font-semibold text-[var(--mk-text)] shadow-[var(--mk-shadow-sm)] transition-colors hover:border-[var(--mk-brand)]/40 hover:text-[var(--mk-brand-deep)]"
             >
-              <div
-                className={`aspect-square w-full overflow-hidden rounded-2xl ring-1 ring-black/5 shadow-[var(--mk-shadow-sm)] transition-all duration-200 group-hover:-translate-y-1 group-hover:shadow-[var(--mk-shadow-md)] group-hover:ring-[var(--mk-brand)]/30 ${hasImage ? "bg-[var(--mk-surface-2)]" : bg}`}
-              >
-                {hasImage ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={c.image as string}
-                    alt={c.name}
-                    loading="lazy"
-                    className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-110"
-                  />
-                ) : (
-                  <span className="flex h-full w-full items-center justify-center text-3xl leading-none">
-                    {emojiFor(c.name)}
-                  </span>
-                )}
-              </div>
-              {/* Fixed 2-line height so every tile in a row lines up neatly. */}
-              <span className="line-clamp-2 min-h-[2.1rem] text-xs font-medium leading-tight text-[var(--mk-text)] transition-colors group-hover:text-[var(--mk-brand-deep)] md:text-[13px]">
-                {c.name}
-              </span>
-            </Link>
-          );
-        })}
+              {expanded ? "Show less" : `More (${hiddenCount})`}
+              <ChevronDown className={`h-4 w-4 transition-transform duration-200 ${expanded ? "rotate-180" : ""}`} />
+            </button>
+          </div>
+        )}
       </div>
 
-      {hiddenCount > 0 && (
-        <div className="mt-5 flex justify-center">
-          <button
-            type="button"
-            onClick={() => setExpanded((v) => !v)}
-            aria-expanded={expanded}
-            className="inline-flex items-center gap-1.5 rounded-full border border-[var(--mk-border)] bg-white px-5 py-2 text-sm font-semibold text-[var(--mk-text)] shadow-[var(--mk-shadow-sm)] transition-colors hover:border-[var(--mk-brand)]/40 hover:text-[var(--mk-brand-deep)]"
-          >
-            {expanded ? "Show less" : `More (${hiddenCount})`}
-            <ChevronDown className={`h-4 w-4 transition-transform duration-200 ${expanded ? "rotate-180" : ""}`} />
-          </button>
+      {/* Desktop (PC): horizontal slider — scroll through every category with
+          prev/next arrows instead of the grid + "More" expander. */}
+      <div className="relative hidden lg:block">
+        <div
+          ref={sliderRef}
+          className="flex gap-4 overflow-x-auto scroll-smooth pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        >
+          {cats.map((c, i) => (
+            <div key={c.id} className="w-36 shrink-0">
+              <CategoryTile c={c} i={i} />
+            </div>
+          ))}
         </div>
-      )}
+        <button
+          type="button"
+          aria-label="Previous categories"
+          onClick={() => slide(-1)}
+          className="absolute -left-4 top-[72px] z-10 inline-flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full border border-[var(--mk-border)] bg-white text-[var(--mk-text)] shadow-[var(--mk-shadow-md)] transition-colors hover:border-[var(--mk-brand)]/40 hover:text-[var(--mk-brand-deep)]"
+        >
+          <ChevronLeft className="h-5 w-5" />
+        </button>
+        <button
+          type="button"
+          aria-label="Next categories"
+          onClick={() => slide(1)}
+          className="absolute -right-4 top-[72px] z-10 inline-flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full border border-[var(--mk-border)] bg-white text-[var(--mk-text)] shadow-[var(--mk-shadow-md)] transition-colors hover:border-[var(--mk-brand)]/40 hover:text-[var(--mk-brand-deep)]"
+        >
+          <ChevronRight className="h-5 w-5" />
+        </button>
+      </div>
     </section>
   );
 }
