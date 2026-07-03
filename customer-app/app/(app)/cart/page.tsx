@@ -89,7 +89,7 @@ export default function CartPage() {
             <ShoppingBag className="mx-auto mb-3 h-12 w-12 text-brand" />
             <p className="text-sm font-medium">Your cart is empty</p>
             <p className="mt-1 text-xs text-muted-foreground">Browse the shop to add some items.</p>
-            <Link href="/shop-public" className="mt-5 inline-block">
+            <Link href="/browse" className="mt-5 inline-block">
               <GradientButton>Browse shop</GradientButton>
             </Link>
           </LuxuryCard>

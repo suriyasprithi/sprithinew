@@ -164,7 +164,7 @@ function EmptyWishlist() {
         Tap the heart on any product to save it here for later.
       </p>
       <Link
-        href="/shop-public"
+        href="/browse"
         className="mt-5 inline-flex items-center gap-1.5 rounded-xl bg-[var(--mk-brand)] px-4 py-2 text-sm font-semibold text-white shadow-[var(--mk-shadow-sm)] hover:bg-[var(--mk-brand-deep)]"
       >
         <ShoppingBag className="h-4 w-4" /> Browse shop
