@@ -133,7 +133,6 @@ export default function PublicHomePage() {
           latitude: v.latitude != null ? Number(v.latitude) : null,
           longitude: v.longitude != null ? Number(v.longitude) : null,
           rating: 4.2 + Math.random() * 0.6,
-          delivery_time: "15-30 min",
         }));
         setVendors(vs);
       } catch { /* ignore — render empty states */ }

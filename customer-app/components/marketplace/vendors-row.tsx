@@ -55,12 +55,10 @@ export function VendorsRow({ vendors, loading }: { vendors: MarketplaceVendor[];
                     <span className="inline-flex items-center gap-0.5 rounded bg-emerald-50 px-1.5 py-0.5 font-semibold text-emerald-700">
                       {(v.rating ?? 4.5).toFixed(1)} <Star className="h-2.5 w-2.5 fill-current" />
                     </span>
-                    {v.distance_km != null ? (
+                    {v.distance_km != null && (
                       <span className="inline-flex items-center gap-0.5 font-semibold text-[var(--mk-brand-deep)]">
                         <Navigation className="h-2.5 w-2.5" /> {formatDistance(v.distance_km)}
                       </span>
-                    ) : (
-                      <span className="text-[var(--mk-text-muted)]">{v.delivery_time ?? "15-30 min"}</span>
                     )}
                     {v.product_count != null && (
                       <span className="text-[var(--mk-text-muted)]">· {v.product_count} items</span>
