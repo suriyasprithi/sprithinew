@@ -194,6 +194,21 @@ function CategoryTree({
     return { m, orphans };
   }, [categories]);
 
+  // Bring the ACTIVE selection to the top: its vendor-category group first, and
+  // the active product category first within that group.
+  const activeParent = useMemo(
+    () => (activeId != null ? categories.find((c) => c.id === activeId)?.vendor_category_id ?? null : null),
+    [activeId, categories],
+  );
+  const orderedVendorCategories = useMemo(() => {
+    if (!activeParent) return vendorCategories;
+    const idx = vendorCategories.findIndex((vc) => vc.id === activeParent);
+    if (idx <= 0) return vendorCategories;
+    const copy = [...vendorCategories];
+    const [active] = copy.splice(idx, 1);
+    return [active, ...copy];
+  }, [vendorCategories, activeParent]);
+
   // Default-open the vendor category whose subtree contains the active selection.
   const initiallyOpen = useMemo(() => {
     const set = new Set<number>();
@@ -251,8 +266,12 @@ function CategoryTree({
       {q && !anyParentMatch && visibleOrphans.length === 0 && (
         <p className="px-2 py-2 text-xs text-[var(--mk-text-muted)]">No categories found</p>
       )}
-      {vendorCategories.map((vc) => {
-        const kids = (grouped.m.get(vc.id) ?? []).filter((c) => matches(c.name));
+      {orderedVendorCategories.map((vc) => {
+        const kidsRaw = (grouped.m.get(vc.id) ?? []).filter((c) => matches(c.name));
+        // Active product category first within its group.
+        const kids = activeId != null && kidsRaw.some((c) => c.id === activeId)
+          ? [...kidsRaw].sort((a, b) => (a.id === activeId ? -1 : b.id === activeId ? 1 : 0))
+          : kidsRaw;
         if (kids.length === 0) return null;
         const isOpen = q ? true : open.has(vc.id);
         const totalCount = kids.reduce((s, k) => s + (counts.get(k.id) ?? 0), 0);
