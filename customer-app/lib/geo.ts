@@ -4,6 +4,8 @@
 // on every page. Distance is computed here in the browser (Haversine) — the
 // backend never does per-request distance math.
 
+import { Capacitor } from "@capacitor/core";
+
 export type Coords = { lat: number; lng: number };
 
 type StoredCoords = Coords & { at: number };
@@ -58,14 +60,9 @@ export async function getCustomerCoordsQuiet(): Promise<Coords | null> {
   const fresh = cachedFresh();
   if (fresh) return fresh;
 
-  if (typeof navigator !== "undefined" && navigator.geolocation && navigator.permissions?.query) {
-    try {
-      const status = await navigator.permissions.query({ name: "geolocation" as PermissionName });
-      if (status.state === "granted") {
-        const pos = await getCurrentPositionAsync();
-        if (pos) { saveCustomerCoords(pos.lat, pos.lng); return pos; }
-      }
-    } catch { /* permissions API unavailable — fall through */ }
+  if ((await checkGeoPermission()) === "granted") {
+    const pos = await getCurrentPositionAsync();
+    if (pos) { saveCustomerCoords(pos.lat, pos.lng); return pos; }
   }
   return readCustomerCoords(); // may be stale, still better than nothing
 }
@@ -87,20 +84,14 @@ const ASKED_KEY = "epey.geoAsked";
 export async function requestCustomerLocationOnce(): Promise<Coords | null> {
   const fresh = cachedFresh();
   if (fresh) return fresh;
-  if (typeof navigator === "undefined" || !navigator.geolocation) return readCustomerCoords();
 
-  try {
-    if (navigator.permissions?.query) {
-      const status = await navigator.permissions.query({ name: "geolocation" as PermissionName });
-      if (status.state === "denied") return readCustomerCoords();
-      if (status.state === "granted") {
-        const pos = await getCurrentPositionAsync();
-        if (pos) { saveCustomerCoords(pos.lat, pos.lng); return pos; }
-        return readCustomerCoords();
-      }
-      // status.state === 'prompt' → fall through to the one-shot ask
-    }
-  } catch { /* permissions API unavailable — fall through */ }
+  const perm = await checkGeoPermission();
+  if (perm === "denied") return readCustomerCoords();
+  if (perm === "granted") {
+    const pos = await getCurrentPositionAsync();
+    if (pos) { saveCustomerCoords(pos.lat, pos.lng); return pos; }
+    return readCustomerCoords();
+  }
 
   // 'prompt' (or no permissions API): ask once, then never auto-ask again.
   if (typeof window !== "undefined") {
@@ -112,8 +103,53 @@ export async function requestCustomerLocationOnce(): Promise<Coords | null> {
   return readCustomerCoords();
 }
 
-/** Prompt-if-needed wrapper around getCurrentPosition. Resolves null on failure/deny. */
-export function getCurrentPositionAsync(): Promise<Coords | null> {
+/**
+ * Current geolocation permission state, native-aware:
+ *   - APK (Capacitor)  → `@capacitor/geolocation` `checkPermissions()`
+ *   - web browser      → the Permissions API
+ * Collapsed to granted / denied / prompt (unknown → 'prompt').
+ */
+async function checkGeoPermission(): Promise<"granted" | "denied" | "prompt"> {
+  if (Capacitor.isNativePlatform()) {
+    try {
+      const { Geolocation } = await import("@capacitor/geolocation");
+      const s = (await Geolocation.checkPermissions()).location;
+      if (s === "granted") return "granted";
+      if (s === "denied") return "denied";
+      return "prompt"; // 'prompt' | 'prompt-with-rationale'
+    } catch { return "prompt"; }
+  }
+  if (typeof navigator !== "undefined" && navigator.permissions?.query) {
+    try {
+      const status = await navigator.permissions.query({ name: "geolocation" as PermissionName });
+      return status.state as "granted" | "denied" | "prompt";
+    } catch { /* Permissions API unavailable — fall through */ }
+  }
+  return "prompt";
+}
+
+/**
+ * Prompt-if-needed wrapper around getCurrentPosition. Resolves null on
+ * failure/deny. Native-aware: inside the APK the browser Geolocation API
+ * doesn't fire a native permission dialog, so we go through
+ * `@capacitor/geolocation` (which requests the OS location permission and
+ * whose plugin adds ACCESS_FINE/COARSE_LOCATION to the Android manifest).
+ */
+export async function getCurrentPositionAsync(): Promise<Coords | null> {
+  if (Capacitor.isNativePlatform()) {
+    try {
+      const { Geolocation } = await import("@capacitor/geolocation");
+      let perm = await Geolocation.checkPermissions();
+      if (perm.location !== "granted") perm = await Geolocation.requestPermissions();
+      if (perm.location !== "granted") return null;
+      const pos = await Geolocation.getCurrentPosition({
+        enableHighAccuracy: true,
+        timeout: 10000,
+        maximumAge: 60000,
+      });
+      return { lat: pos.coords.latitude, lng: pos.coords.longitude };
+    } catch { return null; }
+  }
   return new Promise((resolve) => {
     if (typeof navigator === "undefined" || !navigator.geolocation) { resolve(null); return; }
     navigator.geolocation.getCurrentPosition(

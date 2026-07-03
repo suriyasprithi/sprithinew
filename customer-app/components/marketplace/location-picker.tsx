@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { MapPin, X, Search, LocateFixed, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
-import { saveCustomerCoords } from "@/lib/geo";
+import { getCurrentPositionAsync, saveCustomerCoords } from "@/lib/geo";
 
 type State    = { id: number; name: string };
 type District = { id: number; state_id: number; name: string };
@@ -116,33 +116,29 @@ export function LocationPicker({ open, onClose }: { open: boolean; onClose: () =
 
   // Use the device GPS → reverse-geocode to a pincode (free OSM Nominatim) →
   // resolve that pincode to our delivery area. Manual selection stays available.
-  function useCurrentLocation() {
-    if (typeof navigator === "undefined" || !navigator.geolocation) {
-      toast.error("Location is not supported on this device"); return;
-    }
+  // getCurrentPositionAsync() is native-aware: in the APK it fires the OS
+  // location-permission dialog (via @capacitor/geolocation); on web it uses the
+  // browser Geolocation API. Resolves null on deny/failure.
+  async function useCurrentLocation() {
     setGeoBusy(true);
-    navigator.geolocation.getCurrentPosition(
-      async (pos) => {
-        try {
-          const { latitude, longitude } = pos.coords;
-          // Cache the raw coords so vendor cards can show real distances.
-          saveCustomerCoords(latitude, longitude);
-          const res = await fetch(
-            `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${latitude}&lon=${longitude}`,
-            { headers: { Accept: "application/json" } },
-          );
-          const j = await res.json();
-          const code = String(j?.address?.postcode ?? "").replace(/\D/g, "").slice(0, 6);
-          if (!/^[0-9]{6}$/.test(code)) { toast.error("Couldn't detect your pincode — please enter it manually"); return; }
-          setPincode(code);
-          await resolvePincode(code);
-        } catch {
-          toast.error("Couldn't detect your location");
-        } finally { setGeoBusy(false); }
-      },
-      () => { toast.error("Location permission denied"); setGeoBusy(false); },
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 },
-    );
+    try {
+      const coords = await getCurrentPositionAsync();
+      if (!coords) { toast.error("Location permission denied"); return; }
+      const { lat: latitude, lng: longitude } = coords;
+      // Cache the raw coords so vendor cards can show real distances.
+      saveCustomerCoords(latitude, longitude);
+      const res = await fetch(
+        `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${latitude}&lon=${longitude}`,
+        { headers: { Accept: "application/json" } },
+      );
+      const j = await res.json();
+      const code = String(j?.address?.postcode ?? "").replace(/\D/g, "").slice(0, 6);
+      if (!/^[0-9]{6}$/.test(code)) { toast.error("Couldn't detect your pincode — please enter it manually"); return; }
+      setPincode(code);
+      await resolvePincode(code);
+    } catch {
+      toast.error("Couldn't detect your location");
+    } finally { setGeoBusy(false); }
   }
 
   function apply() {
