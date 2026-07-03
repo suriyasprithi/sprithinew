@@ -3,6 +3,7 @@
 import { useRef, useState } from "react";
 import { Camera, FileText, Loader2, Paperclip, X } from "lucide-react";
 import { toast } from "sonner";
+import { Capacitor } from "@capacitor/core";
 import { api, apiErrorMessage, fileUrl } from "@/lib/api";
 
 /**
@@ -51,6 +52,32 @@ export function FileUpload({
       setBusy(false);
       if (inputRef.current) inputRef.current.value = "";
       if (cameraRef.current) cameraRef.current.value = "";
+    }
+  }
+
+  // "Take Photo": inside the APK the WebView ignores the file input's `capture`
+  // attribute and opens the gallery, so on native we open the real device
+  // camera via @capacitor/camera and feed the shot into the same upload path.
+  // On web the file input (with capture) already opens the camera fine.
+  async function takePhoto() {
+    if (!Capacitor.isNativePlatform()) {
+      cameraRef.current?.click();
+      return;
+    }
+    try {
+      const { Camera: CapCamera, CameraResultType, CameraSource } = await import("@capacitor/camera");
+      const photo = await CapCamera.getPhoto({
+        source: CameraSource.Camera,
+        resultType: CameraResultType.Uri,
+        quality: 80,
+      });
+      if (!photo.webPath) return;
+      const blob = await (await fetch(photo.webPath)).blob();
+      const ext = photo.format || "jpeg";
+      const file = new File([blob], `prescription.${ext}`, { type: blob.type || `image/${ext}` });
+      void handleFile(file);
+    } catch {
+      // User cancelled the camera, or it's unavailable — stay silent.
     }
   }
 
@@ -134,7 +161,7 @@ export function FileUpload({
           <button
             type="button"
             disabled={disabled}
-            onClick={() => cameraRef.current?.click()}
+            onClick={() => void takePhoto()}
             className="flex h-28 flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border bg-surface-2/40 text-sm text-muted-foreground transition-colors hover:border-brand/40 hover:text-brand disabled:opacity-50"
           >
             <Camera className="h-5 w-5" />
