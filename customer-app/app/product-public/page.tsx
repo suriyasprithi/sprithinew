@@ -758,7 +758,9 @@ function ProductInner() {
                             <p className="mt-1 text-xs text-muted-foreground">Stock: {stock}</p>
                           </div>
 
-                          {product.description && <p className="text-sm text-muted-foreground">{product.description}</p>}
+                          {product.description?.trim() && product.description.trim() !== "0" && (
+                            <p className="text-sm text-muted-foreground">{product.description}</p>
+                          )}
 
                           {variantTypes.length > 0 && variantTypes.map((t) => (
                             <div key={t.name}>
