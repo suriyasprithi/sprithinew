@@ -130,8 +130,10 @@ export function FeaturedCategories() {
     return null;
   }
 
-  const shown = expanded ? cats : cats.slice(0, COLLAPSED);
   const hiddenCount = cats.length - COLLAPSED;
+  // Collapsed grid leaves the last slot for the in-grid "More" tile, so the row
+  // stays full (7 categories + More) instead of a lonely button below the grid.
+  const mobileList = expanded || hiddenCount <= 0 ? cats : cats.slice(0, COLLAPSED - 1);
 
   // Desktop slider: scroll by ~85% of the visible width per arrow tap.
   const slide = (dir: number) => {
@@ -154,23 +156,28 @@ export function FeaturedCategories() {
         </Link>
       </div>
 
-      {/* Mobile / tablet: compact grid + "More" expander (unchanged) */}
-      <div className="lg:hidden">
-        <div className="grid grid-cols-4 gap-x-3 gap-y-5 sm:grid-cols-6">
-          {shown.map((c, i) => <CategoryTile key={c.id} c={c} i={i} />)}
-        </div>
+      {/* Mobile / tablet: grid with the More / Show-less control as an in-grid
+          tile (last slot) so it reads as part of the collection, not a stray
+          button. */}
+      <div className="grid grid-cols-4 gap-x-3 gap-y-5 sm:grid-cols-6 lg:hidden">
+        {mobileList.map((c, i) => <CategoryTile key={c.id} c={c} i={i} />)}
         {hiddenCount > 0 && (
-          <div className="mt-5 flex justify-center">
-            <button
-              type="button"
-              onClick={() => setExpanded((v) => !v)}
-              aria-expanded={expanded}
-              className="inline-flex items-center gap-1.5 rounded-full border border-[var(--mk-border)] bg-white px-5 py-2 text-sm font-semibold text-[var(--mk-text)] shadow-[var(--mk-shadow-sm)] transition-colors hover:border-[var(--mk-brand)]/40 hover:text-[var(--mk-brand-deep)]"
-            >
-              {expanded ? "Show less" : `More (${hiddenCount})`}
-              <ChevronDown className={`h-4 w-4 transition-transform duration-200 ${expanded ? "rotate-180" : ""}`} />
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={() => setExpanded((v) => !v)}
+            aria-expanded={expanded}
+            className="group flex flex-col items-center gap-2 text-center"
+          >
+            <div className="flex aspect-square w-full items-center justify-center rounded-2xl bg-[var(--mk-brand-soft)] ring-1 ring-[var(--mk-brand)]/20 shadow-[var(--mk-shadow-sm)] transition-all duration-200 group-hover:-translate-y-1 group-hover:shadow-[var(--mk-shadow-md)] group-hover:ring-[var(--mk-brand)]/40">
+              <span className="flex flex-col items-center leading-none text-[var(--mk-brand-deep)]">
+                <ChevronDown className={`h-6 w-6 transition-transform duration-200 ${expanded ? "rotate-180" : ""}`} />
+                {!expanded && <span className="mt-0.5 text-sm font-bold">+{hiddenCount}</span>}
+              </span>
+            </div>
+            <span className="line-clamp-2 min-h-[2.1rem] text-xs font-semibold leading-tight text-[var(--mk-brand-deep)]">
+              {expanded ? "Show less" : "More"}
+            </span>
+          </button>
         )}
       </div>
 
