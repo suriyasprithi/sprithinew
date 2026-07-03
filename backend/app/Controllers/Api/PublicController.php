@@ -178,7 +178,18 @@ class PublicController extends BaseApiController
         $offset = ($page - 1) * $limit;
 
         $total = $model->countAllResults(false);
-        $items = $model->orderBy('id', 'DESC')->findAll($limit, $offset);
+        if ($q) {
+            // Search: the relevance ordering added above wins; id DESC breaks ties.
+            $model->orderBy('id', 'DESC');
+        } else {
+            // Browsing (no search): a shop's catalog is imported as one batch of
+            // consecutive ids, so ordering by id clustered a single shop's items
+            // together (24 chillies from one store). Hashing the id scatters those
+            // batches, interleaving shops/categories for a MIXED grid — and it's
+            // deterministic, so infinite-scroll pages don't repeat or skip rows.
+            $model->orderBy('MD5(id)', 'ASC', false);
+        }
+        $items = $model->findAll($limit, $offset);
         return $this->ok([
             'items'      => $this->enrich($items),
             'categories' => (new CategoryModel())->where('status', 'active')->findAll(),
