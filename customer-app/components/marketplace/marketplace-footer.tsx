@@ -73,13 +73,18 @@ export function MarketplaceFooter() {
 
             <p className="mt-5 text-sm font-bold text-white">Download the app</p>
             <div className="mt-2 flex flex-col gap-2 sm:flex-row lg:flex-col">
-              <Link href="/coming-soon" className="inline-flex items-center gap-2 rounded-xl border border-white/20 bg-white/5 px-3 py-2 text-xs hover:border-[var(--mk-brand)]">
+              <a
+                href="https://play.google.com/store/apps/details?id=com.epey.customer&hl=en_IN"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 rounded-xl border border-white/20 bg-white/5 px-3 py-2 text-xs hover:border-[var(--mk-brand)]"
+              >
                 <Smartphone className="h-4 w-4" />
                 <span>
                   <span className="block text-[9px] uppercase tracking-wider text-white/50">Get it on</span>
                   <span className="block font-semibold">Google Play</span>
                 </span>
-              </Link>
+              </a>
             </div>
           </div>
         </div>
