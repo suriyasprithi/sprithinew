@@ -49,8 +49,8 @@ export function AppHeader({ title }: { title?: string }) {
           )}
         </div>
         <Link
-          href="/shop-public"
-          aria-label="Go to shop"
+          href="/home"
+          aria-label="Home"
           className="ml-1 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-border bg-surface-2/60 hover:border-brand/40 hover:text-brand"
         >
           <ShoppingBag className="h-4 w-4" />
