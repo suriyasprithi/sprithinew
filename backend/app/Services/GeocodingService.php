@@ -34,18 +34,41 @@ class GeocodingService
      */
     public function geocode(?string $address, ?string $area = '', ?string $pincode = ''): ?array
     {
-        $query = trim(implode(', ', array_filter([
-            trim((string) $address),
-            trim((string) $area),
-            trim((string) $pincode),
-            'India',
-        ], static fn ($v) => $v !== '')));
+        $address = trim((string) $address);
+        $area    = trim((string) $area);
+        $pincode = trim((string) $pincode);
 
-        // Nothing but the literal "India" left → not enough to locate anything.
-        if ($query === '' || strcasecmp($query, 'India') === 0) {
-            return null;
+        // Coarsening fallback. Real shop addresses often carry door/office numbers
+        // ("Office 1 & 2, ...") that make the full string un-geocodable, so we retry
+        // with progressively coarser queries down to just the pincode / city — still
+        // a good-enough point for a "X km away" distance.
+        $candidates = [];
+        $add = static function (array $parts) use (&$candidates) {
+            $q = trim(implode(', ', array_filter(array_map('trim', $parts), static fn ($v) => $v !== '')));
+            if ($q !== '' && ! in_array($q, $candidates, true)) $candidates[] = $q;
+        };
+        $add([$address, $area, $pincode]);
+        $add([$area, $pincode]);
+        $add([$pincode]);
+        $add([$area]);
+        if (! $candidates) return null;
+
+        $first = true;
+        foreach ($candidates as $q) {
+            // Stay within Nominatim's ~1 req/sec even across our own fallback tries.
+            if (! $first) sleep(1);
+            $first = false;
+            $coords = $this->queryOne($q . ', India');
+            if ($coords) return $coords;
         }
 
+        log_message('warning', 'Geocode: no result for "{q}" (tried {n} variants)', ['q' => $candidates[0], 'n' => count($candidates)]);
+        return null;
+    }
+
+    /** One Nominatim lookup for an exact query string. Null on any failure. */
+    private function queryOne(string $query): ?array
+    {
         $url = $this->endpoint . '?' . http_build_query([
             'q'            => $query,
             'format'       => 'json',
@@ -62,7 +85,6 @@ class GeocodingService
 
             $data = json_decode($resp['body'], true);
             if (! is_array($data) || ! isset($data[0]['lat'], $data[0]['lon'])) {
-                log_message('warning', 'Geocode: no result for "{q}"', ['q' => $query]);
                 return null;
             }
 
@@ -111,7 +133,6 @@ class GeocodingService
         $resp = curl_exec($ch);
         $code = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
         $err  = curl_error($ch);
-        curl_close($ch);
 
         return ['code' => $code, 'body' => is_string($resp) ? $resp : '', 'error' => $err];
     }

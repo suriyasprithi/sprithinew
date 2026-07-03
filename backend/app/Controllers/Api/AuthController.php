@@ -572,8 +572,59 @@ class AuthController extends BaseApiController
             if (array_key_exists($k, $d)) $payload[$k] = $d[$k] === '' ? null : $d[$k];
         }
         if ($payload) (new UserModel())->update((int) $auth->id, $payload);
+
+        // A vendor's profile address is effectively their shop location. Mirror it
+        // into vendor_profiles (address/area/pincode) and geocode to lat/lng so
+        // customers see the distance to this shop. Best-effort: any geocoding
+        // failure keeps the existing coords (logged in GeocodingService).
+        if (($auth->role ?? '') === 'vendor') {
+            $this->syncVendorAddressAndGeocode((int) $auth->id);
+        }
+
         $user = (new UserModel())->find((int) $auth->id);
         return $this->ok($this->publicUser($user), 'Updated');
+    }
+
+    /**
+     * Copy a vendor's personal address (users.address_line/city/pincode) into
+     * their vendor_profiles row and geocode it to lat/lng. Only re-geocodes when
+     * the address actually changed (hash), and never wipes coords on failure.
+     */
+    private function syncVendorAddressAndGeocode(int $userId): void
+    {
+        $user = (new UserModel())->find($userId);
+        if (! $user) return;
+
+        $address = (string) ($user['address_line'] ?? '');
+        $area    = (string) ($user['city'] ?? '');
+        $pincode = (string) ($user['pincode'] ?? '');
+        if (trim($address . $area . $pincode) === '') return;
+
+        $profModel = new \App\Models\VendorProfileModel();
+        $p = $profModel->find($userId);
+        if (! $p) return; // no shop profile to sync into (shouldn't happen for a vendor)
+
+        // Mirror the address text (this is what the customer-facing vendor APIs read).
+        $sync = [
+            'address' => $address !== '' ? $address : null,
+            'area'    => $area    !== '' ? $area    : null,
+            'pincode' => $pincode !== '' ? $pincode : null,
+        ];
+
+        // Geocode only when the address changed since the last successful lookup.
+        $hash = \App\Services\GeocodingService::hash($address, $area, $pincode);
+        $stale = empty($p['latitude']) || empty($p['longitude']) || ($p['geocode_hash'] ?? '') !== $hash;
+        if ($stale) {
+            $coords = (new \App\Services\GeocodingService())->geocode($address, $area, $pincode);
+            if ($coords) {
+                $sync['latitude']     = $coords['lat'];
+                $sync['longitude']    = $coords['lng'];
+                $sync['geocoded_at']  = date('Y-m-d H:i:s');
+                $sync['geocode_hash'] = $hash;
+            }
+        }
+
+        $profModel->update($userId, $sync);
     }
 
     /**
