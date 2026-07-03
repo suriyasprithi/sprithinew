@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { FileText, Loader2, Paperclip, X } from "lucide-react";
+import { Camera, FileText, Loader2, Paperclip, X } from "lucide-react";
 import { toast } from "sonner";
 import { api, apiErrorMessage, fileUrl } from "@/lib/api";
 
@@ -30,6 +30,7 @@ export function FileUpload({
   disabled?: boolean;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
+  const cameraRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
 
   const isPdf = (path ?? "").toLowerCase().endsWith(".pdf");
@@ -49,15 +50,32 @@ export function FileUpload({
     } finally {
       setBusy(false);
       if (inputRef.current) inputRef.current.value = "";
+      if (cameraRef.current) cameraRef.current.value = "";
     }
   }
 
   return (
     <div className="space-y-1.5">
+      {/* Files: photo or PDF from the device (gallery / file manager). */}
       <input
         ref={inputRef}
         type="file"
         accept="image/jpeg,image/png,image/webp,application/pdf"
+        className="hidden"
+        disabled={disabled || busy}
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          if (f) void handleFile(f);
+        }}
+      />
+      {/* Camera: `capture` opens the camera directly inside the APK WebView
+          (the WebView doesn't add a camera option to the plain file picker
+          the way a mobile browser does). */}
+      <input
+        ref={cameraRef}
+        type="file"
+        accept="image/*"
+        capture="environment"
         className="hidden"
         disabled={disabled || busy}
         onChange={(e) => {
@@ -106,16 +124,32 @@ export function FileUpload({
             )}
           </div>
         )
+      ) : busy ? (
+        <div className="flex h-28 w-full flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border bg-surface-2/40 text-sm text-muted-foreground">
+          <Loader2 className="h-5 w-5 animate-spin" />
+          Uploading…
+        </div>
       ) : (
-        <button
-          type="button"
-          disabled={disabled || busy}
-          onClick={() => inputRef.current?.click()}
-          className="flex h-28 w-full flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border bg-surface-2/40 text-sm text-muted-foreground transition-colors hover:border-brand/40 hover:text-brand disabled:opacity-50"
-        >
-          {busy ? <Loader2 className="h-5 w-5 animate-spin" /> : <Paperclip className="h-5 w-5" />}
-          {busy ? "Uploading…" : "Tap to attach (photo or PDF)"}
-        </button>
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            disabled={disabled}
+            onClick={() => cameraRef.current?.click()}
+            className="flex h-28 flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border bg-surface-2/40 text-sm text-muted-foreground transition-colors hover:border-brand/40 hover:text-brand disabled:opacity-50"
+          >
+            <Camera className="h-5 w-5" />
+            Take Photo
+          </button>
+          <button
+            type="button"
+            disabled={disabled}
+            onClick={() => inputRef.current?.click()}
+            className="flex h-28 flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border bg-surface-2/40 text-sm text-muted-foreground transition-colors hover:border-brand/40 hover:text-brand disabled:opacity-50"
+          >
+            <Paperclip className="h-5 w-5" />
+            Photo / PDF
+          </button>
+        </div>
       )}
     </div>
   );
