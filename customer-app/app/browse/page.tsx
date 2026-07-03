@@ -287,6 +287,13 @@ export default function BrowsePage() {
     return shops.filter((s) => (s.shop_name || s.name || "").toLowerCase().includes(q) || (s.area || "").toLowerCase().includes(q));
   }, [shops, query]);
 
+  // Pharmacies in the selected vendor category → surface the prescription-order
+  // prompt at the category level too (not only inside one shop). A direct
+  // "Order with prescription" button only makes sense when it maps to a single
+  // pharmacy; with several, the customer must pick a shop first (each is tagged).
+  const rxShops = useMemo(() => shownShops.filter((s) => s.requires_prescription), [shownShops]);
+  const isRxCategory = activeCat !== ALL && rxShops.length > 0;
+
   return (
     <div className="marketplace-theme min-h-dvh bg-[var(--mk-bg)] pb-16">
       {/* Sticky header */}
@@ -368,6 +375,29 @@ export default function BrowsePage() {
 
           {level === "vendor" ? (
             <>
+              {/* Prescription prompt for a pharmacy/medicine category. */}
+              {isRxCategory && (
+                <div className="mb-3 flex flex-col items-start gap-3 rounded-2xl border border-[var(--mk-brand)]/30 bg-[var(--mk-brand-soft)] p-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="min-w-0">
+                    <p className="flex items-center gap-1.5 text-sm font-bold"><Pill className="h-4 w-4 text-[var(--mk-brand)]" /> Have a prescription?</p>
+                    <p className="mt-0.5 text-xs text-[var(--mk-text-muted)]">
+                      {rxShops.length === 1
+                        ? "Upload it and place the order — the shop adds the medicines and bill."
+                        : "Open a pharmacy below and upload it — the shop adds the medicines and bill."}
+                    </p>
+                  </div>
+                  {rxShops.length === 1 && (
+                    <button
+                      type="button"
+                      onClick={() => router.push(`/prescription-order?vendor_id=${rxShops[0].id}&shop=${encodeURIComponent(rxShops[0].shop_name || rxShops[0].name)}`)}
+                      className="inline-flex h-11 shrink-0 items-center gap-1.5 rounded-xl bg-[var(--mk-brand)] px-4 text-sm font-semibold text-white shadow-[var(--mk-shadow-sm)] transition-colors hover:bg-[var(--mk-brand-deep)]"
+                    >
+                      Order with prescription
+                    </button>
+                  )}
+                </div>
+              )}
+
               <div className="mb-3 flex items-baseline justify-between gap-2">
                 <h2 className="truncate text-lg font-bold">{activeVendorName}</h2>
                 {!shopsLoading && shownShops.length > 0 && <span className="shrink-0 text-xs font-medium text-[var(--mk-text-muted)]">{shownShops.length} shops</span>}
