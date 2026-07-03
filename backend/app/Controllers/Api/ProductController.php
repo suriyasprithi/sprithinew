@@ -1047,6 +1047,37 @@ class ProductController extends BaseApiController
     }
 
     /**
+     * Normalize the vendor's flash-sale inputs into stored columns. When the sale
+     * is off — or the price/date inputs are invalid — everything is stored as
+     * off/null so the product simply never shows up in the flash section.
+     * $regularPrice rejects a "flash" price that isn't actually a discount.
+     */
+    private function flashColumns(array $d, ?float $regularPrice): array
+    {
+        $on    = ! empty($d['flash_sale']) && ! in_array((string) $d['flash_sale'], ['0', 'false', ''], true);
+        $price = isset($d['flash_price']) && $d['flash_price'] !== '' ? (float) $d['flash_price'] : null;
+        $start = $this->flashDate($d['flash_start'] ?? null);
+        $end   = $this->flashDate($d['flash_end'] ?? null);
+
+        $valid = $on
+            && $price !== null && $price > 0
+            && ($regularPrice === null || $price < $regularPrice)
+            && $end !== null;
+
+        return $valid
+            ? ['flash_sale' => 1, 'flash_price' => $price, 'flash_start' => $start ?? date('Y-m-d H:i:s'), 'flash_end' => $end]
+            : ['flash_sale' => 0, 'flash_price' => null, 'flash_start' => null, 'flash_end' => null];
+    }
+
+    /** Parse a datetime-local ("2026-07-03T14:30") or datetime string to MySQL datetime, or null. */
+    private function flashDate(mixed $v): ?string
+    {
+        if (! is_string($v) || trim($v) === '') return null;
+        $ts = strtotime($v);
+        return $ts ? date('Y-m-d H:i:s', $ts) : null;
+    }
+
+    /**
      * Insert one product plus its variants from a (decoded) request item.
      * Shared by create() and bulkCreate(); caller resolves $vendorId + auth.
      */
@@ -1079,6 +1110,7 @@ class ProductController extends BaseApiController
         // (a normal vendor create leaves them null). Single source of truth for
         // both this insert and the admin catalog import's update path.
         $payload = array_merge($payload, $this->catalogColumns($d));
+        $payload = array_merge($payload, $this->flashColumns($d, isset($d['price']) ? (float) $d['price'] : null));
 
         $id = (new ProductModel())->insert($payload, true);
         $this->syncVariants((int) $id, $variants);
@@ -1351,6 +1383,13 @@ class ProductController extends BaseApiController
         }
 
         $payload = $this->mergeCatalogForUpdate($payload, $d);
+
+        // Flash sale — recompute all four columns whenever any flash field is sent.
+        if (array_key_exists('flash_sale', $d) || array_key_exists('flash_price', $d)
+            || array_key_exists('flash_start', $d) || array_key_exists('flash_end', $d)) {
+            $regularPrice = array_key_exists('price', $d) ? (float) $d['price'] : (float) ($row['price'] ?? 0);
+            $payload = array_merge($payload, $this->flashColumns($d, $regularPrice ?: null));
+        }
 
         if (array_key_exists('attributes', $d)) {
             $attrs = $this->normalizeAttributes($d['attributes']);

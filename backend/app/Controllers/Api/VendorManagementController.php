@@ -242,6 +242,7 @@ class VendorManagementController extends BaseApiController
             'gst'                => $d['gst'] ?? null,
         ];
         (new VendorProfileModel())->insert($profile, false);
+        $this->geocodeVendor((int) $userId);
         return $this->ok(['id' => (int) $userId], 'Created');
     }
 
@@ -283,8 +284,46 @@ class VendorManagementController extends BaseApiController
         if ($profilePayload) {
             if ($existing) $profModel->update($id, $profilePayload);
             else $profModel->insert(['user_id' => $id] + $profilePayload, false);
+            // Re-geocode only if the address parts actually changed (helper hashes
+            // and no-ops otherwise). Best-effort: a failure keeps the old coords.
+            if (array_intersect(['address', 'area'], array_keys($profilePayload))) {
+                $this->geocodeVendor($id);
+            }
         }
         return $this->ok(null, 'Updated');
+    }
+
+    /**
+     * Best-effort geocode of a vendor's shop address → lat/lng. No-op when the
+     * address is empty or unchanged since the last successful lookup; on any
+     * geocoding failure the existing coordinates are kept (failure is logged
+     * inside GeocodingService).
+     */
+    private function geocodeVendor(int $userId): void
+    {
+        $profModel = new VendorProfileModel();
+        $p = $profModel->find($userId);
+        if (! $p) return;
+
+        $address = (string) ($p['address'] ?? '');
+        $area    = (string) ($p['area'] ?? '');
+        $pincode = (string) ($p['pincode'] ?? '');
+        if (trim($address . $area . $pincode) === '') return;
+
+        $hash = \App\Services\GeocodingService::hash($address, $area, $pincode);
+        if (! empty($p['latitude']) && ! empty($p['longitude']) && ($p['geocode_hash'] ?? '') === $hash) {
+            return; // address unchanged and already located
+        }
+
+        $coords = (new \App\Services\GeocodingService())->geocode($address, $area, $pincode);
+        if (! $coords) return;
+
+        $profModel->update($userId, [
+            'latitude'     => $coords['lat'],
+            'longitude'    => $coords['lng'],
+            'geocoded_at'  => date('Y-m-d H:i:s'),
+            'geocode_hash' => $hash,
+        ]);
     }
 
     public function resetPassword(int $id): ResponseInterface

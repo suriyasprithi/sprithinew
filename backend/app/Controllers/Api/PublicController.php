@@ -88,6 +88,69 @@ class PublicController extends BaseApiController
     }
 
     /**
+     * Live flash-sale products (vendor-set limited-time discounts). Only products
+     * inside their active window (flash_start..flash_end) ship — expired ones are
+     * filtered server-side so a stale client can never keep showing them. Sorted
+     * by end time (ending soon first). Location-scoped like the rest of the home.
+     * Each item's price is the flash price; old_price is the regular price, and
+     * discount_percent / savings / flash_end (ISO) are added for the card + timer.
+     */
+    public function flashSale(): ResponseInterface
+    {
+        $pincode    = (string) $this->request->getGet('pincode');
+        $talukId    = (int)    $this->request->getGet('taluk_id');
+        $districtId = (int)    $this->request->getGet('district_id');
+        $stateId    = (int)    $this->request->getGet('state_id');
+
+        $vendorIds = $this->geoVendorIds($pincode, $talukId, $districtId, $stateId);
+        if (is_array($vendorIds) && empty($vendorIds)) return $this->ok(['items' => []]);
+
+        $now = date('Y-m-d H:i:s');
+        $q = (new ProductModel())
+            ->where('status', 'active')
+            ->where('flash_sale', 1)
+            ->where('flash_price >', 0)
+            ->where('flash_end >=', $now)
+            ->groupStart()
+                ->where('flash_start <=', $now)
+                ->orWhere('flash_start', null)
+            ->groupEnd()
+            ->orderBy('flash_end', 'ASC');
+        if (is_array($vendorIds)) $q->whereIn('vendor_id', $vendorIds);
+        $rows = $q->findAll(24);
+        if (! $rows) return $this->ok(['items' => []]);
+
+        // Keep the raw regular price + flash window before enrich() rewrites price.
+        $meta = [];
+        foreach ($rows as $r) {
+            $meta[(int) $r['id']] = [
+                'regular' => (float) ($r['price'] ?? 0),
+                'flash'   => (float) ($r['flash_price'] ?? 0),
+                'start'   => $r['flash_start'] ?? null,
+                'end'     => $r['flash_end'] ?? null,
+            ];
+        }
+
+        $items = $this->enrich($rows);
+        foreach ($items as &$it) {
+            $m = $meta[(int) ($it['id'] ?? 0)] ?? null;
+            if (! $m || $m['flash'] <= 0) continue;
+            $regular = $m['regular'] > 0 ? $m['regular'] : (float) ($it['price'] ?? 0);
+            $flash   = $m['flash'];
+            $it['price']            = $flash;
+            $it['old_price']        = $regular > $flash ? $regular : null;
+            $it['flash_price']      = $flash;
+            $it['discount_percent'] = $regular > $flash ? (int) round(($regular - $flash) / $regular * 100) : 0;
+            $it['savings']          = $regular > $flash ? round($regular - $flash, 2) : 0;
+            $it['flash_start']      = $m['start'] ? date('c', strtotime($m['start'])) : null;
+            $it['flash_end']        = $m['end']   ? date('c', strtotime($m['end']))   : null;
+        }
+        unset($it);
+
+        return $this->ok(['items' => $items]);
+    }
+
+    /**
      * Top-selling products, ranked by total sold quantity. Only FULFILLED orders
      * count (delivered / paid / completed) — cancelled ones are excluded. Ties
      * break by the most recent sale. Location-scoped like the rest of the home.
@@ -377,6 +440,8 @@ class PublicController extends BaseApiController
                 'address'   => $p['address']   ?? null,
                 'area'      => $p['area']      ?? null,
                 'pincode'   => $p['pincode']   ?? null,
+                'latitude'  => isset($p['latitude'])  && $p['latitude']  !== null ? (float) $p['latitude']  : null,
+                'longitude' => isset($p['longitude']) && $p['longitude'] !== null ? (float) $p['longitude'] : null,
                 'image'     => (($p['image_status'] ?? '') === 'inactive') ? null : ($p['image'] ?? null),
                 'gst'       => $p['gst']       ?? null,
                 'product_count' => $countByVendor[(int) $u['id']] ?? 0,

@@ -1,12 +1,16 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { FileDown, Plus, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { downloadTemplate, isReservedLabel } from "@/lib/catalog-import";
+import { useAuth } from "@/stores/auth";
+
+// Remembered per vendor so the attributes they last used are pre-filled next time.
+const attrsKey = (id?: number | null) => `epey:import-attrs:${id ?? "anon"}`;
 
 /**
  * Generates the dynamic CSV template: add the variant attributes you need
@@ -15,8 +19,28 @@ import { downloadTemplate, isReservedLabel } from "@/lib/catalog-import";
  * attributes added here.
  */
 export function TemplateBuilder() {
+  const userId = useAuth((s) => s.user?.id);
   const [attrs, setAttrs] = useState<string[]>([]);
   const [input, setInput] = useState("");
+  const [loaded, setLoaded] = useState(false);
+
+  // Load this vendor's last-used attributes once their id is known.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const raw = localStorage.getItem(attrsKey(userId));
+      const arr = raw ? JSON.parse(raw) : [];
+      setAttrs(Array.isArray(arr) ? arr.filter((x): x is string => typeof x === "string") : []);
+    } catch { setAttrs([]); }
+    setLoaded(true);
+  }, [userId]);
+
+  // Persist on every change — but only after the initial load, so a fresh mount
+  // never clobbers the saved list with an empty [].
+  useEffect(() => {
+    if (!loaded || typeof window === "undefined") return;
+    try { localStorage.setItem(attrsKey(userId), JSON.stringify(attrs)); } catch { /* quota/private mode — ignore */ }
+  }, [attrs, loaded, userId]);
 
   function add() {
     const v = input.trim();

@@ -27,6 +27,26 @@ class CartController extends BaseApiController
         $pById = []; foreach ($products as $p) $pById[(int) $p['id']] = $p;
         $vById = []; foreach ($variants as $v) $vById[(int) $v['id']] = $v;
 
+        // Self-heal: drop cart rows that can no longer be ordered — the product was
+        // deleted/deactivated, or its chosen variant no longer exists / is inactive.
+        // Without this the item is hidden from the cart yet still blocks checkout
+        // with "Some products are unavailable" (OrderController::place validates the
+        // raw cart). Pruning here keeps what the customer sees == what they can buy.
+        // Stock shortages are NOT pruned (the item is still valid — just low).
+        $deadIds = [];
+        foreach ($rows as $r) {
+            $p   = $pById[(int) $r['product_id']] ?? null;
+            $vid = (int) ($r['variation_id'] ?? 0);
+            $bad = ! $p || ($p['status'] ?? '') !== 'active'
+                || ($vid && (! isset($vById[$vid]) || ($vById[$vid]['status'] ?? '') !== 'active'));
+            if ($bad) $deadIds[] = (int) $r['id'];
+        }
+        if ($deadIds) {
+            $cart->whereIn('id', $deadIds)->delete();
+            $rows = array_values(array_filter($rows, static fn ($r) => ! in_array((int) $r['id'], $deadIds, true)));
+            if (! $rows) return $this->ok(['items' => [], 'total' => 0]);
+        }
+
         // Resolve each product's vendor shop name (shop_name, else the vendor's
         // user name) so the cart can show who sells each item.
         $vendorIds    = array_values(array_unique(array_filter(array_map(static fn ($p) => (int) ($p['vendor_id'] ?? 0), $products))));

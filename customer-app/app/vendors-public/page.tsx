@@ -12,8 +12,9 @@ import { GradientButton } from "@/components/ui/custom/gradient-button";
 import { api, apiErrorMessage } from "@/lib/api";
 import { useAuth } from "@/stores/auth";
 import { cn } from "@/lib/utils";
+import { getCustomerCoordsQuiet, readCustomerCoords, distanceToVendor, formatDistance, COORDS_EVENT, type Coords } from "@/lib/geo";
 
-type Vendor = { id: number; name: string; mobile: string; shop_name: string | null; address: string | null; area: string | null; gst: string | null };
+type Vendor = { id: number; name: string; mobile: string; shop_name: string | null; address: string | null; area: string | null; gst: string | null; latitude?: number | null; longitude?: number | null };
 type Taluk = { id: number; label: string };
 type Cat = { id: number; name: string };
 
@@ -37,6 +38,16 @@ export default function PublicVendorsPage() {
   const [shops, setShops] = useState<Vendor[]>([]);
   const [nameQuery, setNameQuery] = useState("");
   const [loadingShops, setLoadingShops] = useState(false);
+  const [coords, setCoords] = useState<Coords | null>(null);
+
+  // Customer location for "X km away" (quiet: cached/granted coords only).
+  useEffect(() => {
+    void getCustomerCoordsQuiet().then((c) => { if (c) setCoords(c); });
+    if (typeof window === "undefined") return;
+    const onCoords = () => setCoords(readCustomerCoords());
+    window.addEventListener(COORDS_EVENT, onCoords);
+    return () => window.removeEventListener(COORDS_EVENT, onCoords);
+  }, []);
 
   // Load all taluks once (labelled "Taluk — District").
   useEffect(() => {
@@ -95,9 +106,17 @@ export default function PublicVendorsPage() {
 
   const filteredShops = useMemo(() => {
     const q = nameQuery.trim().toLowerCase();
-    if (!q) return shops;
-    return shops.filter((v) => (v.shop_name ?? v.name).toLowerCase().includes(q));
-  }, [shops, nameQuery]);
+    const base = q ? shops.filter((v) => (v.shop_name ?? v.name).toLowerCase().includes(q)) : shops;
+    if (!coords) return base;
+    // Nearest-first when we know where the customer is; unlocated shops sink.
+    return [...base].sort((a, b) => {
+      const da = distanceToVendor(coords, a);
+      const db = distanceToVendor(coords, b);
+      if (da == null) return db == null ? 0 : 1;
+      if (db == null) return -1;
+      return da - db;
+    });
+  }, [shops, nameQuery, coords]);
 
   const pickTaluk = (t: Taluk) => { setTalukId(t.id); setTalukLabel(t.label); setTalukSearch(""); setTalukOpen(false); };
   const clearTaluk = () => { setTalukId(null); setTalukLabel(""); setTalukSearch(""); setTalukOpen(false); };
@@ -247,7 +266,10 @@ export default function PublicVendorsPage() {
                                     <span className="line-clamp-2">{v.address}</span>
                                   </p>
                                 )}
-                                <p className="truncate text-xs text-muted-foreground">{v.area ?? "—"} · {v.mobile}</p>
+                                <p className="truncate text-xs text-muted-foreground">
+                                  {v.area ?? "—"} · {v.mobile}
+                                  {(() => { const d = distanceToVendor(coords, v); return d != null ? ` · ${formatDistance(d)} away` : ""; })()}
+                                </p>
                               </div>
                               <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
                             </div>

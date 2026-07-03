@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { MapPin, X, Search, LocateFixed, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
+import { saveCustomerCoords } from "@/lib/geo";
 
 type State    = { id: number; name: string };
 type District = { id: number; state_id: number; name: string };
@@ -124,6 +125,8 @@ export function LocationPicker({ open, onClose }: { open: boolean; onClose: () =
       async (pos) => {
         try {
           const { latitude, longitude } = pos.coords;
+          // Cache the raw coords so vendor cards can show real distances.
+          saveCustomerCoords(latitude, longitude);
           const res = await fetch(
             `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${latitude}&lon=${longitude}`,
             { headers: { Accept: "application/json" } },

@@ -2,7 +2,7 @@
 
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Search, Sparkles } from "lucide-react";
+import { Search, Sparkles, Navigation } from "lucide-react";
 import { toast } from "sonner";
 import { TopInfoBar } from "@/components/marketplace/top-info-bar";
 import { MarketplaceHeader } from "@/components/marketplace/marketplace-header";
@@ -14,6 +14,7 @@ import { MarketplaceBottomNav } from "@/components/marketplace/mobile-bottom-nav
 import { MarketplaceFooter } from "@/components/marketplace/marketplace-footer";
 import { api, apiErrorMessage } from "@/lib/api";
 import { readSavedLocation } from "@/components/marketplace/location-picker";
+import { getCustomerCoordsQuiet, readCustomerCoords, distanceToVendor, formatDistance, COORDS_EVENT, type Coords } from "@/lib/geo";
 
 type ApiProduct = {
   id: number; name: string; price: number | string; old_price?: number | string | null; image: string | null;
@@ -30,7 +31,7 @@ type VendorCategory = { id: number; name: string };
 
 // Products fetched per scroll page (infinite scroll on the "All products" grid).
 const PAGE_SIZE = 24;
-type Vendor = { id: number; name: string; shop_name?: string | null; requires_prescription?: boolean };
+type Vendor = { id: number; name: string; shop_name?: string | null; requires_prescription?: boolean; latitude?: number | null; longitude?: number | null };
 
 function adapt(raw: ApiProduct): MarketplaceProduct {
   return {
@@ -93,6 +94,7 @@ function PublicShopInner() {
   const [cats, setCats] = useState<Category[]>([]);
   const [vcats, setVcats] = useState<VendorCategory[]>([]);
   const [vendors, setVendors] = useState<Vendor[]>([]);
+  const [coords, setCoords] = useState<Coords | null>(null);
   // Product-category filter tabs shown under the Shops row (derived from the
   // products in view); the active one filters the grid client-side.
   const [activeCat, setActiveCat] = useState<number | null>(null);
@@ -153,6 +155,7 @@ function PublicShopInner() {
   // The shop currently in view (when scoped to one). Pharmacies accept a
   // prescription-only order, so we surface that entry below.
   const selectedVendor = vendorId ? vendors.find((v) => v.id === vendorId) ?? null : null;
+  const vendorDistance = distanceToVendor(coords, selectedVendor ?? {});
   // Active in-shop sub-category tab (client-side, only when a category is active).
   const [activeSub, setActiveSub] = useState<number | null>(null);
   // Grid filtered by the active product-category tab, then the sub-category tab.
@@ -318,6 +321,15 @@ function PublicShopInner() {
     }
   }, []);
 
+  // Customer location for the vendor-store "X km away" line (quiet, no prompt).
+  useEffect(() => {
+    void getCustomerCoordsQuiet().then((c) => { if (c) setCoords(c); });
+    if (typeof window === "undefined") return;
+    const onCoords = () => setCoords(readCustomerCoords());
+    window.addEventListener(COORDS_EVENT, onCoords);
+    return () => window.removeEventListener(COORDS_EVENT, onCoords);
+  }, []);
+
   return (
     <div className="marketplace-theme min-h-screen pb-24 md:pb-0">
       <TopInfoBar />
@@ -416,6 +428,11 @@ function PublicShopInner() {
                     ? cats.find((c) => c.id === catId)?.name ?? "Products"
                     : "All products"}
             </h1>
+            {vendorId && vendorDistance != null && (
+              <p className="mt-0.5 inline-flex items-center gap-1 text-sm font-semibold text-[var(--mk-brand-deep)]">
+                <Navigation className="h-3.5 w-3.5" /> {formatDistance(vendorDistance)} away
+              </p>
+            )}
           </div>
           {!loading && (
             <p className="text-sm text-[var(--mk-text-muted)]">

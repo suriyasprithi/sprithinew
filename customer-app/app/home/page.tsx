@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import dynamic from "next/dynamic";
 import { TopInfoBar } from "@/components/marketplace/top-info-bar";
 import { MarketplaceHeader } from "@/components/marketplace/marketplace-header";
@@ -15,6 +15,7 @@ import type { MarketplaceVendor } from "@/components/marketplace/vendors-row";
 import { api } from "@/lib/api";
 import { EMPTY_BANNERS, type BannersBySlot } from "@/lib/banners";
 import { readSavedLocation } from "@/components/marketplace/location-picker";
+import { requestCustomerLocationOnce, readCustomerCoords, distanceToVendor, COORDS_EVENT, type Coords } from "@/lib/geo";
 import Link from "next/link";
 import { Sparkles } from "lucide-react";
 
@@ -41,6 +42,7 @@ type ApiProduct = {
 };
 type ApiVendor = {
   id: number; name: string; shop_name?: string | null; area?: string | null; pincode?: string | null;
+  latitude?: number | null; longitude?: number | null;
 };
 
 // Same URL axios builds for /public/banners. An inline <script> (below) kicks
@@ -57,6 +59,7 @@ export default function PublicHomePage() {
   const [vendorVideos,   setVendorVideos]   = useState<HomeVideo[]>([]);
   const [loading,  setLoading]  = useState(true);
   const [bannersLoading, setBannersLoading] = useState(true);
+  const [coords, setCoords] = useState<Coords | null>(null);
 
   useEffect(() => {
     // Hero banners gate the mobile LCP — fetch them on their own so the hero
@@ -127,6 +130,8 @@ export default function PublicHomePage() {
           shop_name: v.shop_name ?? null,
           area: v.area ?? null,
           pincode: v.pincode ?? null,
+          latitude: v.latitude != null ? Number(v.latitude) : null,
+          longitude: v.longitude != null ? Number(v.longitude) : null,
           rating: 4.2 + Math.random() * 0.6,
           delivery_time: "15-30 min",
         }));
@@ -143,6 +148,29 @@ export default function PublicHomePage() {
       return () => window.removeEventListener("epey-location-changed", onChange);
     }
   }, []);
+
+  // Customer location for the "X km away" distances on vendor cards. Quietly
+  // reuses cached/granted coords (no surprise prompt); refreshes when the user
+  // taps "Use current location" in the picker (which fires COORDS_EVENT).
+  useEffect(() => {
+    void requestCustomerLocationOnce().then((c) => { if (c) setCoords(c); });
+    if (typeof window === "undefined") return;
+    const onCoords = () => setCoords(readCustomerCoords());
+    window.addEventListener(COORDS_EVENT, onCoords);
+    return () => window.removeEventListener(COORDS_EVENT, onCoords);
+  }, []);
+
+  // Attach distance and sort nearest-first when we know where the customer is.
+  const vendorsForDisplay = useMemo(() => {
+    if (!coords) return vendors;
+    return vendors
+      .map((v) => ({ ...v, distance_km: distanceToVendor(coords, v) }))
+      .sort((a, b) => {
+        if (a.distance_km == null) return b.distance_km == null ? 0 : 1;
+        if (b.distance_km == null) return -1;
+        return a.distance_km - b.distance_km;
+      });
+  }, [vendors, coords]);
 
   return (
     <div className="marketplace-theme min-h-screen pb-24 md:pb-0">
@@ -173,7 +201,7 @@ export default function PublicHomePage() {
       <FeaturedCategories />
 
       {/* Local vendors — placed directly under Featured Categories */}
-      <VendorsRow vendors={vendors} loading={loading} />
+      <VendorsRow vendors={vendorsForDisplay} loading={loading} />
 
       {(customerVideos.length > 0 || vendorVideos.length > 0) && (
         <section className="mx-auto max-w-7xl px-4 py-6">
@@ -208,8 +236,8 @@ export default function PublicHomePage() {
         </div>
       </section>
 
-      {/* Flash sale (reuses products with synthetic discount badges + countdown) */}
-      {products.length > 0 && <FlashSale products={products} loading={loading} />}
+      {/* Flash sale — self-fetches live limited-time discounts; hides itself when none */}
+      <FlashSale />
 
       <ServicesSection />
 

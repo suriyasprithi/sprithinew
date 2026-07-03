@@ -27,6 +27,8 @@ class ProductModel extends Model
         'tax_percentage','discount_type','discount_value','discount_amount','weight','length','width','height',
         'delivery_charge','min_stock_alert','max_order_qty','return_days','warranty_days','brand','hsn_code',
         'unit','short_description','tags','gallery_images','featured',
+        // Flash sale (vendor-set limited-time discount).
+        'flash_sale','flash_price','flash_start','flash_end',
     ];
 
     protected $deletedField  = 'deleted_at';

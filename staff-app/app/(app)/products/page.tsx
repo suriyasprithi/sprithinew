@@ -94,6 +94,11 @@ type Draft = {
   tags: string;
   gallery_images: string;          // one URL per line / comma-separated
   featured: boolean;
+  // Flash sale (vendor-set limited-time discount). Dates are datetime-local strings.
+  flash_sale: boolean;
+  flash_price: string;
+  flash_start: string;
+  flash_end: string;
 };
 
 type ProductCategory = { id: number; name: string; commission_pct: number; vendor_category_id: number | null; status: "active" | "inactive" };
@@ -106,7 +111,15 @@ const blankCatalog = () => ({
   min_stock_alert: "", max_order_qty: "", weight: "", length: "", width: "", height: "",
   unit: "", delivery_charge: "", return_days: "", warranty_days: "",
   short_description: "", tags: "", gallery_images: "", featured: false,
+  flash_sale: false, flash_price: "", flash_start: "", flash_end: "",
 });
+
+// MySQL datetime ("2026-07-03 14:30:00") → datetime-local input value ("2026-07-03T14:30").
+function toLocalInput(v: unknown): string {
+  if (v == null || v === "") return "";
+  const s = String(v).replace(" ", "T");
+  return s.length >= 16 ? s.slice(0, 16) : s;
+}
 
 function blankDraft(defaultCategoryId: number | null): Draft {
   return {
@@ -143,6 +156,10 @@ function catalogDraftFrom(p: VendorProduct): ReturnType<typeof blankCatalog> {
     short_description: s(p.short_description), tags: s(p.tags),
     gallery_images: gallery,
     featured: Number(p.featured) === 1, // API returns "1"/"0" (string) for TINYINT
+    flash_sale: Number(p.flash_sale) === 1,
+    flash_price: p.flash_price != null ? String(p.flash_price) : "",
+    flash_start: toLocalInput(p.flash_start),
+    flash_end: toLocalInput(p.flash_end),
   };
 }
 
@@ -648,6 +665,20 @@ export default function VendorProductsPage() {
     payload.return_days     = num(editing.return_days);
     payload.warranty_days   = num(editing.warranty_days);
     payload.featured        = editing.featured ? 1 : 0;
+    // Flash sale — backend validates (flash_price must be a real discount + end set).
+    payload.flash_sale      = editing.flash_sale ? 1 : 0;
+    payload.flash_price     = editing.flash_sale ? num(editing.flash_price) : null;
+    payload.flash_start     = editing.flash_sale ? editing.flash_start : null;
+    payload.flash_end       = editing.flash_sale ? editing.flash_end : null;
+
+    // Client-side guard so the vendor gets an instant, clear error.
+    if (editing.flash_sale) {
+      const fp = Number(editing.flash_price);
+      if (!(fp > 0)) { toast.error("Enter a flash sale price"); return; }
+      if (fp >= Number(price)) { toast.error("Flash price must be lower than the regular price"); return; }
+      if (!editing.flash_end) { toast.error("Set the flash sale end date & time"); return; }
+      if (editing.flash_start && editing.flash_end <= editing.flash_start) { toast.error("Flash sale end must be after the start"); return; }
+    }
 
     try {
       if (editing.id) {
@@ -1096,6 +1127,45 @@ export default function VendorProductsPage() {
                   </Select>
                 </div>
               </div>
+            </div>
+
+            {/* FLASH SALE — vendor-set limited-time discount */}
+            <div className="space-y-3 rounded-xl border border-border bg-surface-2/20 p-4">
+              <label className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={editing?.flash_sale ?? false}
+                  onChange={(e) => setEditing((p) => p && ({ ...p, flash_sale: e.target.checked }))}
+                  className="h-4 w-4 accent-brand"
+                />
+                <span className="text-sm font-semibold">⚡ Flash sale (limited-time discount)</span>
+              </label>
+              {editing?.flash_sale && (
+                <>
+                  <div className="grid gap-3 md:grid-cols-3">
+                    <div className="space-y-1.5">
+                      <Label>Flash price (₹) <span className="text-brand">*</span></Label>
+                      <Input type="number" value={editing?.flash_price ?? ""} onChange={(e) => setEditing((p) => p && ({ ...p, flash_price: e.target.value }))} placeholder="Lower than regular price" className="h-11 rounded-xl bg-surface-2/60" />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label>Sale start</Label>
+                      <Input type="datetime-local" value={editing?.flash_start ?? ""} onChange={(e) => setEditing((p) => p && ({ ...p, flash_start: e.target.value }))} className="h-11 rounded-xl bg-surface-2/60" />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label>Sale end <span className="text-brand">*</span></Label>
+                      <Input type="datetime-local" value={editing?.flash_end ?? ""} onChange={(e) => setEditing((p) => p && ({ ...p, flash_end: e.target.value }))} className="h-11 rounded-xl bg-surface-2/60" />
+                    </div>
+                  </div>
+                  {(() => {
+                    const rp = Number(editing?.price), fp = Number(editing?.flash_price);
+                    if (rp > 0 && fp > 0 && fp < rp) {
+                      const off = Math.round(((rp - fp) / rp) * 100);
+                      return <p className="text-xs font-medium text-emerald-600">Customer saves ₹{(rp - fp).toFixed(2)} · {off}% OFF</p>;
+                    }
+                    return <p className="text-[11px] text-muted-foreground">Flash price must be lower than the regular price. Leave start empty to begin immediately. The product leaves the Flash Sale section automatically when the end time passes.</p>;
+                  })()}
+                </>
+              )}
             </div>
 
             {/* CATALOG DETAILS — comprehensive fields (stored on the product) */}

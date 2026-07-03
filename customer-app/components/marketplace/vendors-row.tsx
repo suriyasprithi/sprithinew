@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { Store, Star, MapPin, CheckCircle2 } from "lucide-react";
+import { Store, Star, MapPin, CheckCircle2, Navigation } from "lucide-react";
+import { formatDistance } from "@/lib/geo";
 
 export type MarketplaceVendor = {
   id: number;
@@ -7,6 +8,9 @@ export type MarketplaceVendor = {
   shop_name: string | null;
   area: string | null;
   pincode?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  distance_km?: number | null;
   rating?: number;
   delivery_time?: string;
   product_count?: number;
@@ -51,7 +55,13 @@ export function VendorsRow({ vendors, loading }: { vendors: MarketplaceVendor[];
                     <span className="inline-flex items-center gap-0.5 rounded bg-emerald-50 px-1.5 py-0.5 font-semibold text-emerald-700">
                       {(v.rating ?? 4.5).toFixed(1)} <Star className="h-2.5 w-2.5 fill-current" />
                     </span>
-                    <span className="text-[var(--mk-text-muted)]">{v.delivery_time ?? "15-30 min"}</span>
+                    {v.distance_km != null ? (
+                      <span className="inline-flex items-center gap-0.5 font-semibold text-[var(--mk-brand-deep)]">
+                        <Navigation className="h-2.5 w-2.5" /> {formatDistance(v.distance_km)}
+                      </span>
+                    ) : (
+                      <span className="text-[var(--mk-text-muted)]">{v.delivery_time ?? "15-30 min"}</span>
+                    )}
                     {v.product_count != null && (
                       <span className="text-[var(--mk-text-muted)]">· {v.product_count} items</span>
                     )}

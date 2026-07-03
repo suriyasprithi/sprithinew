@@ -284,6 +284,11 @@ export type VendorProduct = {
   tags?: string | null;
   gallery_images?: string | null;
   featured?: number | string | boolean | null;
+  // Flash sale (vendor-set limited-time discount).
+  flash_sale?: number | string | boolean | null;
+  flash_price?: number | string | null;
+  flash_start?: string | null;
+  flash_end?: string | null;
 };
 const vendorProducts: VendorProduct[] = [
   { id: 1, name: "Sona Masuri Rice 5kg",      price: 380, stock: 24, category_name: "Rice Shop",   vendor_category_id: 2, status: "active", has_variants: true,

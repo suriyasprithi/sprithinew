@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Heart, Star, Plus, Minus, Store } from "lucide-react";
+import { Heart, Star, Plus, Minus, Store, Clock } from "lucide-react";
 import { toast } from "sonner";
 import { ProductImage } from "@/components/ui/custom/product-image";
 import { wishlist } from "@/lib/wishlist";
@@ -36,9 +36,18 @@ export type MarketplaceProduct = {
 const fmtINR = (n: number) =>
   new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(n);
 
-export function ProductCard({ product, onAdd }: {
+// Remaining time as "1d 02:14:33" / "02:14:33" for the flash-sale countdown chip.
+function fmtLeft(ms: number): string {
+  const s = Math.max(0, Math.floor(ms / 1000));
+  const d = Math.floor(s / 86400), h = Math.floor((s % 86400) / 3600), m = Math.floor((s % 3600) / 60), ss = s % 60;
+  const p = (n: number) => String(n).padStart(2, "0");
+  return d > 0 ? `${d}d ${p(h)}:${p(m)}:${p(ss)}` : `${p(h)}:${p(m)}:${p(ss)}`;
+}
+
+export function ProductCard({ product, onAdd, flashEndMs }: {
   product: MarketplaceProduct;
   onAdd?: (p: MarketplaceProduct, qty: number) => void;
+  flashEndMs?: number;   // when set, shows a live countdown chip on the card image
 }) {
   const [qty, setQty] = useState(0);
   const [liked, setLiked] = useState(false);
@@ -50,9 +59,20 @@ export function ProductCard({ product, onAdd }: {
     return wishlist.subscribe(() => setLiked(wishlist.has(product.id)));
   }, [product.id]);
 
+  // Per-card 1s ticker — only runs when this is a flash-sale card.
+  const [flashNow, setFlashNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (flashEndMs == null) return;
+    const t = setInterval(() => setFlashNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [flashEndMs]);
+  const flashLeft = flashEndMs != null ? Math.max(0, flashEndMs - flashNow) : null;
+
   const off = product.old_price && product.old_price > product.price
     ? Math.round(((product.old_price - product.price) / product.old_price) * 100)
     : 0;
+  const savings = product.old_price && product.old_price > product.price ? product.old_price - product.price : 0;
+  const soldOut = product.stock != null && product.stock <= 0;
 
   // Variant options shown as tag chips with their ACTUAL names (e.g. [100ml]
   // [250ml] [Red]); falls back to a "N name" count when option values are
@@ -73,7 +93,7 @@ export function ProductCard({ product, onAdd }: {
   // (e.g. for a UI-only override or analytics shim). Otherwise POST directly
   // to /cart/add — the api axios interceptor handles 401 by routing to /login.
   async function add() {
-    if (busy) return;
+    if (busy || soldOut) return;
     const nextQty = qty + 1;
     setBusy(true);
     try {
@@ -130,6 +150,20 @@ export function ProductCard({ product, onAdd }: {
         {product.stock != null && product.stock > 0 && product.stock <= 5 && (
           <span className="absolute left-2 top-9 inline-flex items-center rounded-md bg-amber-500/95 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white shadow-sm">
             Only {product.stock} left
+          </span>
+        )}
+
+        {/* Live flash-sale countdown */}
+        {flashLeft != null && flashLeft > 0 && (
+          <span className="absolute bottom-2 left-2 inline-flex items-center gap-1 rounded-md bg-black/75 px-2 py-0.5 text-[10px] font-bold tabular-nums text-white shadow-sm">
+            <Clock className="h-3 w-3" /> {fmtLeft(flashLeft)}
+          </span>
+        )}
+
+        {/* Sold out */}
+        {soldOut && (
+          <span className="absolute inset-0 flex items-center justify-center bg-black/50">
+            <span className="rounded-md bg-white px-3 py-1 text-xs font-bold uppercase tracking-wider text-[var(--mk-text)]">Sold Out</span>
           </span>
         )}
 
@@ -203,9 +237,16 @@ export function ProductCard({ product, onAdd }: {
             {product.old_price && product.old_price > product.price && (
               <p className="text-xs text-[var(--mk-text-muted)] line-through">{fmtINR(product.old_price)}</p>
             )}
+            {savings > 0 && (
+              <p className="text-[11px] font-bold text-emerald-600">Save {fmtINR(savings)}{off > 0 ? ` · ${off}% off` : ""}</p>
+            )}
           </div>
 
-          {qty === 0 ? (
+          {soldOut ? (
+            <span className="inline-flex items-center rounded-lg border-2 border-[var(--mk-border)] bg-[var(--mk-surface-2)] px-3 py-1.5 text-xs font-bold text-[var(--mk-text-muted)]">
+              SOLD OUT
+            </span>
+          ) : qty === 0 ? (
             <button
               type="button"
               onClick={add}
