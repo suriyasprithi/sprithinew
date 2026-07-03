@@ -275,6 +275,10 @@ export default function BrowsePage() {
   // Deep-linked shops (?shop=) start nameless — fill the header from the products.
   const activeShopName = activeShop?.shop_name || activeShop?.name || products[0]?.vendor_name || "Shop";
   const activeProdCatName = activeProdCat === ALL ? "All Products" : shopCats.find((c) => c.id === activeProdCat)?.name ?? "Products";
+  // Pharmacy/medicine shop → offer a prescription-only order (same as /shop-public).
+  // Falls back to the loaded shop list for deep-linked (?shop=) opens where the
+  // activeShop stub has no requires_prescription flag yet.
+  const activeShopRx = !!(activeShop && (activeShop.requires_prescription ?? shops.find((s) => s.id === activeShop.id)?.requires_prescription));
 
   // Vendor-level shop search is client-side over the (≤100) loaded shops.
   const shownShops = useMemo(() => {
@@ -382,6 +386,24 @@ export default function BrowsePage() {
             </>
           ) : (
             <>
+              {/* Prescription banner — shown for pharmacy/medicine shops regardless of
+                  the product-category selected below. */}
+              {activeShopRx && (
+                <div className="mb-3 flex flex-col items-start gap-3 rounded-2xl border border-[var(--mk-brand)]/30 bg-[var(--mk-brand-soft)] p-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="min-w-0">
+                    <p className="flex items-center gap-1.5 text-sm font-bold"><Pill className="h-4 w-4 text-[var(--mk-brand)]" /> Have a prescription?</p>
+                    <p className="mt-0.5 text-xs text-[var(--mk-text-muted)]">Upload it and place the order — the shop adds the medicines and bill.</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => router.push(`/prescription-order?vendor_id=${activeShop!.id}&shop=${encodeURIComponent(activeShopName)}`)}
+                    className="inline-flex h-11 shrink-0 items-center gap-1.5 rounded-xl bg-[var(--mk-brand)] px-4 text-sm font-semibold text-white shadow-[var(--mk-shadow-sm)] transition-colors hover:bg-[var(--mk-brand-deep)]"
+                  >
+                    Order with prescription
+                  </button>
+                </div>
+              )}
+
               <div className="mb-3 flex items-baseline justify-between gap-2">
                 <h2 className="truncate text-lg font-bold">{debouncedQ ? `“${debouncedQ}”` : activeProdCatName}</h2>
                 {!prodLoading && products.length > 0 && <span className="shrink-0 text-xs font-medium text-[var(--mk-text-muted)]">{products.length}{hasMore ? "+" : ""} items</span>}
