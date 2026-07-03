@@ -87,6 +87,61 @@ class PublicController extends BaseApiController
         return $this->ok(['featured' => $featured, 'categories' => $cats]);
     }
 
+    /**
+     * Top-selling products, ranked by total sold quantity. Only FULFILLED orders
+     * count (delivered / paid / completed) — cancelled ones are excluded. Ties
+     * break by the most recent sale. Location-scoped like the rest of the home.
+     * The expensive aggregate is cached ~10 min (a big orders table isn't scanned
+     * on every home load); product details are always re-read fresh.
+     */
+    public function topSelling(): ResponseInterface
+    {
+        $limit      = min(24, max(1, (int) ($this->request->getGet('limit') ?: 8)));
+        $pincode    = (string) $this->request->getGet('pincode');
+        $talukId    = (int)    $this->request->getGet('taluk_id');
+        $districtId = (int)    $this->request->getGet('district_id');
+        $stateId    = (int)    $this->request->getGet('state_id');
+
+        $vendorIds = $this->geoVendorIds($pincode, $talukId, $districtId, $stateId);
+        if (is_array($vendorIds) && empty($vendorIds)) return $this->ok(['items' => []]);
+
+        $cacheKey = 'top_selling_' . ($vendorIds === null ? 'all' : md5(implode(',', $vendorIds))) . '_' . $limit;
+        $cache    = service('cache');
+        $ranked   = $cache->get($cacheKey);
+        if ($ranked === null) {
+            $b = \Config\Database::connect()->table('order_items oi')
+                ->select('oi.product_id AS pid, SUM(oi.qty) AS sold_count, MAX(o.created_at) AS last_sold')
+                ->join('orders o', 'o.id = oi.order_id')
+                ->whereIn('o.status', ['delivered', 'paid', 'completed'])
+                ->groupBy('oi.product_id')
+                ->orderBy('sold_count', 'DESC')
+                ->orderBy('last_sold', 'DESC')
+                ->limit($limit * 3);   // over-fetch: some may be inactive/deleted and drop out
+            if ($vendorIds !== null) $b->whereIn('o.vendor_id', $vendorIds);
+            $ranked = $b->get()->getResultArray();
+            $cache->save($cacheKey, $ranked, 600);
+        }
+        if (! $ranked) return $this->ok(['items' => []]);
+
+        $soldByPid  = [];
+        $orderedIds = [];
+        foreach ($ranked as $r) { $pid = (int) $r['pid']; $soldByPid[$pid] = (int) $r['sold_count']; $orderedIds[] = $pid; }
+
+        // Load still-sellable products, then re-order by the ranking (whereIn loses it).
+        $products = (new ProductModel())->whereIn('id', $orderedIds)->where('status', 'active')->findAll();
+        $byId = []; foreach ($products as $p) $byId[(int) $p['id']] = $p;
+        $rows = [];
+        foreach ($orderedIds as $pid) {
+            if (isset($byId[$pid])) { $rows[] = $byId[$pid]; if (count($rows) >= $limit) break; }
+        }
+
+        $items = $this->enrich($rows);
+        foreach ($items as &$it) $it['sold_count'] = $soldByPid[(int) $it['id']] ?? 0;
+        unset($it);
+
+        return $this->ok(['items' => $items]);
+    }
+
     public function products(): ResponseInterface
     {
         $q              = (string) $this->request->getGet('q');

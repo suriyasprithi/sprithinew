@@ -30,6 +30,7 @@ export type MarketplaceProduct = {
   category_name?: string | null;
   sub_category_id?: number | null;     // sub-category — for the secondary in-shop filter tabs
   sub_category_name?: string | null;
+  sold_count?: number | null;          // total units sold (top-selling section) — shows "N sold"
 };
 
 const fmtINR = (n: number) =>
@@ -160,6 +161,12 @@ export function ProductCard({ product, onAdd }: {
         <Link href={`/product-public?id=${product.id}`} className="line-clamp-2 text-sm font-semibold leading-tight hover:text-[var(--mk-brand-deep)]">
           {product.name}
         </Link>
+
+        {product.sold_count != null && product.sold_count > 0 && (
+          <span className="inline-flex w-fit items-center gap-1 rounded-full bg-[var(--mk-brand-soft)] px-2 py-0.5 text-[11px] font-bold text-[var(--mk-brand-deep)]">
+            🔥 {product.sold_count.toLocaleString("en-IN")} sold
+          </span>
+        )}
 
         {variantChips.length > 0 && (
           <div className="flex flex-wrap gap-1">

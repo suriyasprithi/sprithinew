@@ -37,6 +37,7 @@ type ApiProduct = {
   stock?: number;
   has_variants?: boolean;
   default_variant_id?: number | null;
+  sold_count?: number | string | null;
 };
 type ApiVendor = {
   id: number; name: string; shop_name?: string | null; area?: string | null; pincode?: string | null;
@@ -49,6 +50,7 @@ const BANNERS_URL = `${process.env.NEXT_PUBLIC_API_URL ?? ""}/api/v1/public/bann
 
 export default function PublicHomePage() {
   const [products, setProducts] = useState<MarketplaceProduct[]>([]);
+  const [topProducts, setTopProducts] = useState<MarketplaceProduct[]>([]);
   const [vendors,  setVendors]  = useState<MarketplaceVendor[]>([]);
   const [banners,  setBanners]  = useState<BannersBySlot>(EMPTY_BANNERS);
   const [customerVideos, setCustomerVideos] = useState<HomeVideo[]>([]);
@@ -85,12 +87,25 @@ export default function PublicHomePage() {
       else if (loc?.district_id) params.district_id = String(loc.district_id);
       else if (loc?.state_id)    params.state_id    = String(loc.state_id);
       try {
-        const [hr, vr, cvr, vvr] = await Promise.all([
-          api.get("/public/home",    { params }).catch(() => null),
-          api.get("/public/vendors", { params }).catch(() => null),
+        const [hr, vr, cvr, vvr, tsr] = await Promise.all([
+          api.get("/public/home",        { params }).catch(() => null),
+          api.get("/public/vendors",     { params }).catch(() => null),
           api.get("/public/customer-videos").catch(() => null),
           api.get("/public/vendor-videos").catch(() => null),
+          api.get("/public/top-selling", { params }).catch(() => null),
         ]);
+        setTopProducts(((tsr?.data.data?.items ?? []) as ApiProduct[]).map((p): MarketplaceProduct => ({
+          id: Number(p.id),
+          name: p.name,
+          price: Number(p.price),
+          old_price: p.old_price != null ? Number(p.old_price) : undefined,
+          image: p.image,
+          vendor_name: p.vendor_name ?? null,
+          stock: p.stock,
+          has_variants: !!p.has_variants,
+          default_variant_id: p.default_variant_id ?? null,
+          sold_count: p.sold_count != null ? Number(p.sold_count) : null,
+        })));
         setCustomerVideos((cvr?.data.data?.items ?? []) as HomeVideo[]);
         setVendorVideos((vvr?.data.data?.items ?? []) as HomeVideo[]);
         const featured = ((hr?.data.data?.featured ?? []) as ApiProduct[]).map((p): MarketplaceProduct => ({
@@ -182,9 +197,14 @@ export default function PublicHomePage() {
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
           {loading
             ? Array.from({ length: 4 }).map((_, i) => <ProductCardSkeleton key={i} />)
-            : products.length === 0
-              ? <EmptyState />
-              : products.slice(0, 8).map((p) => <ProductCard key={p.id} product={p} />)}
+            : (() => {
+                // Real bestsellers by sold quantity; fall back to recent only when
+                // there are no sales yet, so the section is never blank.
+                const list = topProducts.length > 0 ? topProducts : products;
+                return list.length === 0
+                  ? <EmptyState />
+                  : list.slice(0, 8).map((p) => <ProductCard key={p.id} product={p} />);
+              })()}
         </div>
       </section>
 
