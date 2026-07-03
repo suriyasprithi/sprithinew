@@ -87,6 +87,7 @@ export default function BrowsePage() {
   const [activeCat, setActiveCat] = useState<number>(ALL);
   const [shops, setShops] = useState<Shop[]>([]);
   const [shopsLoading, setShopsLoading] = useState(true);
+  const [rxPickerOpen, setRxPickerOpen] = useState(false); // pharmacy picker for the prescription banner
 
   // ---- shop level ----
   const [activeShop, setActiveShop] = useState<Shop | null>(null);
@@ -293,6 +294,8 @@ export default function BrowsePage() {
   // pharmacy; with several, the customer must pick a shop first (each is tagged).
   const rxShops = useMemo(() => shownShops.filter((s) => s.requires_prescription), [shownShops]);
   const isRxCategory = activeCat !== ALL && rxShops.length > 0;
+  useEffect(() => { setRxPickerOpen(false); }, [activeCat]);
+  const goRx = (s: Shop) => router.push(`/prescription-order?vendor_id=${s.id}&shop=${encodeURIComponent(s.shop_name || s.name)}`);
 
   return (
     <div className="marketplace-theme min-h-dvh bg-[var(--mk-bg)] pb-16">
@@ -375,25 +378,45 @@ export default function BrowsePage() {
 
           {level === "vendor" ? (
             <>
-              {/* Prescription prompt for a pharmacy/medicine category. */}
+              {/* Prescription prompt for a pharmacy/medicine category. The button
+                  always shows; when the category has several pharmacies it opens a
+                  picker (a prescription order needs one specific pharmacy). */}
               {isRxCategory && (
-                <div className="mb-3 flex flex-col items-start gap-3 rounded-2xl border border-[var(--mk-brand)]/30 bg-[var(--mk-brand-soft)] p-4 sm:flex-row sm:items-center sm:justify-between">
-                  <div className="min-w-0">
-                    <p className="flex items-center gap-1.5 text-sm font-bold"><Pill className="h-4 w-4 text-[var(--mk-brand)]" /> Have a prescription?</p>
-                    <p className="mt-0.5 text-xs text-[var(--mk-text-muted)]">
-                      {rxShops.length === 1
-                        ? "Upload it and place the order — the shop adds the medicines and bill."
-                        : "Open a pharmacy below and upload it — the shop adds the medicines and bill."}
-                    </p>
-                  </div>
-                  {rxShops.length === 1 && (
+                <div className="mb-3 rounded-2xl border border-[var(--mk-brand)]/30 bg-[var(--mk-brand-soft)] p-4">
+                  <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="min-w-0">
+                      <p className="flex items-center gap-1.5 text-sm font-bold"><Pill className="h-4 w-4 text-[var(--mk-brand)]" /> Have a prescription?</p>
+                      <p className="mt-0.5 text-xs text-[var(--mk-text-muted)]">Upload it and place the order — the shop adds the medicines and bill.</p>
+                    </div>
                     <button
                       type="button"
-                      onClick={() => router.push(`/prescription-order?vendor_id=${rxShops[0].id}&shop=${encodeURIComponent(rxShops[0].shop_name || rxShops[0].name)}`)}
+                      onClick={() => (rxShops.length === 1 ? goRx(rxShops[0]) : setRxPickerOpen((v) => !v))}
                       className="inline-flex h-11 shrink-0 items-center gap-1.5 rounded-xl bg-[var(--mk-brand)] px-4 text-sm font-semibold text-white shadow-[var(--mk-shadow-sm)] transition-colors hover:bg-[var(--mk-brand-deep)]"
                     >
                       Order with prescription
                     </button>
+                  </div>
+
+                  {rxPickerOpen && rxShops.length > 1 && (
+                    <div className="mt-3 border-t border-[var(--mk-brand)]/20 pt-3">
+                      <p className="mb-2 text-xs font-semibold text-[var(--mk-text-muted)]">Choose a pharmacy</p>
+                      <div className="grid gap-1.5 sm:grid-cols-2">
+                        {rxShops.map((s) => (
+                          <button
+                            key={s.id}
+                            type="button"
+                            onClick={() => goRx(s)}
+                            className="flex items-center justify-between gap-2 rounded-xl border border-[var(--mk-border)] bg-white px-3 py-2.5 text-left text-sm transition-colors hover:border-[var(--mk-brand)]/40"
+                          >
+                            <span className="flex min-w-0 items-center gap-2">
+                              <Pill className="h-3.5 w-3.5 shrink-0 text-[var(--mk-brand)]" />
+                              <span className="truncate font-medium">{s.shop_name || s.name}</span>
+                            </span>
+                            <ChevronRight className="h-4 w-4 shrink-0 text-[var(--mk-text-muted)]" />
+                          </button>
+                        ))}
+                      </div>
+                    </div>
                   )}
                 </div>
               )}
