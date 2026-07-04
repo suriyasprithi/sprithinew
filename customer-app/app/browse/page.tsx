@@ -383,9 +383,9 @@ export default function BrowsePage() {
             </>
           ) : (
             <>
-              <RailItem active={activeProdCat === ALL} label="All Products" onClick={() => { if (activeProduct) closeProduct(); setActiveProdCat(ALL); }} icon={<Package className="h-5 w-5" />} />
+              <RailItem active={activeProdCat === ALL} label="All Products" onClick={() => { if (activeProduct) closeProduct(); setActiveProdCat(ALL); }} />
               {shopCats.filter((c) => (c.status ?? "active") === "active").map((c) => (
-                <RailItem key={c.id} active={activeProdCat === c.id} label={c.name} onClick={() => { if (activeProduct) closeProduct(); setActiveProdCat(c.id); }} icon={<Package className="h-5 w-5" />} />
+                <RailItem key={c.id} active={activeProdCat === c.id} label={c.name} onClick={() => { if (activeProduct) closeProduct(); setActiveProdCat(c.id); }} />
               ))}
             </>
           )}
@@ -555,7 +555,7 @@ function RailSkeleton() {
   );
 }
 
-function RailItem({ active, label, onClick, image, icon }: { active: boolean; label: string; onClick: () => void; image?: string; icon: React.ReactNode }) {
+function RailItem({ active, label, onClick, image, icon }: { active: boolean; label: string; onClick: () => void; image?: string; icon?: React.ReactNode }) {
   return (
     <button
       type="button"
@@ -566,12 +566,14 @@ function RailItem({ active, label, onClick, image, icon }: { active: boolean; la
       }`}
     >
       {active && <span className="absolute inset-y-2 left-0 w-1 rounded-r bg-[var(--mk-brand)]" />}
-      <span className={`grid h-11 w-11 shrink-0 place-items-center overflow-hidden rounded-xl ${active ? "bg-white text-[var(--mk-brand)] ring-1 ring-[var(--mk-brand)]/30" : "bg-[var(--mk-surface-2)] text-[var(--mk-text-muted)]"}`}>
-        {image ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={image} alt={label} loading="lazy" className="h-full w-full object-cover" />
-        ) : icon}
-      </span>
+      {(image || icon) && (
+        <span className={`grid h-11 w-11 shrink-0 place-items-center overflow-hidden rounded-xl ${active ? "bg-white text-[var(--mk-brand)] ring-1 ring-[var(--mk-brand)]/30" : "bg-[var(--mk-surface-2)] text-[var(--mk-text-muted)]"}`}>
+          {image ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={image} alt={label} loading="lazy" className="h-full w-full object-cover" />
+          ) : icon}
+        </span>
+      )}
       <span className={`line-clamp-2 text-[11px] font-medium leading-tight md:text-sm ${active ? "text-[var(--mk-brand-deep)]" : "text-[var(--mk-text)]"}`}>{label}</span>
     </button>
   );
