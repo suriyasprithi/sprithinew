@@ -229,3 +229,13 @@ ALTER TABLE `products` ADD COLUMN IF NOT EXISTS `sub_category_id` int(10) unsign
 -- Index + FK (ignore errors if they already exist):
 ALTER TABLE `products` ADD INDEX `idx_products_sub_category` (`sub_category_id`);
 ALTER TABLE `products` ADD CONSTRAINT `fk_products_sub_category` FOREIGN KEY (`sub_category_id`) REFERENCES `sub_categories` (`id`) ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- Flash sale (products) + vendor geocode — Codespaces migrations 2026-07-03.
+ALTER TABLE `products` ADD COLUMN IF NOT EXISTS `flash_sale`  tinyint(1) NOT NULL DEFAULT 0 AFTER `mrp`;
+ALTER TABLE `products` ADD COLUMN IF NOT EXISTS `flash_price` decimal(12,2) DEFAULT NULL AFTER `flash_sale`;
+ALTER TABLE `products` ADD COLUMN IF NOT EXISTS `flash_start` datetime DEFAULT NULL AFTER `flash_price`;
+ALTER TABLE `products` ADD COLUMN IF NOT EXISTS `flash_end`   datetime DEFAULT NULL AFTER `flash_start`;
+ALTER TABLE `vendor_profiles` ADD COLUMN IF NOT EXISTS `latitude`     decimal(10,7) DEFAULT NULL AFTER `pincode`;
+ALTER TABLE `vendor_profiles` ADD COLUMN IF NOT EXISTS `longitude`    decimal(10,7) DEFAULT NULL AFTER `latitude`;
+ALTER TABLE `vendor_profiles` ADD COLUMN IF NOT EXISTS `geocoded_at`  datetime DEFAULT NULL AFTER `longitude`;
+ALTER TABLE `vendor_profiles` ADD COLUMN IF NOT EXISTS `geocode_hash` varchar(64) DEFAULT NULL AFTER `geocoded_at`;
