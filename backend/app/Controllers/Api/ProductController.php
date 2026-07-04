@@ -845,12 +845,18 @@ class ProductController extends BaseApiController
         return null;
     }
 
-    /** Vendor-scoped, sanitized base name for a CSV image filename (no extension). */
+    /**
+     * GLOBAL sanitized base name for a CSV image filename (no extension). Images
+     * are shared across ALL vendors by filename — one vendor's ZIP upload can be
+     * reused by any other vendor that references the same filename (no re-upload).
+     * Trade-off: two vendors using the same filename for different images share /
+     * overwrite the one file. ($vendorId kept for call-site compat; unused.)
+     */
     private function importImageBase(int $vendorId, string $filename): string
     {
+        unset($vendorId);
         $b = strtolower((string) pathinfo($filename, PATHINFO_FILENAME));
-        $b = trim((string) preg_replace('/[^a-z0-9._-]+/', '-', $b), '-._');
-        return $b === '' ? '' : $vendorId . '-' . $b;
+        return trim((string) preg_replace('/[^a-z0-9._-]+/', '-', $b), '-._');
     }
 
     /**
