@@ -14,6 +14,7 @@ import { readSavedLocation } from "@/components/marketplace/location-picker";
 type VendorCategory = { id: number; name: string; image?: string | null; product_count?: number | string; status?: string };
 type Shop = { id: number; name: string; shop_name?: string | null; image?: string | null; area?: string | null; pincode?: string | null; product_count?: number | string; requires_prescription?: boolean };
 type ProductCategory = { id: number; name: string; status?: string };
+type ProductSubCategory = { id: number; name: string; category_id: number | string; status?: string };
 type ApiProduct = {
   id: number | string; name: string; price: number | string; old_price?: number | string | null;
   image: string | null; stock?: number | string; vendor_id?: number | string | null; vendor_name?: string | null; has_variants?: boolean;
@@ -95,7 +96,9 @@ export default function BrowsePage() {
   // ---- shop level ----
   const [activeShop, setActiveShop] = useState<Shop | null>(null);
   const [shopCats, setShopCats] = useState<ProductCategory[]>([]);
+  const [subCats, setSubCats] = useState<ProductSubCategory[]>([]);
   const [activeProdCat, setActiveProdCat] = useState<number>(ALL);
+  const [activeSubCat, setActiveSubCat] = useState<number>(ALL);
   const [products, setProducts] = useState<MarketplaceProduct[]>([]);
   const [prodLoading, setProdLoading] = useState(false);
   const [page, setPage] = useState(1);
@@ -208,6 +211,7 @@ export default function BrowsePage() {
     if (shopMode) {
       params.vendor_id = activeShop!.id;
       if (activeProdCat !== ALL) params.category_id = activeProdCat;
+      if (activeSubCat !== ALL) params.sub_category_id = activeSubCat;
     } else {
       Object.assign(params, geoParams());                    // scope to the delivery area
       if (activeCat !== ALL) params.vendor_category_id = activeCat;   // optional category narrowing
@@ -220,18 +224,22 @@ export default function BrowsePage() {
         setProducts(((data.items ?? []) as ApiProduct[]).map(adapt));
         setHasMore(Boolean(data.has_more));
         setPage(1);
-        // Rail categories only from the shop's unfiltered (All Products, no search) response.
-        if (shopMode && activeProdCat === ALL && !debouncedQ) setShopCats((data.categories ?? []) as ProductCategory[]);
+        // Rail categories only from the shop's unfiltered (All Products, no search)
+        // response — carries the shop's product categories AND their sub-categories.
+        if (shopMode && activeProdCat === ALL && activeSubCat === ALL && !debouncedQ) {
+          setShopCats((data.categories ?? []) as ProductCategory[]);
+          setSubCats((data.sub_categories ?? []) as ProductSubCategory[]);
+        }
       })
       .catch(() => { if (!cancelled) { setProducts([]); setHasMore(false); } })
       .finally(() => { if (!cancelled) setProdLoading(false); });
     return () => { cancelled = true; };
-  }, [level, activeShop, activeProdCat, activeCat, debouncedQ]);
+  }, [level, activeShop, activeProdCat, activeSubCat, activeCat, debouncedQ]);
 
   // Current selection (+ search), tracked in a ref so an in-flight loadMore can
   // detect a change and discard its stale page.
-  const selRef = useRef<{ shopId: number; cat: number; vcat: number; q: string }>({ shopId: 0, cat: ALL, vcat: ALL, q: "" });
-  useEffect(() => { selRef.current = { shopId: activeShop?.id ?? 0, cat: activeProdCat, vcat: activeCat, q: debouncedQ }; }, [activeShop, activeProdCat, activeCat, debouncedQ]);
+  const selRef = useRef<{ shopId: number; cat: number; sub: number; vcat: number; q: string }>({ shopId: 0, cat: ALL, sub: ALL, vcat: ALL, q: "" });
+  useEffect(() => { selRef.current = { shopId: activeShop?.id ?? 0, cat: activeProdCat, sub: activeSubCat, vcat: activeCat, q: debouncedQ }; }, [activeShop, activeProdCat, activeSubCat, activeCat, debouncedQ]);
 
   // Hardware/browser back — reconcile the view from the URL so each level unwinds
   // one step: product detail → shop grid → vendor/shop list.
@@ -243,7 +251,7 @@ export default function BrowsePage() {
       productPushedRef.current = false;                    // left the product entry
       setActiveProduct(null);
       if (Number(sp.get("shop") || 0) > 0) return;         // …but still inside the shop → keep the grid
-      setLevel("vendor"); setActiveShop(null); setShopCats([]); setProducts([]); setQuery("");
+      setLevel("vendor"); setActiveShop(null); setShopCats([]); setSubCats([]); setActiveProdCat(ALL); setActiveSubCat(ALL); setProducts([]); setQuery("");
     };
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
@@ -253,15 +261,15 @@ export default function BrowsePage() {
     const shopMode   = level === "shop" && !!activeShop;
     const searchMode = level === "vendor" && !!debouncedQ;
     if ((!shopMode && !searchMode) || loadingMore || prodLoading || !hasMore) return;
-    const shopId = activeShop?.id ?? 0, cat = activeProdCat, vcat = activeCat, q = debouncedQ, next = page + 1;
+    const shopId = activeShop?.id ?? 0, cat = activeProdCat, sub = activeSubCat, vcat = activeCat, q = debouncedQ, next = page + 1;
     setLoadingMore(true);
     try {
       const params: Record<string, string | number> = { page: next, limit: PAGE_SIZE };
-      if (shopMode) { params.vendor_id = shopId; if (cat !== ALL) params.category_id = cat; }
+      if (shopMode) { params.vendor_id = shopId; if (cat !== ALL) params.category_id = cat; if (sub !== ALL) params.sub_category_id = sub; }
       else { Object.assign(params, geoParams()); if (vcat !== ALL) params.vendor_category_id = vcat; }
       if (q) params.q = q;
       const res = await api.get("/public/products", { params });
-      if (selRef.current.shopId !== shopId || selRef.current.cat !== cat || selRef.current.vcat !== vcat || selRef.current.q !== q) return; // stale
+      if (selRef.current.shopId !== shopId || selRef.current.cat !== cat || selRef.current.sub !== sub || selRef.current.vcat !== vcat || selRef.current.q !== q) return; // stale
       setProducts((cur) => [...cur, ...((res.data.data?.items ?? []) as ApiProduct[]).map(adapt)]);
       setHasMore(Boolean(res.data.data?.has_more));
       setPage(next);
@@ -288,7 +296,9 @@ export default function BrowsePage() {
   function openShop(shop: Shop) {
     setActiveShop(shop);
     setActiveProdCat(ALL);
+    setActiveSubCat(ALL);
     setShopCats([]);
+    setSubCats([]);
     setQuery("");
     setLevel("shop");
     if (typeof window !== "undefined") {
@@ -303,6 +313,9 @@ export default function BrowsePage() {
     setLevel("vendor");
     setActiveShop(null);
     setShopCats([]);
+    setSubCats([]);
+    setActiveProdCat(ALL);
+    setActiveSubCat(ALL);
     setProducts([]);
     setQuery("");
     if (typeof window !== "undefined") {
@@ -342,7 +355,8 @@ export default function BrowsePage() {
   );
   // Deep-linked shops (?shop=) start nameless — fill the header from the products.
   const activeShopName = activeShop?.shop_name || activeShop?.name || products[0]?.vendor_name || "Shop";
-  const activeProdCatName = activeProdCat === ALL ? "All Products" : shopCats.find((c) => c.id === activeProdCat)?.name ?? "Products";
+  const activeSubCatName = activeSubCat !== ALL ? (subCats.find((s) => s.id === activeSubCat)?.name ?? null) : null;
+  const activeProdCatName = activeSubCatName ?? (activeProdCat === ALL ? "All Products" : shopCats.find((c) => c.id === activeProdCat)?.name ?? "Products");
   // Pharmacy/medicine shop → offer a prescription-only order (same as /shop-public).
   // Falls back to the loaded shop list for deep-linked (?shop=) opens where the
   // activeShop stub has no requires_prescription flag yet.
@@ -417,10 +431,29 @@ export default function BrowsePage() {
             </>
           ) : (
             <>
-              <RailItem active={activeProdCat === ALL} label="All Products" onClick={() => { if (activeProduct) closeProduct(); setActiveProdCat(ALL); }} />
-              {shopCats.filter((c) => (c.status ?? "active") === "active").map((c) => (
-                <RailItem key={c.id} active={activeProdCat === c.id} label={c.name} onClick={() => { if (activeProduct) closeProduct(); setActiveProdCat(c.id); }} />
-              ))}
+              <RailItem active={activeProdCat === ALL} label="All Products" onClick={() => { if (activeProduct) closeProduct(); setActiveProdCat(ALL); setActiveSubCat(ALL); }} />
+              {shopCats.filter((c) => (c.status ?? "active") === "active").map((c) => {
+                const subs = subCats.filter((s) => Number(s.category_id) === c.id && (s.status ?? "active") === "active");
+                const isActiveCat = activeProdCat === c.id;
+                return (
+                  <div key={c.id}>
+                    <RailItem
+                      active={isActiveCat && activeSubCat === ALL}
+                      label={c.name}
+                      onClick={() => { if (activeProduct) closeProduct(); setActiveProdCat(c.id); setActiveSubCat(ALL); }}
+                    />
+                    {/* Sub-categories expand only under the active category. */}
+                    {isActiveCat && subs.length > 0 && subs.map((s) => (
+                      <RailSubItem
+                        key={s.id}
+                        active={activeSubCat === s.id}
+                        label={s.name}
+                        onClick={() => { if (activeProduct) closeProduct(); setActiveSubCat(s.id); }}
+                      />
+                    ))}
+                  </div>
+                );
+              })}
             </>
           )}
         </nav>
@@ -609,6 +642,25 @@ function RailItem({ active, label, onClick, image, icon }: { active: boolean; la
         </span>
       )}
       <span className={`line-clamp-2 text-[11px] font-medium leading-tight md:text-sm ${active ? "text-[var(--mk-brand-deep)]" : "text-[var(--mk-text)]"}`}>{label}</span>
+    </button>
+  );
+}
+
+// Indented child row under an active product category — smaller + muted so the
+// category ↔ sub-category hierarchy reads clearly.
+function RailSubItem({ active, label, onClick }: { active: boolean; label: string; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-current={active}
+      className={`relative flex w-full items-center justify-center gap-1.5 py-2 pl-2 pr-2 text-center transition-colors md:justify-start md:pl-[3.25rem] md:text-left ${
+        active ? "bg-[var(--mk-brand-soft)]" : "hover:bg-[var(--mk-surface-2)]"
+      }`}
+    >
+      {active && <span className="absolute inset-y-1.5 left-0 w-1 rounded-r bg-[var(--mk-brand)]" />}
+      <span className={`hidden h-1.5 w-1.5 shrink-0 rounded-full md:block ${active ? "bg-[var(--mk-brand)]" : "bg-[var(--mk-border)]"}`} />
+      <span className={`line-clamp-2 text-[10px] font-medium leading-tight md:text-[13px] ${active ? "text-[var(--mk-brand-deep)]" : "text-[var(--mk-text-muted)]"}`}>{label}</span>
     </button>
   );
 }
