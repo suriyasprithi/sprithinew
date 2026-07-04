@@ -464,6 +464,11 @@ class ProductController extends BaseApiController
         $zip = $this->request->getFile('zip');
         if (! $zip) return $this->fail('No ZIP uploaded', 422);
 
+        // A big ZIP (hundreds of images + thumbnails) can take minutes to store —
+        // don't let PHP cut it off, and keep going if the client/proxy drops.
+        @set_time_limit(0);
+        @ignore_user_abort(true);
+
         $vendorId = $auth->role === 'admin' ? (int) $this->request->getGet('vendor_id') : (int) $auth->id;
         try {
             $svc = new ZipImportService();
