@@ -308,9 +308,25 @@ class PublicController extends BaseApiController
             $model->orderBy('MD5(id)', 'ASC', false);
         }
         $items = $model->findAll($limit, $offset);
+
+        // Category list for the response. Scoped to ONE shop (vendor_id) → only the
+        // categories that shop's own products use (the browse left rail); otherwise
+        // all active categories.
+        if ($vendorId > 0) {
+            $rows = (new ProductModel())->select('category_id')->distinct()
+                ->where('vendor_id', $vendorId)->where('status', 'active')
+                ->where('category_id IS NOT NULL')->findAll();
+            $usedCatIds = array_values(array_unique(array_map(static fn ($r) => (int) $r['category_id'], $rows)));
+            $catsOut = $usedCatIds
+                ? (new CategoryModel())->where('status', 'active')->whereIn('id', $usedCatIds)->findAll()
+                : [];
+        } else {
+            $catsOut = (new CategoryModel())->where('status', 'active')->findAll();
+        }
+
         return $this->ok([
             'items'      => $this->enrich($items),
-            'categories' => (new CategoryModel())->where('status', 'active')->findAll(),
+            'categories' => $catsOut,
             'page'       => $page,
             'limit'      => $limit,
             'total'      => $total,
