@@ -213,6 +213,7 @@ $routes->group('api/v1', ['filter' => 'cors'], static function ($routes) {
         $routes->post('products/import-images/cleanup', 'Api\ProductController::importImagesCleanup');  // remove extracted temp
         $routes->post('products/import-images-only', 'Api\ProductController::importImagesStore');       // image-only: store all ZIP images (no CSV)
         $routes->post('products/attach-images', 'Api\ProductController::attachPoolImages');             // attach already-uploaded pool images to products by code (no re-upload)
+        $routes->post('products/attach-images-csv', 'Api\ProductController::attachImagesByCsv');        // attach via CSV mapping: key column (code/barcode/sku) → image column
         $routes->get('products/export-images',  'Api\ProductController::exportImages');                 // download a ZIP of the vendor's product images
         $routes->post('products',        'Api\ProductController::create');
         $routes->patch('products/(:num)','Api\ProductController::update/$1');
@@ -341,6 +342,7 @@ $routes->group('api/v1', ['filter' => 'cors'], static function ($routes) {
         $routes->post('products/import-images/cleanup',  'Api\ProductController::importImagesCleanup');
         $routes->post('products/import-images-only',     'Api\ProductController::importImagesStore');
         $routes->post('products/attach-images',          'Api\ProductController::attachPoolImages');
+        $routes->post('products/attach-images-csv',      'Api\ProductController::attachImagesByCsv');
         $routes->get('products/export-images',           'Api\ProductController::exportImages');
         $routes->patch('customers/(:num)',           'Api\AdminUsersController::update/$1');
         $routes->post('customers/(:num)/activate',   'Api\AdminUsersController::activate/$1');

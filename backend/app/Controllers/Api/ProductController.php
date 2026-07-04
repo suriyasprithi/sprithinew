@@ -577,6 +577,78 @@ class ProductController extends BaseApiController
         return $this->ok(['products' => $products, 'variants' => $variants], "{$products} product(s) + {$variants} variant(s) synced from uploaded images");
     }
 
+    /**
+     * Attach images to products from an explicit CSV mapping: each row carries a
+     * KEY (matched against the product code, barcode, or a variant SKU) and an
+     * IMAGE filename (resolved from the uploaded pool, or a full URL). This is the
+     * "unique column + image column" flow — no filename==SKU requirement, and no
+     * name/category/price needed. Body: { items: [ { key, image }, ... ] }.
+     */
+    public function attachImagesByCsv(): ResponseInterface
+    {
+        $auth = $this->authUser();
+        if (! $auth) return $this->fail('Unauthorized', 401);
+        if (! in_array($auth->role, ['vendor', 'admin'], true)) return $this->fail('Forbidden', 403);
+        @set_time_limit(0);
+        @ignore_user_abort(true);
+
+        $vendorId = $auth->role === 'admin' ? (int) $this->request->getGet('vendor_id') : (int) $auth->id;
+        if ($vendorId <= 0) return $this->fail('vendor required', 422);
+
+        $d     = $this->jsonBody();
+        $items = is_array($d['items'] ?? null) ? $d['items'] : [];
+        // key(lower) => image filename/URL (first non-empty wins)
+        $want = [];
+        foreach ($items as $it) {
+            if (! is_array($it)) continue;
+            $key = mb_strtolower(trim((string) ($it['key'] ?? '')));
+            $img = trim((string) ($it['image'] ?? ''));
+            if ($key !== '' && $img !== '' && ! isset($want[$key])) $want[$key] = $img;
+        }
+        if (! $want) return $this->fail('No key/image pairs found in the file', 422);
+
+        $keys = array_keys($want);
+        $pm = new ProductModel();
+        $vm = new ProductVariantModel();
+        $attached = 0; $noImage = 0; $matched = [];
+
+        foreach (array_chunk($keys, 500) as $chunk) {
+            // Products matched by code OR barcode.
+            $prods = $pm->select('id, code, barcode')->where('vendor_id', $vendorId)
+                ->groupStart()->whereIn('code', $chunk)->orWhereIn('barcode', $chunk)->groupEnd()
+                ->findAll();
+            foreach ($prods as $p) {
+                $ck = mb_strtolower(trim((string) ($p['code'] ?? '')));
+                $bk = mb_strtolower(trim((string) ($p['barcode'] ?? '')));
+                $k  = isset($want[$ck]) ? $ck : (isset($want[$bk]) ? $bk : '');
+                if ($k === '') continue;
+                $url = $this->looksLikeUrl($want[$k]) ? $want[$k] : $this->existingUploadUrl($vendorId, $want[$k]);
+                $matched[$k] = true;
+                if ($url) { $pm->update((int) $p['id'], ['image' => $url]); $attached++; } else { $noImage++; }
+            }
+            // Variants matched by SKU (this vendor), for keys not already matched.
+            $vars = $vm->select('product_variants.id, product_variants.sku')
+                ->join('products', 'products.id = product_variants.product_id')
+                ->where('products.vendor_id', $vendorId)
+                ->whereIn('product_variants.sku', $chunk)->findAll();
+            foreach ($vars as $v) {
+                $k = mb_strtolower(trim((string) ($v['sku'] ?? '')));
+                if (! isset($want[$k]) || isset($matched[$k])) continue;
+                $url = $this->looksLikeUrl($want[$k]) ? $want[$k] : $this->existingUploadUrl($vendorId, $want[$k]);
+                $matched[$k] = true;
+                if ($url) { $vm->update((int) $v['id'], ['image' => $url]); $attached++; } else { $noImage++; }
+            }
+        }
+        $noProduct = count($keys) - count($matched);
+
+        return $this->ok(
+            ['attached' => $attached, 'no_product' => $noProduct, 'no_image' => $noImage],
+            "{$attached} attached"
+                . ($noProduct ? " · {$noProduct} product(s) not found" : '')
+                . ($noImage ? " · {$noImage} image(s) not in pool" : '')
+        );
+    }
+
     /** Remove a finished import's extracted images. */
     public function importImagesCleanup(): ResponseInterface
     {

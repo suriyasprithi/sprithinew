@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { FolderCog, FileArchive, ImageOff, Search, ChevronLeft, ChevronRight, FileUp, RefreshCw } from "lucide-react";
+import { FolderCog, FileArchive, ImageOff, Search, ChevronLeft, ChevronRight, FileUp, RefreshCw, FileSpreadsheet } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,6 +9,11 @@ import { LuxuryCard } from "@/components/ui/custom/luxury-card";
 import { MobileHeader } from "@/components/layout/mobile-nav";
 import { PageHeader } from "@/components/layout/page-header";
 import { api, apiErrorMessage } from "@/lib/api";
+import { fileToRows, norm } from "@/lib/catalog-import";
+
+// CSV header aliases (normalized) for the two columns the attach mapping needs.
+const IMAGE_HEADERS = ["image", "imageurl", "mainimageurl", "proimage", "productimage", "variantimage"];
+const KEY_HEADERS   = ["itemcode", "productcode", "code", "sku", "variantsku", "barcode"];
 
 type ImgRow = { id: number; name: string; image: string; filename: string };
 
@@ -41,7 +46,46 @@ export default function FilePage() {
   const [reloadKey, setReloadKey] = useState(0);   // bumped after an import to refresh the table
   const [importingZip, setImportingZip] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const [attachingCsv, setAttachingCsv] = useState(false);
   const zipRef = useRef<HTMLInputElement>(null);
+  const csvRef = useRef<HTMLInputElement>(null);
+
+  // Attach images to products from a CSV mapping: a key column (item_code / sku /
+  // barcode) → the `image` column (a filename already in the pool, or a URL).
+  async function attachByCsv(file: File) {
+    setAttachingCsv(true);
+    toast.message("Reading file…");
+    try {
+      const rows = await fileToRows(file);
+      if (rows.length < 2) { toast.error("The file has no data rows"); return; }
+      const header   = rows[0].map((h) => norm(h));
+      const imageCol = header.findIndex((h) => IMAGE_HEADERS.includes(h));
+      const keyCol   = header.findIndex((h) => KEY_HEADERS.includes(h));
+      if (imageCol < 0) { toast.error('The file needs an "image" column'); return; }
+      if (keyCol < 0)   { toast.error("The file needs a key column (item_code / sku / barcode)"); return; }
+
+      const items = rows.slice(1)
+        .map((r) => ({ key: (r[keyCol] ?? "").trim(), image: (r[imageCol] ?? "").trim() }))
+        .filter((x) => x.key && x.image);
+      if (!items.length) { toast.error("No key + image rows found in the file"); return; }
+
+      let attached = 0, noProduct = 0, noImage = 0;
+      for (let i = 0; i < items.length; i += 2000) {
+        const res = await api.post("/vendor/products/attach-images-csv", { items: items.slice(i, i + 2000) }, { timeout: 600000 });
+        const d = (res.data.data ?? {}) as { attached?: number; no_product?: number; no_image?: number };
+        attached += Number(d.attached ?? 0);
+        noProduct += Number(d.no_product ?? 0);
+        noImage += Number(d.no_image ?? 0);
+      }
+      toast.success(`${attached} attached${noProduct ? ` · ${noProduct} product(s) not found` : ""}${noImage ? ` · ${noImage} image(s) not in pool` : ""}`);
+      setReloadKey((k) => k + 1);
+    } catch (e) {
+      toast.error(apiErrorMessage(e, "Attach failed"));
+    } finally {
+      setAttachingCsv(false);
+      if (csvRef.current) csvRef.current.value = "";
+    }
+  }
 
   async function syncImages() {
     setSyncing(true);
@@ -148,6 +192,21 @@ export default function FilePage() {
               <RefreshCw className={`h-4 w-4${syncing ? " animate-spin" : ""}`} /> {syncing ? "Syncing…" : "Sync images to products"}
             </Button>
           </div>
+        </LuxuryCard>
+
+        {/* ATTACH IMAGES BY CSV MAPPING (key column → image column) */}
+        <LuxuryCard className="space-y-3 p-5">
+          <div className="flex items-center gap-3">
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-500/10 text-emerald-600"><FileSpreadsheet className="h-5 w-5" /></span>
+            <div className="min-w-0">
+              <p className="text-sm font-semibold">Attach images by CSV</p>
+              <p className="text-xs text-muted-foreground">When filenames don&apos;t match SKUs: upload a CSV/Excel with a <strong>key</strong> column (<code>item_code</code>, <code>sku</code> or <code>barcode</code>) and an <code>image</code> column (the filename in the pool, or a URL). Each product gets its mapped image — no product name/price needed.</p>
+            </div>
+          </div>
+          <input ref={csvRef} type="file" accept=".csv,.xlsx,.xls" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) void attachByCsv(f); }} />
+          <Button variant="outline" className="w-full rounded-xl" onClick={() => csvRef.current?.click()} disabled={attachingCsv}>
+            <FileSpreadsheet className="h-4 w-4" /> {attachingCsv ? "Attaching…" : "Choose mapping CSV / Excel"}
+          </Button>
         </LuxuryCard>
 
         {/* EXPORT IMAGES ZIP */}
