@@ -140,7 +140,7 @@ export function MarketplaceHeader({ cartCount = 0, wishlistCount = 0, unreadCoun
 
   const runSearch = (term: string) => {
     setSugOpen(false);
-    router.push(`/shop-public${term ? `?q=${encodeURIComponent(term)}` : ""}`);
+    router.push(`/browse${term ? `?q=${encodeURIComponent(term)}` : ""}`);
   };
   const openProduct = (id: number) => {
     setSugOpen(false);
