@@ -117,7 +117,7 @@ export default function FilePage() {
             <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand/10 text-brand"><FileUp className="h-5 w-5" /></span>
             <div className="min-w-0">
               <p className="text-sm font-semibold">Import images (ZIP)</p>
-              <p className="text-xs text-muted-foreground">Upload a ZIP of product images (no CSV). Stored by filename — a later CSV import that references those names connects automatically. jpg, png, webp. Max 300 MB.</p>
+              <p className="text-xs text-muted-foreground">Upload a ZIP of product images (no CSV). Stored by filename — a later CSV import that references those names connects automatically. jpg, png, webp. <span className="text-foreground">Large sets: split into ~90 MB ZIPs and import each — they add up.</span></p>
             </div>
           </div>
           <input ref={zipRef} type="file" accept=".zip,application/zip" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) void importImagesZip(f); }} />
