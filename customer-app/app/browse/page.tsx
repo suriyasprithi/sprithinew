@@ -433,7 +433,7 @@ export default function BrowsePage() {
             <>
               <RailItem active={activeProdCat === ALL} label="All Products" onClick={() => { if (activeProduct) closeProduct(); setActiveProdCat(ALL); setActiveSubCat(ALL); }} />
               {shopCats.filter((c) => (c.status ?? "active") === "active").map((c) => {
-                const subs = subCats.filter((s) => Number(s.category_id) === c.id && (s.status ?? "active") === "active");
+                const subs = subCats.filter((s) => Number(s.category_id) === Number(c.id) && (s.status ?? "active") === "active");
                 const isActiveCat = activeProdCat === c.id;
                 return (
                   <div key={c.id}>
