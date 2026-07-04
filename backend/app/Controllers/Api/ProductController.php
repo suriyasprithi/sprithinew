@@ -246,6 +246,9 @@ class ProductController extends BaseApiController
         if ($vendorId)  $model->where('vendor_id', $vendorId);
         if ($q !== '')  $model->like('name', $q);
         if (in_array($status, ['active', 'inactive'], true)) $model->where('status', $status);
+        // Restrict to products that have a locally-hosted image (the File page's
+        // "Product images" table paginates over these on the server).
+        if ($this->request->getGet('has_image')) $model->like('image', '/uploads/', 'both');
 
         $total = $model->countAllResults(false);   // false: keep the conditions for findAll
         $rows  = $model->orderBy('id', 'DESC')->findAll($perPage, ($page - 1) * $perPage);
