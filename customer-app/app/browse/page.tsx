@@ -16,7 +16,7 @@ type Shop = { id: number; name: string; shop_name?: string | null; image?: strin
 type ProductCategory = { id: number; name: string; status?: string };
 type ApiProduct = {
   id: number | string; name: string; price: number | string; old_price?: number | string | null;
-  image: string | null; stock?: number | string; vendor_name?: string | null; has_variants?: boolean;
+  image: string | null; stock?: number | string; vendor_id?: number | string | null; vendor_name?: string | null; has_variants?: boolean;
   default_variant_id?: number | string | null; min_price?: number | string | null; max_price?: number | string | null;
   variant_axes?: { name: string; count: number; options?: string[] }[];
   category_id?: number | string | null; category_name?: string | null;
@@ -33,6 +33,7 @@ function adapt(raw: ApiProduct): MarketplaceProduct {
     price: Number(raw.price),
     old_price: raw.old_price != null ? Number(raw.old_price) : undefined,
     image: raw.image,
+    vendor_id: raw.vendor_id != null ? Number(raw.vendor_id) : null,
     vendor_name: raw.vendor_name ?? null,
     stock: raw.stock != null ? Number(raw.stock) : undefined,
     has_variants: !!raw.has_variants,
@@ -410,7 +411,7 @@ export default function BrowsePage() {
             </div>
           )}
 
-          {level === "shop" && activeProduct ? (
+          {activeProduct ? (
             <ProductQuickView productId={activeProduct} onClose={closeProduct} />
           ) : level === "vendor" ? (
             <>
@@ -498,14 +499,14 @@ export default function BrowsePage() {
                 {!prodLoading && products.length > 0 && <span className="shrink-0 text-xs font-medium text-[var(--mk-text-muted)]">{products.length}{hasMore ? "+" : ""} items</span>}
               </div>
               {prodLoading ? (
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
                   {Array.from({ length: 8 }).map((_, i) => <div key={i} className="h-64 animate-pulse rounded-2xl bg-[var(--mk-surface-3)]" />)}
                 </div>
               ) : products.length === 0 ? (
                 <EmptyState icon={<Package className="h-6 w-6" />} title={debouncedQ ? "No matching products" : "No products here"} sub={debouncedQ ? "Try another search term." : "This shop has no products in this category yet."} />
               ) : (
                 <>
-                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
                     {products.map((p) => (
                       <ProductCard key={p.id} product={p} onSelect={openProduct} />
                     ))}
