@@ -8,6 +8,7 @@ import { api } from "@/lib/api";
 import { cartBadge } from "@/lib/cart";
 import { wishlist } from "@/lib/wishlist";
 import { ProductCard, type MarketplaceProduct } from "@/components/marketplace/product-card";
+import { ProductQuickView } from "@/components/marketplace/product-quick-view";
 import { readSavedLocation } from "@/components/marketplace/location-picker";
 
 type VendorCategory = { id: number; name: string; image?: string | null; product_count?: number | string; status?: string };
@@ -69,10 +70,11 @@ const PAGE_SIZE = 24;
 // must be built with both — otherwise a refresh hits a path the server can't
 // resolve and 404s.
 const BP = process.env.NEXT_PUBLIC_BASE_PATH || "";
-const browseUrl = (vc: number, shop?: number) => {
+const browseUrl = (vc: number, shop?: number, product?: number) => {
   const p = new URLSearchParams();
   if (vc !== ALL) p.set("vc", String(vc));
   if (shop) p.set("shop", String(shop));
+  if (product) p.set("product", String(product));
   const qs = p.toString();
   return `${BP}/browse/${qs ? `?${qs}` : ""}`;
 };
@@ -98,6 +100,9 @@ export default function BrowsePage() {
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
+
+  // ---- in-page product detail (opened from a card; keeps the shop rail) ----
+  const [activeProduct, setActiveProduct] = useState<number | null>(null);
 
   // ---- search (one box; filters shops on the vendor level, products on the shop level) ----
   const [query, setQuery] = useState("");
@@ -143,6 +148,8 @@ export default function BrowsePage() {
       if (q) setQuery(q);
       const shopId = Number(sp.get("shop") || 0);
       if (shopId > 0) { setActiveShop({ id: shopId, name: "" }); setLevel("shop"); } // name fills from products
+      const productId = Number(sp.get("product") || 0);
+      if (productId > 0) setActiveProduct(productId);
       const onLoc = () => { browseCache.vendorCats = null; browseCache.shops.clear(); void run(true); };
       window.addEventListener("epey-location-changed", onLoc);
       return () => window.removeEventListener("epey-location-changed", onLoc);
@@ -204,9 +211,17 @@ export default function BrowsePage() {
   const selRef = useRef<{ shopId: number; cat: number; q: string }>({ shopId: 0, cat: ALL, q: "" });
   useEffect(() => { selRef.current = { shopId: activeShop?.id ?? 0, cat: activeProdCat, q: debouncedQ }; }, [activeShop, activeProdCat, debouncedQ]);
 
-  // Hardware back while in a shop → return to the vendor/shop-list level.
+  // Hardware/browser back — reconcile the view from the URL so each level unwinds
+  // one step: product detail → shop grid → vendor/shop list.
   useEffect(() => {
-    const onPop = () => { setLevel("vendor"); setActiveShop(null); setShopCats([]); setProducts([]); setQuery(""); };
+    const onPop = () => {
+      const sp = new URLSearchParams(window.location.search);
+      const prod = Number(sp.get("product") || 0);
+      if (prod > 0) { setActiveProduct(prod); return; }   // forward into a product
+      setActiveProduct(null);                              // leaving a product…
+      if (Number(sp.get("shop") || 0) > 0) return;         // …but still inside the shop → keep the grid
+      setLevel("vendor"); setActiveShop(null); setShopCats([]); setProducts([]); setQuery("");
+    };
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
   }, []);
@@ -269,6 +284,23 @@ export default function BrowsePage() {
     }
   }
 
+  // Open a product's detail INSIDE the shop view (keeps the left rail). Pushes a
+  // history entry so hardware/browser back returns to the grid (handled by onPop).
+  function openProduct(id: number) {
+    setActiveProduct(id);
+    if (typeof window !== "undefined") {
+      window.scrollTo(0, 0);
+      window.history.pushState(null, "", browseUrl(activeCat, activeShop?.id, id));
+    }
+  }
+  function closeProduct() {
+    setActiveProduct(null);
+    if (typeof window !== "undefined") {
+      window.scrollTo(0, 0);
+      window.history.replaceState(null, "", browseUrl(activeCat, activeShop?.id));
+    }
+  }
+
   const activeVendorName = useMemo(
     () => (activeCat === ALL ? "All Shops" : cats.find((c) => c.id === activeCat)?.name ?? "Shops"),
     [activeCat, cats],
@@ -303,7 +335,7 @@ export default function BrowsePage() {
       <header className="sticky top-0 z-30 flex items-center gap-2 border-b border-[var(--mk-border)] bg-[var(--mk-brand)] px-3 py-2.5 text-white">
         <button
           type="button"
-          onClick={() => (level === "shop" ? backToVendor() : router.push("/home"))}
+          onClick={() => (activeProduct ? closeProduct() : level === "shop" ? backToVendor() : router.push("/home"))}
           aria-label="Back"
           className="grid h-9 w-9 place-items-center rounded-full hover:bg-white/15"
         >
@@ -350,9 +382,9 @@ export default function BrowsePage() {
             </>
           ) : (
             <>
-              <RailItem active={activeProdCat === ALL} label="All Products" onClick={() => setActiveProdCat(ALL)} icon={<Package className="h-5 w-5" />} />
+              <RailItem active={activeProdCat === ALL} label="All Products" onClick={() => { if (activeProduct) closeProduct(); setActiveProdCat(ALL); }} icon={<Package className="h-5 w-5" />} />
               {shopCats.filter((c) => (c.status ?? "active") === "active").map((c) => (
-                <RailItem key={c.id} active={activeProdCat === c.id} label={c.name} onClick={() => setActiveProdCat(c.id)} icon={<Package className="h-5 w-5" />} />
+                <RailItem key={c.id} active={activeProdCat === c.id} label={c.name} onClick={() => { if (activeProduct) closeProduct(); setActiveProdCat(c.id); }} icon={<Package className="h-5 w-5" />} />
               ))}
             </>
           )}
@@ -360,23 +392,27 @@ export default function BrowsePage() {
 
         {/* RIGHT content */}
         <section className="min-h-[calc(100dvh-53px)] px-3 py-4 md:px-5">
-          {/* Search box (adapts to the current level) */}
-          <div className="relative mb-3">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--mk-text-muted)]" />
-            <input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder={level === "shop" ? `Search in ${activeShopName}…` : "Search shops…"}
-              className="h-11 w-full rounded-xl border border-[var(--mk-border)] bg-white pl-9 pr-9 text-sm outline-none focus:border-[var(--mk-brand)]/50"
-            />
-            {query && (
-              <button type="button" onClick={() => setQuery("")} aria-label="Clear" className="absolute right-2 top-1/2 grid h-7 w-7 -translate-y-1/2 place-items-center rounded-full text-[var(--mk-text-muted)] hover:bg-[var(--mk-surface-2)]">
-                <X className="h-4 w-4" />
-              </button>
-            )}
-          </div>
+          {/* Search box (adapts to the current level) — hidden while a product detail is open */}
+          {!activeProduct && (
+            <div className="relative mb-3">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--mk-text-muted)]" />
+              <input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder={level === "shop" ? `Search in ${activeShopName}…` : "Search shops…"}
+                className="h-11 w-full rounded-xl border border-[var(--mk-border)] bg-white pl-9 pr-9 text-sm outline-none focus:border-[var(--mk-brand)]/50"
+              />
+              {query && (
+                <button type="button" onClick={() => setQuery("")} aria-label="Clear" className="absolute right-2 top-1/2 grid h-7 w-7 -translate-y-1/2 place-items-center rounded-full text-[var(--mk-text-muted)] hover:bg-[var(--mk-surface-2)]">
+                  <X className="h-4 w-4" />
+                </button>
+              )}
+            </div>
+          )}
 
-          {level === "vendor" ? (
+          {level === "shop" && activeProduct ? (
+            <ProductQuickView productId={activeProduct} onClose={closeProduct} />
+          ) : level === "vendor" ? (
             <>
               {/* Prescription prompt for a pharmacy/medicine category. The button
                   always shows; when the category has several pharmacies it opens a
@@ -471,7 +507,7 @@ export default function BrowsePage() {
                 <>
                   <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
                     {products.map((p) => (
-                      <ProductCard key={p.id} product={p} />
+                      <ProductCard key={p.id} product={p} onSelect={openProduct} />
                     ))}
                   </div>
                   {/* Infinite-scroll sentinel + spinner */}

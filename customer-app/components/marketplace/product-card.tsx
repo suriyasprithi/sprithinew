@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { Heart, Star, Plus, Minus, Store, Clock } from "lucide-react";
 import { toast } from "sonner";
@@ -44,10 +44,40 @@ function fmtLeft(ms: number): string {
   return d > 0 ? `${d}d ${p(h)}:${p(m)}:${p(ss)}` : `${p(h)}:${p(m)}:${p(ss)}`;
 }
 
-export function ProductCard({ product, onAdd, flashEndMs }: {
+// Wraps the image + name. Default = a Link to /product-public. When `onSelect` is
+// supplied (browse in-page detail), it becomes a clickable element that opens the
+// detail inline instead of navigating.
+function ClickWrap({ onSelect, productId, className, children }: {
+  onSelect?: (id: number) => void;
+  productId: number;
+  className?: string;
+  children: ReactNode;
+}) {
+  if (onSelect) {
+    return (
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={() => onSelect(productId)}
+        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onSelect(productId); } }}
+        className={`${className ?? ""} cursor-pointer`}
+      >
+        {children}
+      </div>
+    );
+  }
+  return (
+    <Link href={`/product-public?id=${productId}`} className={className}>
+      {children}
+    </Link>
+  );
+}
+
+export function ProductCard({ product, onAdd, flashEndMs, onSelect }: {
   product: MarketplaceProduct;
   onAdd?: (p: MarketplaceProduct, qty: number) => void;
   flashEndMs?: number;   // when set, shows a live countdown chip on the card image
+  onSelect?: (id: number) => void;  // when set, image+name open an in-page detail instead of navigating
 }) {
   const [qty, setQty] = useState(0);
   const [liked, setLiked] = useState(false);
@@ -135,8 +165,8 @@ export function ProductCard({ product, onAdd, flashEndMs }: {
 
   return (
     <article className="group relative flex flex-col overflow-hidden rounded-2xl border border-[var(--mk-border)] bg-[var(--mk-surface)] transition-all hover:-translate-y-1 hover:shadow-[var(--mk-shadow-md)]">
-      {/* Image */}
-      <Link href={`/product-public?id=${product.id}`} className="relative block">
+      {/* Image — opens the /product-public page, or an in-page detail when onSelect is provided */}
+      <ClickWrap onSelect={onSelect} productId={product.id} className="relative block">
         <div className="aspect-square overflow-hidden bg-[var(--mk-surface-2)]">
           <ProductImage src={thumbUrl(product.image)} fallbackSrc={product.image} alt={product.name} className="transition-transform group-hover:scale-105" />
         </div>
@@ -173,6 +203,7 @@ export function ProductCard({ product, onAdd, flashEndMs }: {
           aria-label={liked ? "Remove from wishlist" : "Add to wishlist"}
           onClick={(e) => {
             e.preventDefault();
+            e.stopPropagation();
             const nowLiked = wishlist.toggle(product.id);
             toast.success(nowLiked ? `${product.name} added to wishlist` : `${product.name} removed from wishlist`);
           }}
@@ -182,7 +213,7 @@ export function ProductCard({ product, onAdd, flashEndMs }: {
         >
           <Heart className={`h-4 w-4 ${liked ? "fill-current" : ""}`} />
         </button>
-      </Link>
+      </ClickWrap>
 
       {/* Body */}
       <div className="flex flex-1 flex-col gap-2 p-3">
@@ -192,9 +223,9 @@ export function ProductCard({ product, onAdd, flashEndMs }: {
           </span>
         )}
 
-        <Link href={`/product-public?id=${product.id}`} className="line-clamp-2 text-sm font-semibold leading-tight hover:text-[var(--mk-brand-deep)]">
+        <ClickWrap onSelect={onSelect} productId={product.id} className="line-clamp-2 text-sm font-semibold leading-tight hover:text-[var(--mk-brand-deep)]">
           {product.name}
-        </Link>
+        </ClickWrap>
 
         {product.sold_count != null && product.sold_count > 0 && (
           <span className="inline-flex w-fit items-center gap-1 rounded-full bg-[var(--mk-brand-soft)] px-2 py-0.5 text-[11px] font-bold text-[var(--mk-brand-deep)]">
