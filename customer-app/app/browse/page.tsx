@@ -104,6 +104,13 @@ export default function BrowsePage() {
 
   // ---- in-page product detail (opened from a card; keeps the shop rail) ----
   const [activeProduct, setActiveProduct] = useState<number | null>(null);
+  // True once the shops-effect has run its first (mount) pass — used to skip the
+  // URL rewrite on mount so a ?shop/?product/?vc deep link isn't clobbered.
+  const didMountRef = useRef(false);
+  // True while the current top history entry is a product-detail entry WE pushed
+  // (via openProduct), so closeProduct can pop it cleanly instead of leaving a
+  // duplicate entry. False for cold-loaded (deep-linked) products that never pushed.
+  const productPushedRef = useRef(false);
 
   // ---- search (one box; filters shops on the vendor level, products on the shop level) ----
   const [query, setQuery] = useState("");
@@ -175,9 +182,15 @@ export default function BrowsePage() {
       } catch { if (!cancelled) setShops([]); } finally { if (!cancelled) setShopsLoading(false); }
     };
     void run();
-    if (typeof window !== "undefined" && level === "vendor") {
+    // Sync the URL to the selected vendor category — but NOT on the mount pass:
+    // on a cold ?shop/?product/?vc deep link this effect's stale closure still
+    // sees level==='vendor' and activeCat===ALL, and would rewrite the URL to a
+    // bare /browse/, wiping the deep-link params before the mount effect's state
+    // updates are visible. Skip the first run; the mount effect owns the URL then.
+    if (typeof window !== "undefined" && level === "vendor" && didMountRef.current) {
       window.history.replaceState(null, "", browseUrl(activeCat));
     }
+    didMountRef.current = true;
     return () => { cancelled = true; };
   }, [activeCat]);
 
@@ -185,12 +198,20 @@ export default function BrowsePage() {
   // /public/products response also carries the shop's real product categories —
   // use those for the rail (guest-safe; only categories the shop actually stocks).
   useEffect(() => {
-    if (level !== "shop" || !activeShop) return;
+    const shopMode   = level === "shop" && !!activeShop;
+    const searchMode = level === "vendor" && !!debouncedQ;   // global product search across all shops
+    if (!shopMode && !searchMode) return;
     let cancelled = false;
     setProdLoading(true);
     setProducts([]);
-    const params: Record<string, string | number> = { vendor_id: activeShop.id, page: 1, limit: PAGE_SIZE };
-    if (activeProdCat !== ALL) params.category_id = activeProdCat;
+    const params: Record<string, string | number> = { page: 1, limit: PAGE_SIZE };
+    if (shopMode) {
+      params.vendor_id = activeShop!.id;
+      if (activeProdCat !== ALL) params.category_id = activeProdCat;
+    } else {
+      Object.assign(params, geoParams());                    // scope to the delivery area
+      if (activeCat !== ALL) params.vendor_category_id = activeCat;   // optional category narrowing
+    }
     if (debouncedQ) params.q = debouncedQ;
     api.get("/public/products", { params })
       .then((res) => {
@@ -199,18 +220,18 @@ export default function BrowsePage() {
         setProducts(((data.items ?? []) as ApiProduct[]).map(adapt));
         setHasMore(Boolean(data.has_more));
         setPage(1);
-        // Rail categories only from the unfiltered (All Products, no search) response.
-        if (activeProdCat === ALL && !debouncedQ) setShopCats((data.categories ?? []) as ProductCategory[]);
+        // Rail categories only from the shop's unfiltered (All Products, no search) response.
+        if (shopMode && activeProdCat === ALL && !debouncedQ) setShopCats((data.categories ?? []) as ProductCategory[]);
       })
       .catch(() => { if (!cancelled) { setProducts([]); setHasMore(false); } })
       .finally(() => { if (!cancelled) setProdLoading(false); });
     return () => { cancelled = true; };
-  }, [level, activeShop, activeProdCat, debouncedQ]);
+  }, [level, activeShop, activeProdCat, activeCat, debouncedQ]);
 
   // Current selection (+ search), tracked in a ref so an in-flight loadMore can
   // detect a change and discard its stale page.
-  const selRef = useRef<{ shopId: number; cat: number; q: string }>({ shopId: 0, cat: ALL, q: "" });
-  useEffect(() => { selRef.current = { shopId: activeShop?.id ?? 0, cat: activeProdCat, q: debouncedQ }; }, [activeShop, activeProdCat, debouncedQ]);
+  const selRef = useRef<{ shopId: number; cat: number; vcat: number; q: string }>({ shopId: 0, cat: ALL, vcat: ALL, q: "" });
+  useEffect(() => { selRef.current = { shopId: activeShop?.id ?? 0, cat: activeProdCat, vcat: activeCat, q: debouncedQ }; }, [activeShop, activeProdCat, activeCat, debouncedQ]);
 
   // Hardware/browser back — reconcile the view from the URL so each level unwinds
   // one step: product detail → shop grid → vendor/shop list.
@@ -218,8 +239,9 @@ export default function BrowsePage() {
     const onPop = () => {
       const sp = new URLSearchParams(window.location.search);
       const prod = Number(sp.get("product") || 0);
-      if (prod > 0) { setActiveProduct(prod); return; }   // forward into a product
-      setActiveProduct(null);                              // leaving a product…
+      if (prod > 0) { productPushedRef.current = true; setActiveProduct(prod); return; }   // into a product entry
+      productPushedRef.current = false;                    // left the product entry
+      setActiveProduct(null);
       if (Number(sp.get("shop") || 0) > 0) return;         // …but still inside the shop → keep the grid
       setLevel("vendor"); setActiveShop(null); setShopCats([]); setProducts([]); setQuery("");
     };
@@ -228,15 +250,18 @@ export default function BrowsePage() {
   }, []);
 
   async function loadMore() {
-    if (!activeShop || loadingMore || prodLoading || !hasMore) return;
-    const shopId = activeShop.id, cat = activeProdCat, q = debouncedQ, next = page + 1;
+    const shopMode   = level === "shop" && !!activeShop;
+    const searchMode = level === "vendor" && !!debouncedQ;
+    if ((!shopMode && !searchMode) || loadingMore || prodLoading || !hasMore) return;
+    const shopId = activeShop?.id ?? 0, cat = activeProdCat, vcat = activeCat, q = debouncedQ, next = page + 1;
     setLoadingMore(true);
     try {
-      const params: Record<string, string | number> = { vendor_id: shopId, page: next, limit: PAGE_SIZE };
-      if (cat !== ALL) params.category_id = cat;
+      const params: Record<string, string | number> = { page: next, limit: PAGE_SIZE };
+      if (shopMode) { params.vendor_id = shopId; if (cat !== ALL) params.category_id = cat; }
+      else { Object.assign(params, geoParams()); if (vcat !== ALL) params.vendor_category_id = vcat; }
       if (q) params.q = q;
       const res = await api.get("/public/products", { params });
-      if (selRef.current.shopId !== shopId || selRef.current.cat !== cat || selRef.current.q !== q) return; // stale
+      if (selRef.current.shopId !== shopId || selRef.current.cat !== cat || selRef.current.vcat !== vcat || selRef.current.q !== q) return; // stale
       setProducts((cur) => [...cur, ...((res.data.data?.items ?? []) as ApiProduct[]).map(adapt)]);
       setHasMore(Boolean(res.data.data?.has_more));
       setPage(next);
@@ -288,6 +313,7 @@ export default function BrowsePage() {
   // Open a product's detail INSIDE the shop view (keeps the left rail). Pushes a
   // history entry so hardware/browser back returns to the grid (handled by onPop).
   function openProduct(id: number) {
+    productPushedRef.current = true;
     setActiveProduct(id);
     if (typeof window !== "undefined") {
       window.scrollTo(0, 0);
@@ -295,9 +321,17 @@ export default function BrowsePage() {
     }
   }
   function closeProduct() {
+    if (typeof window !== "undefined") window.scrollTo(0, 0);
+    // If we pushed this product's entry (opened from a card), POP it — history.back
+    // fires onPop, which clears activeProduct and leaves the history stack clean.
+    // A cold-loaded (deep-linked) product never pushed, so just drop ?product.
+    if (productPushedRef.current && typeof window !== "undefined") {
+      productPushedRef.current = false;
+      window.history.back();
+      return;
+    }
     setActiveProduct(null);
     if (typeof window !== "undefined") {
-      window.scrollTo(0, 0);
       window.history.replaceState(null, "", browseUrl(activeCat, activeShop?.id));
     }
   }
@@ -400,7 +434,7 @@ export default function BrowsePage() {
               <input
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder={level === "shop" ? `Search in ${activeShopName}…` : "Search shops…"}
+                placeholder={level === "shop" ? `Search in ${activeShopName}…` : "Search products across shops…"}
                 className="h-11 w-full rounded-xl border border-[var(--mk-border)] bg-white pl-9 pr-9 text-sm outline-none focus:border-[var(--mk-brand)]/50"
               />
               {query && (
@@ -413,7 +447,7 @@ export default function BrowsePage() {
 
           {activeProduct ? (
             <ProductQuickView productId={activeProduct} onClose={closeProduct} />
-          ) : level === "vendor" ? (
+          ) : (level === "vendor" && !debouncedQ) ? (
             <>
               {/* Prescription prompt for a pharmacy/medicine category. The button
                   always shows; when the category has several pharmacies it opens a

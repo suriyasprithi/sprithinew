@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, Minus, Plus, ShoppingCart, Loader2 } from "lucide-react";
 import { toast } from "sonner";
@@ -66,6 +66,11 @@ export function ProductQuickView({ productId, onClose }: { productId: number; on
   const [qty, setQty] = useState(1);
   const [imgIndex, setImgIndex] = useState(0);
   const [loading, setLoading] = useState(true);
+  // onClose is only invoked on a fetch failure; keep it in a ref so the parent
+  // re-creating it every render doesn't re-run the fetch effect (which would
+  // reset the loading spinner + picks + qty and re-hit the API).
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
 
   useEffect(() => {
     let cancelled = false;
@@ -78,16 +83,16 @@ export function ProductQuickView({ productId, onClose }: { productId: number; on
         const vs = (res.data.data?.variants ?? []) as Variant[];
         const vt = (res.data.data?.variant_types ?? []) as VType[];
         const vi = (res.data.data?.variant_images ?? {}) as VariantImages;
-        if (!p) { toast.error("Not found"); onClose(); return; }
+        if (!p) { toast.error("Not found"); onCloseRef.current(); return; }
         setProduct(p); setVariants(vs); setVariantTypes(vt); setVariantImages(vi);
         const seed = vs.find((v) => (v.stock ?? 0) > 0) ?? vs[0];
         setPicks(seed?.options ? { ...seed.options } : {});
       } catch (e) {
-        if (!cancelled) { toast.error(apiErrorMessage(e)); onClose(); }
+        if (!cancelled) { toast.error(apiErrorMessage(e)); onCloseRef.current(); }
       } finally { if (!cancelled) setLoading(false); }
     })();
     return () => { cancelled = true; };
-  }, [productId, onClose]);
+  }, [productId]);
 
   useEffect(() => { setImgIndex(0); }, [picks]);
 

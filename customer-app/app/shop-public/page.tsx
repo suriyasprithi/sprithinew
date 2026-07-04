@@ -19,7 +19,8 @@ import { getCustomerCoordsQuiet, readCustomerCoords, distanceToVendor, formatDis
 type ApiProduct = {
   id: number; name: string; price: number | string; old_price?: number | string | null; image: string | null;
   stock: number; category_id: number | null; category_name?: string | null;
-  sub_category_id?: number | null; sub_category_name?: string | null; vendor_name?: string | null;
+  sub_category_id?: number | null; sub_category_name?: string | null;
+  vendor_id?: number | string | null; vendor_name?: string | null;
   has_variants?: boolean;
   default_variant_id?: number | null;
   min_price?: number | string | null;
@@ -40,6 +41,7 @@ function adapt(raw: ApiProduct): MarketplaceProduct {
     price: Number(raw.price),
     old_price: raw.old_price != null ? Number(raw.old_price) : undefined,
     image: raw.image,
+    vendor_id: raw.vendor_id != null ? Number(raw.vendor_id) : null,
     vendor_name: raw.vendor_name ?? null,
     stock: raw.stock,
     has_variants: !!raw.has_variants,
@@ -127,6 +129,17 @@ function PublicShopInner() {
     else params.set("vendor_category_id", String(id));
     const qs = params.toString();
     router.push(`/shop-public${qs ? `?${qs}` : ""}`);
+  }
+
+  // Product click → open its detail INSIDE the unified /browse shop view (keeps
+  // the shop's category rail). Opens the product's own shop so closing the detail
+  // lands on that shop's grid; falls back to a shopless product view if unknown.
+  function openInBrowse(id: number) {
+    const p = items.find((x) => x.id === id);
+    const out = new URLSearchParams();
+    if (p?.vendor_id) out.set("shop", String(p.vendor_id));
+    out.set("product", String(id));
+    router.push(`/browse?${out.toString()}`);
   }
 
   // Scope products to one shop via ?vendor_id=N (vendor pill click).
@@ -477,7 +490,7 @@ function PublicShopInner() {
           </div>
         ) : (
           <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
-            {shownItems.map((p) => <ProductCard key={p.id} product={p} />)}
+            {shownItems.map((p) => <ProductCard key={p.id} product={p} onSelect={openInBrowse} />)}
           </div>
         )}
 

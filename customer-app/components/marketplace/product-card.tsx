@@ -15,6 +15,7 @@ export type MarketplaceProduct = {
   price: number;
   old_price?: number | null;
   image: string | null;
+  vendor_id?: number | null;   // owning shop — used to open the product inside its shop on /browse
   vendor_name?: string | null;
   weights?: string[];       // e.g. ["500g", "1kg", "2kg"]
   rating?: number;          // 0..5
