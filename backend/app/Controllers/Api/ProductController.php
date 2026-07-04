@@ -451,10 +451,12 @@ class ProductController extends BaseApiController
     }
 
     /**
-     * Image-only import: upload a ZIP of product images and store every one
-     * permanently (global, by filename) — no CSV needed. Pre-populates the image
-     * pool so a later CSV import that references those filenames connects to them
-     * without re-uploading the ZIP.
+     * Image-only import: upload a ZIP of product images (no CSV). Every image is
+     * stored, and — key part — ATTACHED to the vendor's product whose code / SKU
+     * matches the filename (e.g. P007138.jpg → the product with code P007138, or
+     * the variant with SKU P007138). So a ZIP of SKU-named images populates all
+     * matching products' images in one shot. Unmatched images still land in the
+     * global pool for a later CSV import to reference.
      */
     public function importImagesStore(): ResponseInterface
     {
@@ -478,16 +480,101 @@ class ProductController extends BaseApiController
             return $this->fail($e->getMessage(), 422);
         }
 
-        $token  = (string) $res['token'];
-        $stored = 0;
+        // 1) Store every image; key by its filename base (lowercased) → URL.
+        $token   = (string) $res['token'];
+        $byBase  = [];   // lower(basename without ext) => stored URL
+        $stored  = 0;
         foreach ($svc->files($token) as $fname) {
             $src = $svc->resolve($token, $fname);
-            if ($src && $this->storeImportImage($src, $vendorId, $fname)) $stored++;
+            if (! $src) continue;
+            $url = $this->storeImportImage($src, $vendorId, $fname);
+            if (! $url) continue;
+            $stored++;
+            $base = mb_strtolower(trim((string) pathinfo($fname, PATHINFO_FILENAME)));
+            if ($base !== '') $byBase[$base] = $url;   // last one wins on duplicate base
         }
         $svc->cleanup($token);
 
         if ($stored === 0) return $this->fail('No supported images found in the ZIP', 422);
-        return $this->ok(['stored' => $stored], $stored . ' image(s) imported');
+
+        // 2) Attach to matching products (by code) and variants (by SKU).
+        $bases   = array_keys($byBase);
+        $pm      = new ProductModel();
+        $vm      = new ProductVariantModel();
+        $products = 0; $variants = 0; $matchedBases = [];
+
+        foreach (array_chunk($bases, 500) as $chunk) {
+            foreach ($pm->select('id, code')->where('vendor_id', $vendorId)->whereIn('code', $chunk)->findAll() as $p) {
+                $b = mb_strtolower(trim((string) ($p['code'] ?? '')));
+                if (isset($byBase[$b])) { $pm->update((int) $p['id'], ['image' => $byBase[$b]]); $products++; $matchedBases[$b] = true; }
+            }
+            // Variants: match SKU, but only for THIS vendor's products.
+            $vRows = $vm->select('product_variants.id, product_variants.sku')
+                ->join('products', 'products.id = product_variants.product_id')
+                ->where('products.vendor_id', $vendorId)
+                ->whereIn('product_variants.sku', $chunk)
+                ->findAll();
+            foreach ($vRows as $v) {
+                $b = mb_strtolower(trim((string) ($v['sku'] ?? '')));
+                if (isset($byBase[$b])) { $vm->update((int) $v['id'], ['image' => $byBase[$b]]); $variants++; $matchedBases[$b] = true; }
+            }
+        }
+        $unmatched = max(0, count($bases) - count($matchedBases));
+
+        return $this->ok(
+            ['stored' => $stored, 'products' => $products, 'variants' => $variants, 'unmatched' => $unmatched],
+            "{$stored} stored · {$products} product(s) + {$variants} variant(s) attached" . ($unmatched ? " · {$unmatched} unmatched (in pool)" : '')
+        );
+    }
+
+    /**
+     * Attach already-uploaded pool images to products WITHOUT re-uploading: for
+     * each of the vendor's products, if an image whose filename matches the
+     * product code (any supported extension) exists in uploads/products/, set it
+     * as the product's image. Use after an image-only ZIP upload to sync them.
+     */
+    public function attachPoolImages(): ResponseInterface
+    {
+        $auth = $this->authUser();
+        if (! $auth) return $this->fail('Unauthorized', 401);
+        if (! in_array($auth->role, ['vendor', 'admin'], true)) return $this->fail('Forbidden', 403);
+        @set_time_limit(0);
+        @ignore_user_abort(true);
+
+        $vendorId = $auth->role === 'admin' ? (int) $this->request->getGet('vendor_id') : (int) $auth->id;
+        if ($vendorId <= 0) return $this->fail('vendor required', 422);
+
+        $pm = new ProductModel();
+        $vm = new ProductVariantModel();
+        $products = 0; $variants = 0; $per = 1000;
+
+        for ($page = 0; $page < 1000; $page++) {
+            $rows = $pm->select('id, code')->where('vendor_id', $vendorId)->orderBy('id', 'ASC')->findAll($per, $page * $per);
+            if (! $rows) break;
+            foreach ($rows as $p) {
+                $code = trim((string) ($p['code'] ?? ''));
+                if ($code === '') continue;
+                $url = $this->existingUploadUrl($vendorId, $code . '.jpg');   // ext-agnostic base lookup
+                if ($url) { $pm->update((int) $p['id'], ['image' => $url]); $products++; }
+            }
+        }
+        // Variants by SKU (this vendor's products).
+        for ($page = 0; $page < 1000; $page++) {
+            $rows = $vm->select('product_variants.id, product_variants.sku')
+                ->join('products', 'products.id = product_variants.product_id')
+                ->where('products.vendor_id', $vendorId)
+                ->orderBy('product_variants.id', 'ASC')
+                ->findAll($per, $page * $per);
+            if (! $rows) break;
+            foreach ($rows as $v) {
+                $sku = trim((string) ($v['sku'] ?? ''));
+                if ($sku === '') continue;
+                $url = $this->existingUploadUrl($vendorId, $sku . '.jpg');
+                if ($url) { $vm->update((int) $v['id'], ['image' => $url]); $variants++; }
+            }
+        }
+
+        return $this->ok(['products' => $products, 'variants' => $variants], "{$products} product(s) + {$variants} variant(s) synced from uploaded images");
     }
 
     /** Remove a finished import's extracted images. */

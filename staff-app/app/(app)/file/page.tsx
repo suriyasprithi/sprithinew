@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { FolderCog, FileArchive, ImageOff, Search, ChevronLeft, ChevronRight, FileUp } from "lucide-react";
+import { FolderCog, FileArchive, ImageOff, Search, ChevronLeft, ChevronRight, FileUp, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -40,7 +40,22 @@ export default function FilePage() {
   const [debounced, setDebounced] = useState("");
   const [reloadKey, setReloadKey] = useState(0);   // bumped after an import to refresh the table
   const [importingZip, setImportingZip] = useState(false);
+  const [syncing, setSyncing] = useState(false);
   const zipRef = useRef<HTMLInputElement>(null);
+
+  async function syncImages() {
+    setSyncing(true);
+    toast.message("Syncing images to products…");
+    try {
+      const res = await api.post("/vendor/products/attach-images", {}, { timeout: 600000 });
+      const d = (res.data.data ?? {}) as { products?: number; variants?: number };
+      const n = Number(d.products ?? 0) + Number(d.variants ?? 0);
+      toast.success(`${n} product${n === 1 ? "" : "s"} synced from uploaded images`);
+      setReloadKey((k) => k + 1);
+    } catch (e) {
+      toast.error(apiErrorMessage(e, "Sync failed"));
+    } finally { setSyncing(false); }
+  }
 
   async function importImagesZip(file: File) {
     setImportingZip(true);
@@ -49,8 +64,11 @@ export default function FilePage() {
       const fd = new FormData();
       fd.append("zip", file);
       const res = await api.post("/vendor/products/import-images-only", fd, { headers: { "Content-Type": "multipart/form-data" }, timeout: 600000 });
-      const n = Number(res.data.data?.stored ?? 0);
-      toast.success(`${n} image${n === 1 ? "" : "s"} imported`);
+      const d = (res.data.data ?? {}) as { stored?: number; products?: number; variants?: number; unmatched?: number };
+      const stored = Number(d.stored ?? 0);
+      const attached = Number(d.products ?? 0) + Number(d.variants ?? 0);
+      const unmatched = Number(d.unmatched ?? 0);
+      toast.success(`${stored} stored · ${attached} attached to products${unmatched ? ` · ${unmatched} unmatched` : ""}`);
       setReloadKey((k) => k + 1);
     } catch (e) {
       toast.error(apiErrorMessage(e, "Import failed"));
@@ -121,9 +139,15 @@ export default function FilePage() {
             </div>
           </div>
           <input ref={zipRef} type="file" accept=".zip,application/zip" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) void importImagesZip(f); }} />
-          <Button variant="outline" className="w-full rounded-xl" onClick={() => zipRef.current?.click()} disabled={importingZip}>
+          <Button variant="outline" className="w-full rounded-xl" onClick={() => zipRef.current?.click()} disabled={importingZip || syncing}>
             <FileUp className="h-4 w-4" /> {importingZip ? "Uploading…" : "Choose images ZIP"}
           </Button>
+          <div className="rounded-xl bg-surface-2/50 p-3">
+            <p className="text-[11px] text-muted-foreground">Already uploaded images earlier but they&apos;re not on the products? Attach them by matching filename → SKU — no re-upload.</p>
+            <Button variant="outline" size="sm" className="mt-2 w-full rounded-lg" onClick={() => void syncImages()} disabled={syncing || importingZip}>
+              <RefreshCw className={`h-4 w-4${syncing ? " animate-spin" : ""}`} /> {syncing ? "Syncing…" : "Sync images to products"}
+            </Button>
+          </div>
         </LuxuryCard>
 
         {/* EXPORT IMAGES ZIP */}
