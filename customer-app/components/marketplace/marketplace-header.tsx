@@ -144,7 +144,7 @@ export function MarketplaceHeader({ cartCount = 0, wishlistCount = 0, unreadCoun
   };
   const openProduct = (id: number) => {
     setSugOpen(false);
-    router.push(`/product-public?id=${id}`);
+    router.push(`/browse?product=${id}`);   // open the product inside the unified browse view
   };
 
   return (
