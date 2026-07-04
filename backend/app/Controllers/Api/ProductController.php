@@ -459,6 +459,64 @@ class ProductController extends BaseApiController
     }
 
     /**
+     * Stream a ZIP of the vendor's product images (main image per product), each
+     * entry named by the product's code/SKU so it round-trips with the CSV
+     * `image` column. Only locally-hosted uploads are included (external URLs and
+     * base64 are skipped). Admin may pass ?vendor_id=N.
+     */
+    public function exportImages(): ResponseInterface
+    {
+        $auth = $this->authUser();
+        if (! $auth) return $this->fail('Unauthorized', 401);
+        if (! in_array($auth->role, ['vendor', 'admin'], true)) return $this->fail('Forbidden', 403);
+        if (! class_exists('ZipArchive')) return $this->fail('ZIP is not available on this server', 500);
+
+        $vendorId = $auth->role === 'admin' ? (int) $this->request->getGet('vendor_id') : (int) $auth->id;
+        if ($vendorId <= 0) return $this->fail('vendor required', 422);
+
+        $products = (new ProductModel())->select('id, code, image')->where('vendor_id', $vendorId)->findAll();
+
+        $dir = WRITEPATH . 'export-images/';
+        if (! is_dir($dir)) @mkdir($dir, 0775, true);
+        foreach (glob($dir . '*.zip') ?: [] as $old) { if (@filemtime($old) < time() - 3600) @unlink($old); }  // prune stale exports
+        $zipPath = $dir . 'products-' . $vendorId . '-' . bin2hex(random_bytes(4)) . '.zip';
+
+        $za = new \ZipArchive();
+        if ($za->open($zipPath, \ZipArchive::CREATE | \ZipArchive::OVERWRITE) !== true) {
+            return $this->fail('Could not create the ZIP', 500);
+        }
+        $count = 0; $used = [];
+        foreach ($products as $p) {
+            $path = $this->localUploadPath((string) ($p['image'] ?? ''));
+            if ($path === null || ! is_file($path)) continue;
+            $ext  = strtolower(pathinfo($path, PATHINFO_EXTENSION)) ?: 'jpg';
+            $code = trim((string) ($p['code'] ?? '')) !== '' ? (string) $p['code'] : ('P' . $p['id']);
+            $base = trim((string) preg_replace('/[^a-zA-Z0-9._-]+/', '-', $code), '-._');
+            if ($base === '') $base = 'P' . $p['id'];
+            $entry = $base . '.' . $ext;
+            $n = 1;
+            while (isset($used[$entry])) { $entry = $base . '-' . (++$n) . '.' . $ext; }
+            $used[$entry] = true;
+            if ($za->addFile($path, $entry)) $count++;
+        }
+        $za->close();
+
+        if ($count === 0) { @unlink($zipPath); return $this->fail('No product images to export', 404); }
+        return $this->response->download($zipPath, null)->setFileName('product-images-' . $vendorId . '.zip');
+    }
+
+    /** Map a stored image URL to its local uploads path (null for external/base64). */
+    private function localUploadPath(string $url): ?string
+    {
+        if ($url === '' || strncmp($url, 'data:', 5) === 0) return null;
+        $pos = strpos($url, '/uploads/');
+        if ($pos === false) return null;
+        $rel = ltrim(substr($url, $pos + 1), '/');   // uploads/products/x.jpg
+        if (strpos($rel, '..') !== false) return null;
+        return FCPATH . $rel;
+    }
+
+    /**
      * Universal, attribute-agnostic catalog import engine (adminImport + vendorImport).
      * Each item is a product GROUP keyed by item_code:
      *   { code, name, category, sub_category, brand, hsn_code, description, status,

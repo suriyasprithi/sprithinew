@@ -17,6 +17,7 @@ import {
   Tags,
   Layers,
   ListTree,
+  FolderCog,
   Image as ImageIcon,
   Video,
   Film,
@@ -54,6 +55,7 @@ export const ROLE_MENU: Record<StaffRole, MenuItem[]> = {
   vendor: [
     { href: "/dashboard",     label: "Dashboard",   icon: LayoutDashboard },
     { href: "/products",      label: "Products",    icon: Package },
+    { href: "/file",          label: "File",        icon: FolderCog },
     { href: "/orders",        label: "Orders",      icon: ShoppingCart },
     { href: "/returns",       label: "Returns",     icon: RotateCcw },
     { href: "/my-drivers",    label: "Drivers",     icon: Truck },

@@ -28,6 +28,7 @@ const LABEL: Record<string, string> = {
   "vendor-categories": "Vendor Categories",
   categories: "Product Categories",
   "sub-categories": "Sub Categories",
+  file: "File",
   banners: "Home Banners",
   pincodes: "Pincodes",
   payments: "Manual Top-ups",
