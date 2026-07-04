@@ -81,6 +81,9 @@ class ZipImportService
 
     public function count(string $token): int { return count($this->manifest($token)); }
 
+    /** Original filenames in an extracted batch (used by the image-only import). */
+    public function files(string $token): array { return array_keys($this->manifest($token)); }
+
     private function manifest(string $token): array
     {
         $token = $this->safeToken($token);

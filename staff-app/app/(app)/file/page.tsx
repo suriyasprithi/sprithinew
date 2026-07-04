@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { FolderCog, FileArchive, ImageOff, Search, ChevronLeft, ChevronRight } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { FolderCog, FileArchive, ImageOff, Search, ChevronLeft, ChevronRight, FileUp } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -38,6 +38,27 @@ export default function FilePage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [debounced, setDebounced] = useState("");
+  const [reloadKey, setReloadKey] = useState(0);   // bumped after an import to refresh the table
+  const [importingZip, setImportingZip] = useState(false);
+  const zipRef = useRef<HTMLInputElement>(null);
+
+  async function importImagesZip(file: File) {
+    setImportingZip(true);
+    toast.message("Uploading images…");
+    try {
+      const fd = new FormData();
+      fd.append("zip", file);
+      const res = await api.post("/vendor/products/import-images-only", fd, { headers: { "Content-Type": "multipart/form-data" }, timeout: 600000 });
+      const n = Number(res.data.data?.stored ?? 0);
+      toast.success(`${n} image${n === 1 ? "" : "s"} imported`);
+      setReloadKey((k) => k + 1);
+    } catch (e) {
+      toast.error(apiErrorMessage(e, "Import failed"));
+    } finally {
+      setImportingZip(false);
+      if (zipRef.current) zipRef.current.value = "";
+    }
+  }
 
   // Debounce the search box; a new term restarts at page 1.
   useEffect(() => { const t = setTimeout(() => setDebounced(search.trim()), 350); return () => clearTimeout(t); }, [search]);
@@ -59,7 +80,7 @@ export default function FilePage() {
       } finally { if (!cancelled) setLoading(false); }
     })();
     return () => { cancelled = true; };
-  }, [debounced, page]);
+  }, [debounced, page, reloadKey]);
 
   const totalPages = Math.max(1, Math.ceil(total / PER_PAGE));
 
@@ -89,6 +110,21 @@ export default function FilePage() {
           title="File"
           description="Export your product images and browse the filename each one uses."
         />
+
+        {/* IMPORT IMAGES ZIP (images only — no CSV) */}
+        <LuxuryCard className="space-y-3 p-5">
+          <div className="flex items-center gap-3">
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand/10 text-brand"><FileUp className="h-5 w-5" /></span>
+            <div className="min-w-0">
+              <p className="text-sm font-semibold">Import images (ZIP)</p>
+              <p className="text-xs text-muted-foreground">Upload a ZIP of product images (no CSV). Stored by filename — a later CSV import that references those names connects automatically. jpg, png, webp. Max 300 MB.</p>
+            </div>
+          </div>
+          <input ref={zipRef} type="file" accept=".zip,application/zip" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) void importImagesZip(f); }} />
+          <Button variant="outline" className="w-full rounded-xl" onClick={() => zipRef.current?.click()} disabled={importingZip}>
+            <FileUp className="h-4 w-4" /> {importingZip ? "Uploading…" : "Choose images ZIP"}
+          </Button>
+        </LuxuryCard>
 
         {/* EXPORT IMAGES ZIP */}
         <LuxuryCard className="space-y-3 p-5">

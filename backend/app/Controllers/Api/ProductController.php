@@ -450,6 +450,41 @@ class ProductController extends BaseApiController
         return $this->ok($res, $res['count'] . ' image(s) ready');
     }
 
+    /**
+     * Image-only import: upload a ZIP of product images and store every one
+     * permanently (global, by filename) — no CSV needed. Pre-populates the image
+     * pool so a later CSV import that references those filenames connects to them
+     * without re-uploading the ZIP.
+     */
+    public function importImagesStore(): ResponseInterface
+    {
+        $auth = $this->authUser();
+        if (! $auth) return $this->fail('Unauthorized', 401);
+        if (! in_array($auth->role, ['vendor', 'admin'], true)) return $this->fail('Forbidden', 403);
+        $zip = $this->request->getFile('zip');
+        if (! $zip) return $this->fail('No ZIP uploaded', 422);
+
+        $vendorId = $auth->role === 'admin' ? (int) $this->request->getGet('vendor_id') : (int) $auth->id;
+        try {
+            $svc = new ZipImportService();
+            $svc->prune();
+            $res = $svc->extract($zip, self::IMPORT_ZIP_MAX_MB * 1024 * 1024);
+        } catch (\Throwable $e) {
+            return $this->fail($e->getMessage(), 422);
+        }
+
+        $token  = (string) $res['token'];
+        $stored = 0;
+        foreach ($svc->files($token) as $fname) {
+            $src = $svc->resolve($token, $fname);
+            if ($src && $this->storeImportImage($src, $vendorId, $fname)) $stored++;
+        }
+        $svc->cleanup($token);
+
+        if ($stored === 0) return $this->fail('No supported images found in the ZIP', 422);
+        return $this->ok(['stored' => $stored], $stored . ' image(s) imported');
+    }
+
     /** Remove a finished import's extracted images. */
     public function importImagesCleanup(): ResponseInterface
     {

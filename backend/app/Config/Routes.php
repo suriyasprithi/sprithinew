@@ -211,6 +211,7 @@ $routes->group('api/v1', ['filter' => 'cors'], static function ($routes) {
         $routes->post('products/import', 'Api\ProductController::vendorImport');
         $routes->post('products/import-images', 'Api\ProductController::importImagesUpload');           // upload + extract images ZIP
         $routes->post('products/import-images/cleanup', 'Api\ProductController::importImagesCleanup');  // remove extracted temp
+        $routes->post('products/import-images-only', 'Api\ProductController::importImagesStore');       // image-only: store all ZIP images (no CSV)
         $routes->get('products/export-images',  'Api\ProductController::exportImages');                 // download a ZIP of the vendor's product images
         $routes->post('products',        'Api\ProductController::create');
         $routes->patch('products/(:num)','Api\ProductController::update/$1');
@@ -337,6 +338,7 @@ $routes->group('api/v1', ['filter' => 'cors'], static function ($routes) {
         $routes->post('products/import',             'Api\ProductController::adminImport');
         $routes->post('products/import-images',          'Api\ProductController::importImagesUpload');
         $routes->post('products/import-images/cleanup',  'Api\ProductController::importImagesCleanup');
+        $routes->post('products/import-images-only',     'Api\ProductController::importImagesStore');
         $routes->get('products/export-images',           'Api\ProductController::exportImages');
         $routes->patch('customers/(:num)',           'Api\AdminUsersController::update/$1');
         $routes->post('customers/(:num)/activate',   'Api\AdminUsersController::activate/$1');
