@@ -28,13 +28,13 @@ export function SideNav() {
 
   return (
     <aside className="hidden h-screen sticky top-0 shrink-0 w-64 flex-col border-r border-sidebar-border bg-sidebar md:flex">
-      <div className="flex items-center gap-3 border-b border-sidebar-border px-4 py-5">
+      <Link href="/home" aria-label="SPRITHI home" className="flex items-center gap-3 border-b border-sidebar-border px-4 py-5 transition-colors hover:bg-accent">
         <img src={`${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/logo.png`} alt="SPRITHI Digital Mart" className="h-10 w-10 shrink-0 object-contain" />
         <div className="min-w-0">
           <p className="text-sm font-semibold tracking-tight">SPRITHI</p>
           <p className="truncate text-xs text-muted-foreground">{user?.name ?? "—"}</p>
         </div>
-      </div>
+      </Link>
 
       <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-4">
         {ITEMS.map((item) => {
