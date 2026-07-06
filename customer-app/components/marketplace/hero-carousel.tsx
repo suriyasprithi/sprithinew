@@ -108,6 +108,36 @@ function MainCarousel({ slides }: { slides: Banner[] }) {
   );
 }
 
+// A banner image is shown uncropped (object-contain) on desktop so posters/flyers
+// never lose their edges — but that can leave the container's flat gradient
+// showing as bars beside a mismatched aspect ratio. This blurred, scaled-up copy
+// sits behind the sharp image and fills the frame, turning that bar into a soft
+// glow instead (same idea as Instagram Stories' letterboxing).
+function BannerImg({ src, eager = false }: { src: string; eager?: boolean }) {
+  return (
+    <>
+      <img
+        src={src}
+        alt=""
+        aria-hidden
+        className="absolute inset-0 z-0 hidden h-full w-full scale-110 object-cover blur-2xl md:block"
+        loading={eager ? "eager" : "lazy"}
+        decoding="async"
+        referrerPolicy="no-referrer"
+      />
+      <img
+        src={src}
+        alt=""
+        className="absolute inset-0 z-0 h-full w-full object-cover md:object-contain"
+        loading={eager ? "eager" : "lazy"}
+        fetchPriority={eager ? "high" : "auto"}
+        decoding="async"
+        referrerPolicy="no-referrer"
+      />
+    </>
+  );
+}
+
 function SlideContent({ slide, active, eager = false }: { slide: Banner; active: boolean; eager?: boolean }) {
   const Icon = lucideOrFallback(slide.icon_name);
   const hasImg = Boolean(slide.image_url);
@@ -120,15 +150,7 @@ function SlideContent({ slide, active, eager = false }: { slide: Banner; active:
     >
       {slide.image_url && (
         <>
-          <img
-            src={slide.image_url}
-            alt=""
-            className="absolute inset-0 z-0 h-full w-full object-cover md:object-contain"
-            loading={eager ? "eager" : "lazy"}
-            fetchPriority={eager ? "high" : "auto"}
-            decoding="async"
-            referrerPolicy="no-referrer"
-          />
+          <BannerImg src={slide.image_url} eager={eager} />
           {(slide.eyebrow || slide.title || slide.highlight || slide.subtitle || slide.cta_label) && (
             <span className="absolute inset-0 z-0 bg-black/35" aria-hidden />
           )}
@@ -188,15 +210,7 @@ function SideTallBanner({ banner }: { banner: Banner }) {
     >
       {banner.image_url && (
         <>
-          <img
-            src={banner.image_url}
-            alt=""
-            className="absolute inset-0 z-0 h-full w-full object-cover md:object-contain"
-            loading="eager"
-            fetchPriority="high"
-            decoding="async"
-            referrerPolicy="no-referrer"
-          />
+          <BannerImg src={banner.image_url} eager />
           {(banner.eyebrow || banner.title || banner.subtitle || banner.cta_label) && (
             <span className="absolute inset-0 z-0 bg-black/35" aria-hidden />
           )}
@@ -230,14 +244,7 @@ function SideShortBanner({ banner, eager = false }: { banner: Banner; eager?: bo
     >
       {banner.image_url && (
         <>
-          <img
-            src={banner.image_url}
-            alt=""
-            className="absolute inset-0 z-0 h-full w-full object-cover md:object-contain"
-            loading={eager ? "eager" : "lazy"}
-            decoding="async"
-            referrerPolicy="no-referrer"
-          />
+          <BannerImg src={banner.image_url} eager={eager} />
           {(banner.eyebrow || banner.title || banner.subtitle || banner.cta_label) && (
             <span className="absolute inset-0 z-0 bg-black/35" aria-hidden />
           )}
