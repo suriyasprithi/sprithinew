@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import { Search, MapPin, ShoppingCart, Heart, Bell, User, ChevronDown, Loader2 } from "lucide-react";
+import { Search, MapPin, ShoppingCart, Heart, Bell, User, ChevronDown, Loader2, Truck } from "lucide-react";
 import { LocationPicker, readSavedLocation } from "./location-picker";
 import { useAuth } from "@/stores/auth";
 import { api, fileUrl } from "@/lib/api";
@@ -240,6 +240,9 @@ export function MarketplaceHeader({ cartCount = 0, wishlistCount = 0, unreadCoun
           </IconButton>
           <IconButton href="/cart" aria-label="Cart" badge={liveCart} highlighted>
             <ShoppingCart className="h-5 w-5" />
+          </IconButton>
+          <IconButton href="/orders" aria-label="Track order">
+            <Truck className="h-5 w-5" />
           </IconButton>
           <Link
             href="/blog"
