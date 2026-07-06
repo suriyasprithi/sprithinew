@@ -32,7 +32,12 @@ class CategoryController extends BaseApiController
     public function adminIndex(): ResponseInterface
     {
         if ($r = $this->requireAdmin()) return $r;
-        $items = (new CategoryModel())->orderBy('id', 'DESC')->findAll();
+        // sort_order (per vendor category) drives the admin list + the customer
+        // rails; optional ?vendor_category_id=N narrows to one group.
+        $model = (new CategoryModel())->orderBy('sort_order', 'ASC')->orderBy('id', 'ASC');
+        $vcid  = (int) $this->request->getGet('vendor_category_id');
+        if ($vcid > 0) $model->where('vendor_category_id', $vcid);
+        $items = $model->findAll();
         $items = array_map([$this, 'decode'], $items);
 
         // Attach the linked vendor category's name so the admin table can show it
@@ -92,6 +97,40 @@ class CategoryController extends BaseApiController
         if ($r = $this->requireAdmin()) return $r;
         (new CategoryModel())->delete($id);
         return $this->ok(null, 'Deleted');
+    }
+
+    /**
+     * Admin: bulk reorder product categories within one vendor category. Body:
+     * { "ids": [12, 4, 9, ...] } — the product-category ids in their new visual
+     * order (all belonging to the same vendor category). Positions 1..N are
+     * written into sort_order. Wrapped in a transaction. Mirrors
+     * VendorCategoryController::reorder.
+     */
+    public function reorder(): ResponseInterface
+    {
+        if ($r = $this->requireAdmin()) return $r;
+
+        $d   = $this->request->getJSON(true) ?? $this->request->getPost();
+        $ids = $d['ids'] ?? null;
+        if (! is_array($ids) || empty($ids)) return $this->fail('ids array required', 422);
+
+        $clean = [];
+        foreach ($ids as $v) {
+            $n = (int) $v;
+            if ($n > 0 && ! in_array($n, $clean, true)) $clean[] = $n;
+        }
+        if (empty($clean)) return $this->fail('ids array required', 422);
+
+        $db = \Config\Database::connect();
+        $db->transStart();
+        $pos = 1;
+        foreach ($clean as $id) {
+            $db->table('categories')->where('id', $id)->update(['sort_order' => $pos++]);
+        }
+        $db->transComplete();
+        if ($db->transStatus() === false) return $this->fail('Reorder failed', 500);
+
+        return $this->ok(null, 'Reordered');
     }
 
     /**

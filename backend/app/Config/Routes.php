@@ -352,6 +352,7 @@ $routes->group('api/v1', ['filter' => 'cors'], static function ($routes) {
         // categories
         $routes->get('categories',          'Api\CategoryController::adminIndex');
         $routes->post('categories',         'Api\CategoryController::create');
+        $routes->post('categories/reorder', 'Api\CategoryController::reorder');
         $routes->patch('categories/(:num)', 'Api\CategoryController::update/$1');
         $routes->delete('categories/(:num)','Api\CategoryController::delete/$1');
 

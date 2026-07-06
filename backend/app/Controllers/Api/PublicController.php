@@ -319,7 +319,8 @@ class PublicController extends BaseApiController
                 ->where('category_id IS NOT NULL')->findAll();
             $usedCatIds = array_values(array_unique(array_map(static fn ($r) => (int) $r['category_id'], $rows)));
             $catsOut = $usedCatIds
-                ? (new CategoryModel())->where('status', 'active')->whereIn('id', $usedCatIds)->findAll()
+                ? (new CategoryModel())->where('status', 'active')->whereIn('id', $usedCatIds)
+                    ->orderBy('sort_order', 'ASC')->orderBy('id', 'ASC')->findAll()
                 : [];
             // Sub-categories the shop's products actually use (each carries its
             // parent category_id) → the browse rail nests them under their category.
@@ -331,7 +332,8 @@ class PublicController extends BaseApiController
                 ? (new SubCategoryModel())->where('status', 'active')->whereIn('id', $usedSubIds)->findAll()
                 : [];
         } else {
-            $catsOut = (new CategoryModel())->where('status', 'active')->findAll();
+            $catsOut = (new CategoryModel())->where('status', 'active')
+                ->orderBy('sort_order', 'ASC')->orderBy('id', 'ASC')->findAll();
         }
 
         return $this->ok([

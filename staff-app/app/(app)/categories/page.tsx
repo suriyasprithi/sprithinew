@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Tags, Plus, Search, MoreHorizontal, Pencil, Trash2, Layers } from "lucide-react";
-import { motion } from "framer-motion";
+import { Tags, Plus, Search, MoreHorizontal, Pencil, Trash2, Layers, GripVertical } from "lucide-react";
+import { motion, Reorder, useDragControls } from "framer-motion";
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -34,6 +34,7 @@ type ProductCategory = {
   status: "active" | "inactive";
   vendor_category_id?: number | null;
   vendor_category_name?: string | null;
+  sort_order?: number;
 };
 
 type Draft = {
@@ -52,6 +53,7 @@ export default function ProductCategoriesPage() {
   const [vendorCats, setVendorCats] = useState<VendorCategoryFull[]>([]);
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState<"all" | "active" | "inactive">("all");
+  const [vendorCat, setVendorCat] = useState<"all" | number>("all");
   const [editing, setEditing] = useState<Draft | null>(null);
   const [deleteId, setDeleteId] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
@@ -75,11 +77,30 @@ export default function ProductCategoriesPage() {
   const filtered = useMemo(() => items.filter((c) => {
     if (search && !c.name.toLowerCase().includes(search.toLowerCase())) return false;
     if (status !== "all" && c.status !== status) return false;
+    if (vendorCat !== "all" && (c.vendor_category_id ?? null) !== vendorCat) return false;
     return true;
-  }), [items, search, status]);
+  }), [items, search, status, vendorCat]);
 
   const totalActive = items.filter((i) => i.status === "active").length;
   const totalLinked = items.filter((i) => i.vendor_category_id != null).length;
+
+  // Drag-reorder is only meaningful within ONE vendor category and only when the
+  // full group is visible (no search / status filter hiding rows), so the ids we
+  // POST are the complete, correctly-ordered set for that group.
+  const isReorderable = vendorCat !== "all" && !search && status === "all";
+  async function onReorder(next: ProductCategory[]) {
+    const ids = new Set(next.map((c) => c.id));
+    const prev = items;
+    // Keep the reordered group together (in its new order) ahead of the rest;
+    // the view only ever renders `filtered`, so absolute position is cosmetic.
+    setItems((cur) => [...next, ...cur.filter((i) => !ids.has(i.id))]);
+    try {
+      await api.post("/admin/categories/reorder", { ids: next.map((c) => c.id) });
+    } catch (e) {
+      setItems(prev);
+      toast.error(apiErrorMessage(e, "Reorder failed"));
+    }
+  }
 
   function startNew() { setEditing(blankDraft()); }
   function startEdit(c: ProductCategory) {
@@ -155,11 +176,20 @@ export default function ProductCategoriesPage() {
         </div>
 
         <div className="glass rounded-2xl p-3">
-          <div className="grid gap-2 md:grid-cols-[1fr_200px]">
+          <div className="grid gap-2 md:grid-cols-[1fr_220px_180px]">
             <div className="relative">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search category…" className="h-10 rounded-xl bg-surface-2/60 pl-9" />
             </div>
+            <Combobox
+              value={vendorCat === "all" ? "all" : String(vendorCat)}
+              onValueChange={(v) => setVendorCat(v === "all" ? "all" : Number(v))}
+              options={[{ value: "all", label: "All vendor categories" }, ...vendorCats.map((v) => ({ value: String(v.id), label: v.name }))]}
+              placeholder="Vendor category"
+              searchPlaceholder="Search vendor category…"
+              emptyText="No vendor category."
+              className="h-10 rounded-xl bg-surface-2/60"
+            />
             <Select value={status} onValueChange={(v) => v && setStatus(v as "all" | "active" | "inactive")}>
               <SelectTrigger className="h-10 rounded-xl bg-surface-2/60"><SelectValue /></SelectTrigger>
               <SelectContent>
@@ -169,6 +199,13 @@ export default function ProductCategoriesPage() {
               </SelectContent>
             </Select>
           </div>
+          {vendorCat !== "all" && (
+            <p className="mt-2 px-1 text-[11px] text-muted-foreground">
+              {isReorderable
+                ? "Drag the ⠿ handle to reorder categories within this vendor category."
+                : "Clear the search / status filter to drag-reorder this vendor category."}
+            </p>
+          )}
         </div>
 
         <div className="luxe-card overflow-hidden">
@@ -185,6 +222,18 @@ export default function ProductCategoriesPage() {
               description="Adjust filters or create a new category."
               action={<GradientButton onClick={startNew}><Plus className="h-4 w-4" /> New category</GradientButton>}
             />
+          ) : isReorderable ? (
+            <Reorder.Group axis="y" values={filtered} onReorder={onReorder} className="divide-y divide-border">
+              {filtered.map((c) => (
+                <DraggableCategoryRow
+                  key={c.id}
+                  c={c}
+                  vcatName={vcatName}
+                  onEdit={() => startEdit(c)}
+                  onDelete={() => setDeleteId(c.id)}
+                />
+              ))}
+            </Reorder.Group>
           ) : (
             <div className="divide-y divide-border">
               {filtered.map((c, i) => (
@@ -195,48 +244,7 @@ export default function ProductCategoriesPage() {
                   transition={{ delay: i * 0.02 }}
                   className="grid grid-cols-[1fr_auto] items-center gap-3 px-4 py-3 transition-colors hover:bg-surface-2/40 md:grid-cols-[1fr_160px_120px_56px]"
                 >
-                  <div className="flex items-center gap-3">
-                    <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-brand/10 text-brand">
-                      <Tags className="h-4 w-4" />
-                    </span>
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-semibold">{c.name}</p>
-                      <p className="text-xs text-muted-foreground md:hidden">
-                        {c.vendor_category_id ? (c.vendor_category_name ?? vcatName.get(c.vendor_category_id) ?? "—") : "Unlinked"}
-                      </p>
-                    </div>
-                  </div>
-                  <p className="hidden text-xs md:block">
-                    {c.vendor_category_id ? (
-                      <span className="inline-flex items-center gap-1 rounded-full border border-brand/20 bg-brand/5 px-2 py-0.5 font-medium text-brand">
-                        <Layers className="h-3 w-3" /> {c.vendor_category_name ?? vcatName.get(c.vendor_category_id) ?? "—"}
-                      </span>
-                    ) : (
-                      <span className="text-muted-foreground">— Unlinked</span>
-                    )}
-                  </p>
-                  <div className="hidden md:block"><StatusBadge status={c.status} /></div>
-                  <div className="flex items-center gap-2 justify-self-end">
-                    <span className="md:hidden"><StatusBadge status={c.status} /></span>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger
-                        render={
-                          <button type="button" aria-label="Row actions" className="inline-flex h-8 w-8 items-center justify-center rounded-md hover:bg-accent">
-                            <MoreHorizontal className="h-4 w-4" />
-                          </button>
-                        }
-                      />
-                      <DropdownMenuContent align="end" className="w-40">
-                        <DropdownMenuItem onClick={() => startEdit(c)}>
-                          <Pencil className="h-4 w-4" /> Edit
-                        </DropdownMenuItem>
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem onClick={() => setDeleteId(c.id)} className="text-rose-400 focus:text-rose-400">
-                          <Trash2 className="h-4 w-4" /> Delete
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </div>
+                  <CategoryCells c={c} vcatName={vcatName} onEdit={() => startEdit(c)} onDelete={() => setDeleteId(c.id)} />
                 </motion.div>
               ))}
             </div>
@@ -298,5 +306,90 @@ export default function ProductCategoriesPage() {
         </AlertDialogContent>
       </AlertDialog>
     </>
+  );
+}
+
+/** The 4 table cells (name · vendor category · status · actions) shared by the
+ *  plain list and the draggable list, so both render identically. */
+function CategoryCells({ c, vcatName, onEdit, onDelete }: {
+  c: ProductCategory;
+  vcatName: Map<number, string>;
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
+  return (
+    <>
+      <div className="flex items-center gap-3">
+        <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-brand/10 text-brand">
+          <Tags className="h-4 w-4" />
+        </span>
+        <div className="min-w-0">
+          <p className="truncate text-sm font-semibold">{c.name}</p>
+          <p className="text-xs text-muted-foreground md:hidden">
+            {c.vendor_category_id ? (c.vendor_category_name ?? vcatName.get(c.vendor_category_id) ?? "—") : "Unlinked"}
+          </p>
+        </div>
+      </div>
+      <p className="hidden text-xs md:block">
+        {c.vendor_category_id ? (
+          <span className="inline-flex items-center gap-1 rounded-full border border-brand/20 bg-brand/5 px-2 py-0.5 font-medium text-brand">
+            <Layers className="h-3 w-3" /> {c.vendor_category_name ?? vcatName.get(c.vendor_category_id) ?? "—"}
+          </span>
+        ) : (
+          <span className="text-muted-foreground">— Unlinked</span>
+        )}
+      </p>
+      <div className="hidden md:block"><StatusBadge status={c.status} /></div>
+      <div className="flex items-center gap-2 justify-self-end">
+        <span className="md:hidden"><StatusBadge status={c.status} /></span>
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            render={
+              <button type="button" aria-label="Row actions" className="inline-flex h-8 w-8 items-center justify-center rounded-md hover:bg-accent">
+                <MoreHorizontal className="h-4 w-4" />
+              </button>
+            }
+          />
+          <DropdownMenuContent align="end" className="w-40">
+            <DropdownMenuItem onClick={onEdit}>
+              <Pencil className="h-4 w-4" /> Edit
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={onDelete} className="text-rose-400 focus:text-rose-400">
+              <Trash2 className="h-4 w-4" /> Delete
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+    </>
+  );
+}
+
+/** A draggable table row (grip handle only initiates the drag, so the dropdown
+ *  stays clickable). Same columns as the plain row, with a grip prepended. */
+function DraggableCategoryRow({ c, vcatName, onEdit, onDelete }: {
+  c: ProductCategory;
+  vcatName: Map<number, string>;
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
+  const dragControls = useDragControls();
+  return (
+    <Reorder.Item
+      value={c}
+      dragListener={false}
+      dragControls={dragControls}
+      className="grid grid-cols-[auto_1fr_auto] items-center gap-3 bg-surface px-4 py-3 transition-colors hover:bg-surface-2/40 md:grid-cols-[auto_1fr_160px_120px_56px]"
+    >
+      <button
+        type="button"
+        onPointerDown={(e) => dragControls.start(e)}
+        aria-label="Drag to reorder"
+        className="flex h-9 w-6 shrink-0 cursor-grab touch-none items-center justify-center rounded text-muted-foreground hover:text-foreground active:cursor-grabbing"
+      >
+        <GripVertical className="h-4 w-4" />
+      </button>
+      <CategoryCells c={c} vcatName={vcatName} onEdit={onEdit} onDelete={onDelete} />
+    </Reorder.Item>
   );
 }
