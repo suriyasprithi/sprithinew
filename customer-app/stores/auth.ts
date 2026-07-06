@@ -3,6 +3,7 @@ import { api, AuthUser, AuthTokens } from "@/lib/api";
 import { storage, STORAGE_KEYS } from "@/lib/storage";
 import { registerDeviceToken, unregisterDeviceToken } from "@/lib/push";
 import { clearPageCache } from "@/lib/page-cache";
+import { wishlist } from "@/lib/wishlist";
 
 type AuthState = {
   user: AuthUser | null;
@@ -40,6 +41,7 @@ export const useAuth = create<AuthState>((set) => ({
       const res = await api.get("/auth/me");
       set({ user: res.data.data as AuthUser, isHydrated: true });
       void registerDeviceToken();
+      void wishlist.hydrate();   // reconcile the wishlist with this account's server list
     } catch {
       clearTokens();
       set({ user: null, isHydrated: true });
@@ -57,8 +59,10 @@ export const useAuth = create<AuthState>((set) => ({
       const tokens = res.data.data as AuthTokens;
       persistTokens(tokens);
       clearPageCache();   // a new account must not see the previous user's cached pages
+      wishlist.resetLocal();   // drop the guest cache; hydrate pulls this account's list
       set({ user: tokens.user });
       void registerDeviceToken();
+      void wishlist.hydrate();
       return tokens.user;
     } finally {
       set({ isLoading: false });
@@ -78,6 +82,7 @@ export const useAuth = create<AuthState>((set) => ({
       persistTokens(tokens);
       set({ user: tokens.user });
       void registerDeviceToken();
+      void wishlist.hydrate();
       return tokens.user;
     } finally {
       set({ isLoading: false });
@@ -99,6 +104,7 @@ export const useAuth = create<AuthState>((set) => ({
     }
     clearTokens();
     clearPageCache();
+    wishlist.resetLocal();   // clear this device's cache (server keeps the account's list)
     set({ user: null });
   },
 }));

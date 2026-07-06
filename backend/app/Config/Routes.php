@@ -127,6 +127,13 @@ $routes->group('api/v1', ['filter' => 'cors'], static function ($routes) {
         $routes->delete('/',        'Api\CartController::clear');
     });
 
+    $routes->group('wishlist', ['filter' => 'auth'], static function ($routes) {
+        $routes->get('/',         'Api\WishlistController::index');
+        $routes->post('/',        'Api\WishlistController::add');
+        $routes->delete('(:num)', 'Api\WishlistController::remove/$1');
+        $routes->delete('/',      'Api\WishlistController::clear');
+    });
+
     $routes->group('orders', ['filter' => 'auth'], static function ($routes) {
         $routes->post('place',         'Api\OrderController::place');
         $routes->post('place-prescription', 'Api\OrderController::placePrescription');   // customer: Rx-only order
