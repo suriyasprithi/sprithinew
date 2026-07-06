@@ -160,7 +160,9 @@ function SlideContent({ slide, active, eager = false }: { slide: Banner; active:
       <span className="pointer-events-none absolute -bottom-32 -left-12 h-72 w-72 rounded-full bg-black/15 blur-3xl" aria-hidden />
       <span className="pointer-events-none absolute right-10 top-10 h-20 w-20 rotate-12 rounded-3xl bg-white/10 ring-1 ring-white/20 md:h-28 md:w-28" aria-hidden />
       <span className="pointer-events-none absolute right-32 bottom-12 h-12 w-12 rounded-2xl bg-white/15 ring-1 ring-white/30" aria-hidden />
-      <Icon className="pointer-events-none absolute -right-6 top-6 h-56 w-56 text-white/15 md:-right-2 md:top-4 md:h-80 md:w-80" strokeWidth={1.2} />
+      {/* Decorative watermark — only for a plain gradient slide; a real image
+          already fills that space, and the icon would sit on top of it. */}
+      {!hasImg && <Icon className="pointer-events-none absolute -right-6 top-6 h-56 w-56 text-white/15 md:-right-2 md:top-4 md:h-80 md:w-80" strokeWidth={1.2} />}
 
       <div
         className={`relative max-w-xl transition-all duration-500 ease-out ${active ? "opacity-100 translate-y-0" : "opacity-40 translate-y-2"}`}
@@ -218,7 +220,9 @@ function SideTallBanner({ banner }: { banner: Banner }) {
       )}
       <span className="pointer-events-none absolute -top-16 -right-16 h-56 w-56 rounded-full bg-white/10 blur-2xl" aria-hidden />
       <span className="pointer-events-none absolute top-10 right-6 h-14 w-14 rounded-2xl bg-white/10 ring-1 ring-white/15" aria-hidden />
-      <Icon className="pointer-events-none absolute -top-4 -right-2 h-48 w-48 text-white/20 transition-transform group-hover:rotate-6" strokeWidth={1.1} />
+      {/* Decorative watermark — only for a plain gradient banner; a real image
+          already fills that space, and the icon would sit on top of it. */}
+      {!hasImg && <Icon className="pointer-events-none absolute -top-4 -right-2 h-48 w-48 text-white/20 transition-transform group-hover:rotate-6" strokeWidth={1.1} />}
       <div className="relative z-10 flex flex-col">
         {banner.eyebrow && <p className="text-[10px] font-semibold uppercase tracking-[0.18em] opacity-90">{banner.eyebrow}</p>}
         {banner.title && <h3 className="mt-2 text-2xl font-bold leading-tight md:text-3xl">{banner.title}</h3>}
@@ -251,7 +255,9 @@ function SideShortBanner({ banner, eager = false }: { banner: Banner; eager?: bo
         </>
       )}
       <span className="pointer-events-none absolute -top-10 -right-10 h-36 w-36 rounded-full bg-white/15 blur-2xl" aria-hidden />
-      <Icon className="pointer-events-none absolute -top-2 -right-2 h-28 w-28 text-white/20 transition-transform group-hover:rotate-6" strokeWidth={1.2} />
+      {/* Decorative watermark — only for a plain gradient banner; a real image
+          already fills that space, and the icon would sit on top of it. */}
+      {!hasImg && <Icon className="pointer-events-none absolute -top-2 -right-2 h-28 w-28 text-white/20 transition-transform group-hover:rotate-6" strokeWidth={1.2} />}
       <div className="relative z-10 flex flex-col">
         {banner.eyebrow && <p className="text-[9px] font-semibold uppercase tracking-[0.18em] opacity-90">{banner.eyebrow}</p>}
         {banner.title && <h3 className="mt-1 text-lg font-bold leading-tight md:text-xl">{banner.title}</h3>}
