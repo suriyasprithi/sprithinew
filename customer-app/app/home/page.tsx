@@ -53,6 +53,7 @@ const BANNERS_URL = `${process.env.NEXT_PUBLIC_API_URL ?? ""}/api/v1/public/bann
 export default function PublicHomePage() {
   const [products, setProducts] = useState<MarketplaceProduct[]>([]);
   const [topProducts, setTopProducts] = useState<MarketplaceProduct[]>([]);
+  const [newArrivals, setNewArrivals] = useState<MarketplaceProduct[]>([]);
   const [vendors,  setVendors]  = useState<MarketplaceVendor[]>([]);
   const [banners,  setBanners]  = useState<BannersBySlot>(EMPTY_BANNERS);
   const [customerVideos, setCustomerVideos] = useState<HomeVideo[]>([]);
@@ -90,13 +91,25 @@ export default function PublicHomePage() {
       else if (loc?.district_id) params.district_id = String(loc.district_id);
       else if (loc?.state_id)    params.state_id    = String(loc.state_id);
       try {
-        const [hr, vr, cvr, vvr, tsr] = await Promise.all([
-          api.get("/public/home",        { params }).catch(() => null),
-          api.get("/public/vendors",     { params }).catch(() => null),
+        const [hr, vr, cvr, vvr, tsr, nar] = await Promise.all([
+          api.get("/public/home",         { params }).catch(() => null),
+          api.get("/public/vendors",      { params }).catch(() => null),
           api.get("/public/customer-videos").catch(() => null),
           api.get("/public/vendor-videos").catch(() => null),
-          api.get("/public/top-selling", { params }).catch(() => null),
+          api.get("/public/top-selling",  { params }).catch(() => null),
+          api.get("/public/new-arrivals", { params }).catch(() => null),
         ]);
+        setNewArrivals(((nar?.data.data?.items ?? []) as ApiProduct[]).map((p): MarketplaceProduct => ({
+          id: Number(p.id),
+          name: p.name,
+          price: Number(p.price),
+          old_price: p.old_price != null ? Number(p.old_price) : undefined,
+          image: p.image,
+          vendor_name: p.vendor_name ?? null,
+          stock: p.stock,
+          has_variants: !!p.has_variants,
+          default_variant_id: p.default_variant_id ?? null,
+        })));
         setTopProducts(((tsr?.data.data?.items ?? []) as ApiProduct[]).map((p): MarketplaceProduct => ({
           id: Number(p.id),
           name: p.name,
@@ -202,8 +215,8 @@ export default function PublicHomePage() {
       {/* Local vendors — placed directly under Featured Categories */}
       <VendorsRow vendors={vendorsForDisplay} loading={loading} />
 
-      {/* New Arrivals — recently-added products (newest first), below Local vendors */}
-      {(loading || products.length > 0) && (
+      {/* New Arrivals — recent products interleaved across shops (mixed), below Local vendors */}
+      {(loading || newArrivals.length > 0) && (
         <section className="mx-auto max-w-7xl px-4 py-6">
           <div className="mb-4 flex items-end justify-between">
             <div>
@@ -215,7 +228,7 @@ export default function PublicHomePage() {
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
             {loading
               ? Array.from({ length: 4 }).map((_, i) => <ProductCardSkeleton key={i} />)
-              : products.slice(0, 8).map((p) => <ProductCard key={p.id} product={p} />)}
+              : newArrivals.slice(0, 8).map((p) => <ProductCard key={p.id} product={p} />)}
           </div>
         </section>
       )}

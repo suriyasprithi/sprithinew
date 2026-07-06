@@ -68,6 +68,7 @@ $routes->group('api/v1', ['filter' => 'cors'], static function ($routes) {
     // ===== Public landing (works against V2 once Phase 2 lands; left routed so the controller is reachable) =====
     $routes->get('public/home',                'Api\PublicController::home');
     $routes->get('public/top-selling',         'Api\PublicController::topSelling');   // ranked by sold qty (fulfilled orders)
+    $routes->get('public/new-arrivals',        'Api\PublicController::newArrivals');  // recent products, interleaved across shops
     $routes->get('public/flash-sale',          'Api\PublicController::flashSale');    // live limited-time discounts
     $routes->get('public/products',            'Api\PublicController::products');
     $routes->get('public/products/(:num)',     'Api\PublicController::product/$1');

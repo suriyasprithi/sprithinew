@@ -205,6 +205,45 @@ class PublicController extends BaseApiController
         return $this->ok(['items' => $items]);
     }
 
+    /**
+     * "New Arrivals" — recently-added products, but INTERLEAVED across shops so a
+     * single shop's freshly-imported batch (consecutive ids) can't fill the whole
+     * row. We over-fetch the newest rows, group them by vendor, then round-robin
+     * one-per-vendor so the result stays recent AND mixed. Location-scoped.
+     */
+    public function newArrivals(): ResponseInterface
+    {
+        $limit      = min(24, max(1, (int) ($this->request->getGet('limit') ?: 12)));
+        $pincode    = (string) $this->request->getGet('pincode');
+        $talukId    = (int)    $this->request->getGet('taluk_id');
+        $districtId = (int)    $this->request->getGet('district_id');
+        $stateId    = (int)    $this->request->getGet('state_id');
+
+        $vendorIds = $this->geoVendorIds($pincode, $talukId, $districtId, $stateId);
+        if (is_array($vendorIds) && empty($vendorIds)) return $this->ok(['items' => []]);
+
+        // Over-fetch the newest rows so several shops are represented in the pool.
+        $model = (new ProductModel())->where('status', 'active');
+        if (is_array($vendorIds)) $model->whereIn('vendor_id', $vendorIds);
+        $rows = $model->orderBy('id', 'DESC')->findAll($limit * 8);
+        if (! $rows) return $this->ok(['items' => []]);
+
+        // Bucket by vendor (each bucket already newest-first), then round-robin.
+        $byVendor = [];
+        foreach ($rows as $r) $byVendor[(int) ($r['vendor_id'] ?? 0)][] = $r;
+        $buckets = array_values($byVendor);
+        $out = [];
+        for ($i = 0; count($out) < $limit; $i++) {
+            $advanced = false;
+            foreach ($buckets as $b) {
+                if (isset($b[$i])) { $out[] = $b[$i]; $advanced = true; if (count($out) >= $limit) break; }
+            }
+            if (! $advanced) break;   // every bucket exhausted
+        }
+
+        return $this->ok(['items' => $this->enrich($out)]);
+    }
+
     public function products(): ResponseInterface
     {
         $q              = (string) $this->request->getGet('q');
