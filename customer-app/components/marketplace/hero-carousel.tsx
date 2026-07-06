@@ -23,7 +23,9 @@ export function HeroCarousel({
   if (centerSlides.length === 0 && !leftBanner && !rightTop && !rightBottom) return null;
 
   return (
-    <section className="w-full px-4 py-5">
+    // No side padding on mobile so the banner fills the full device width
+    // edge-to-edge; the desktop 3-column layout keeps its usual gutter.
+    <section className="w-full px-0 py-5 md:px-4">
       <div
         className="grid gap-4 animate-in fade-in slide-in-from-bottom-4 duration-700 md:grid-cols-[1.05fr_2.6fr_1.1fr] md:[grid-template-rows:1fr]"
       >
@@ -280,7 +282,7 @@ function SideShortBanner({ banner, eager = false }: { banner: Banner; eager?: bo
 
 export function HeroCarouselSkeleton() {
   return (
-    <section className="w-full px-4 py-5">
+    <section className="w-full px-0 py-5 md:px-4">
       <div className="grid gap-4 md:grid-cols-[1.05fr_2.6fr_1.1fr]">
         <div className="h-[200px] animate-pulse rounded-3xl bg-[var(--mk-surface-3)] md:h-[480px] lg:h-[520px]" />
         <div className="h-[300px] animate-pulse rounded-3xl bg-[var(--mk-surface-3)] md:h-[480px] lg:h-[520px]" />
