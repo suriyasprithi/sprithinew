@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Heart, Trash2, ShoppingBag } from "lucide-react";
 import { toast } from "sonner";
 import { TopInfoBar } from "@/components/marketplace/top-info-bar";
@@ -19,6 +20,7 @@ type ApiProduct = {
   price: number | string;
   image: string | null;
   stock: number | string;
+  vendor_id?: number | string | null;
   vendor_name?: string | null;
   has_variants?: boolean;
   default_variant_id?: number | null;
@@ -30,6 +32,7 @@ function adapt(raw: ApiProduct): MarketplaceProduct {
     name: raw.name,
     price: Number(raw.price),
     image: raw.image,
+    vendor_id: raw.vendor_id != null ? Number(raw.vendor_id) : null,
     vendor_name: raw.vendor_name ?? null,
     stock: Number(raw.stock),
     has_variants: !!raw.has_variants,
@@ -38,9 +41,21 @@ function adapt(raw: ApiProduct): MarketplaceProduct {
 }
 
 export default function WishlistPage() {
+  const router = useRouter();
   const [ids, setIds] = useState<number[]>([]);
   const [items, setItems] = useState<MarketplaceProduct[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // Product click → open its detail INSIDE the unified /browse shop view (keeps
+  // the shop's category rail). Opens the product's own shop so closing lands on
+  // that shop's grid; falls back to a shopless product view if the shop is unknown.
+  function openInBrowse(id: number) {
+    const p = items.find((x) => x.id === id);
+    const out = new URLSearchParams();
+    if (p?.vendor_id) out.set("shop", String(p.vendor_id));
+    out.set("product", String(id));
+    router.push(`/browse?${out.toString()}`);
+  }
 
   // Keep the local id list in sync with the wishlist store. The initial read
   // runs post-mount (not as a lazy initializer) so the static-export HTML and
@@ -141,7 +156,7 @@ export default function WishlistPage() {
           <EmptyWishlist />
         ) : (
           <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
-            {items.map((p) => <ProductCard key={p.id} product={p} />)}
+            {items.map((p) => <ProductCard key={p.id} product={p} onSelect={openInBrowse} />)}
           </div>
         )}
       </section>
