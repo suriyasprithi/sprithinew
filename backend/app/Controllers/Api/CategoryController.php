@@ -100,24 +100,6 @@ class CategoryController extends BaseApiController
     }
 
     /**
-     * Admin: the product-category ids a specific vendor actually stocks (active
-     * products). Powers the "filter by vendor" view on the Product Categories
-     * page — an admin can pick a shop to see which categories it uses. View-only;
-     * ordering / sort_order are untouched.
-     */
-    public function vendorCategoryIds(int $vendorId): ResponseInterface
-    {
-        if ($r = $this->requireAdmin()) return $r;
-        $ids = (new \App\Models\ProductModel())
-            ->select('category_id')->distinct()
-            ->where('vendor_id', $vendorId)
-            ->where('status', 'active')
-            ->where('category_id IS NOT NULL')
-            ->findColumn('category_id') ?? [];
-        return $this->ok(['ids' => array_values(array_map('intval', $ids))]);
-    }
-
-    /**
      * Admin: bulk reorder product categories within one vendor category. Body:
      * { "ids": [12, 4, 9, ...] } — the product-category ids in their new visual
      * order (all belonging to the same vendor category). Positions 1..N are

@@ -350,12 +350,11 @@ $routes->group('api/v1', ['filter' => 'cors'], static function ($routes) {
         $routes->post('customers/(:num)/wallet',     'Api\AdminUsersController::wallet/$1');
 
         // categories
-        $routes->get('categories',              'Api\CategoryController::adminIndex');
-        $routes->get('categories/vendor/(:num)','Api\CategoryController::vendorCategoryIds/$1'); // ids a vendor stocks
-        $routes->post('categories',             'Api\CategoryController::create');
-        $routes->post('categories/reorder',     'Api\CategoryController::reorder');
-        $routes->patch('categories/(:num)',     'Api\CategoryController::update/$1');
-        $routes->delete('categories/(:num)',    'Api\CategoryController::delete/$1');
+        $routes->get('categories',          'Api\CategoryController::adminIndex');
+        $routes->post('categories',         'Api\CategoryController::create');
+        $routes->post('categories/reorder', 'Api\CategoryController::reorder');
+        $routes->patch('categories/(:num)', 'Api\CategoryController::update/$1');
+        $routes->delete('categories/(:num)','Api\CategoryController::delete/$1');
 
         // sub categories (Vendor Category → Product Category → Sub Category)
         $routes->get('sub-categories',          'Api\SubCategoryController::adminIndex');
