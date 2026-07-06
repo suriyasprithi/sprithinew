@@ -72,3 +72,9 @@ $RECYCLE.BIN/
 # User-uploaded media (kept on server, not in git)
 backend/public/uploads/ad-requests/
 backend/public/uploads/customer-videos/
+# Product images are generated per-environment (php spark images:optimize) and are
+# huge — keeping them in git makes prod `git pull` abort on "untracked files would
+# be overwritten". Server keeps its own copy.
+backend/public/uploads/products/
+backend/public/uploads/categories/
+backend/public/uploads/banners/
