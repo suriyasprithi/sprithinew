@@ -194,21 +194,6 @@ export default function FilePage() {
           </div>
         </LuxuryCard>
 
-        {/* ATTACH IMAGES BY CSV MAPPING (key column → image column) */}
-        <LuxuryCard className="space-y-3 p-5">
-          <div className="flex items-center gap-3">
-            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-500/10 text-emerald-600"><FileSpreadsheet className="h-5 w-5" /></span>
-            <div className="min-w-0">
-              <p className="text-sm font-semibold">Attach images by CSV</p>
-              <p className="text-xs text-muted-foreground">When filenames don&apos;t match SKUs: upload a CSV/Excel with a <strong>key</strong> column (<code>item_code</code>, <code>sku</code> or <code>barcode</code>) and an <code>image</code> column (the filename in the pool, or a URL). Each product gets its mapped image — no product name/price needed.</p>
-            </div>
-          </div>
-          <input ref={csvRef} type="file" accept=".csv,.xlsx,.xls" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) void attachByCsv(f); }} />
-          <Button variant="outline" className="w-full rounded-xl" onClick={() => csvRef.current?.click()} disabled={attachingCsv}>
-            <FileSpreadsheet className="h-4 w-4" /> {attachingCsv ? "Attaching…" : "Choose mapping CSV / Excel"}
-          </Button>
-        </LuxuryCard>
-
         {/* EXPORT IMAGES ZIP */}
         <LuxuryCard className="space-y-3 p-5">
           <div className="flex items-center gap-3">
