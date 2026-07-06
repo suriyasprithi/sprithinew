@@ -4,6 +4,7 @@ import { storage, STORAGE_KEYS } from "@/lib/storage";
 import { registerDeviceToken, unregisterDeviceToken } from "@/lib/push";
 import { clearPageCache } from "@/lib/page-cache";
 import { wishlist } from "@/lib/wishlist";
+import { cartBadge } from "@/lib/cart";
 
 type AuthState = {
   user: AuthUser | null;
@@ -34,6 +35,7 @@ export const useAuth = create<AuthState>((set) => ({
   hydrate: async () => {
     const token = storage.get(STORAGE_KEYS.ACCESS);
     if (!token) {
+      cartBadge.clear();   // guest has no server cart — never show a stale count
       set({ isHydrated: true });
       return;
     }
@@ -42,8 +44,10 @@ export const useAuth = create<AuthState>((set) => ({
       set({ user: res.data.data as AuthUser, isHydrated: true });
       void registerDeviceToken();
       void wishlist.hydrate();   // reconcile the wishlist with this account's server list
+      void cartBadge.refresh();  // reconcile the cart-count badge with the server cart
     } catch {
       clearTokens();
+      cartBadge.clear();
       set({ user: null, isHydrated: true });
     }
   },
@@ -60,9 +64,11 @@ export const useAuth = create<AuthState>((set) => ({
       persistTokens(tokens);
       clearPageCache();   // a new account must not see the previous user's cached pages
       wishlist.resetLocal();   // drop the guest cache; hydrate pulls this account's list
+      cartBadge.clear();       // reset the badge; refresh reconciles with this account's cart
       set({ user: tokens.user });
       void registerDeviceToken();
       void wishlist.hydrate();
+      void cartBadge.refresh();
       return tokens.user;
     } finally {
       set({ isLoading: false });
@@ -80,6 +86,8 @@ export const useAuth = create<AuthState>((set) => ({
       });
       const tokens = res.data.data as AuthTokens;
       persistTokens(tokens);
+      wishlist.resetLocal();
+      cartBadge.clear();   // brand-new account starts with an empty cart
       set({ user: tokens.user });
       void registerDeviceToken();
       void wishlist.hydrate();
@@ -105,6 +113,7 @@ export const useAuth = create<AuthState>((set) => ({
     clearTokens();
     clearPageCache();
     wishlist.resetLocal();   // clear this device's cache (server keeps the account's list)
+    cartBadge.clear();       // don't leave the previous account's count for the next user/guest
     set({ user: null });
   },
 }));
