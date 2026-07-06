@@ -255,9 +255,11 @@ class OrderController extends BaseApiController
                 }
             }
 
-            // Vendor inventory tokens — deduct this shop's subtotal × commission_pct.
+            // Vendor inventory tokens — deduct this shop's subtotal × commission_pct
+            // from the vendor's main wallet. NON-COD only: a COD sale is settled in
+            // cash on delivery, so nothing is taken from the vendor at checkout.
             // Never block the order; deduct what's available and move on.
-            if ($vk) {
+            if ($vk && $paymentMethod !== 'cod') {
                 try { $tokenSvc->consumeForOrder($vk, (float) $g['subtotal']); }
                 catch (\Throwable $e) { log_message('error', 'Token consume skipped for order: ' . $e->getMessage()); }
             }
