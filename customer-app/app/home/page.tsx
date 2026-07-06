@@ -202,6 +202,24 @@ export default function PublicHomePage() {
       {/* Local vendors — placed directly under Featured Categories */}
       <VendorsRow vendors={vendorsForDisplay} loading={loading} />
 
+      {/* New Arrivals — recently-added products (newest first), below Local vendors */}
+      {(loading || products.length > 0) && (
+        <section className="mx-auto max-w-7xl px-4 py-6">
+          <div className="mb-4 flex items-end justify-between">
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-[var(--mk-text-muted)]">Just in</p>
+              <h2 className="text-xl font-bold tracking-tight md:text-2xl">New Arrivals</h2>
+            </div>
+            <Link href="/shop-public" className="text-sm font-semibold text-[var(--mk-brand)] hover:underline">See all →</Link>
+          </div>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
+            {loading
+              ? Array.from({ length: 4 }).map((_, i) => <ProductCardSkeleton key={i} />)
+              : products.slice(0, 8).map((p) => <ProductCard key={p.id} product={p} />)}
+          </div>
+        </section>
+      )}
+
       {(customerVideos.length > 0 || vendorVideos.length > 0) && (
         <section className="mx-auto max-w-7xl px-4 py-6">
           <div className={`grid gap-4 ${customerVideos.length > 0 && vendorVideos.length > 0 ? "md:grid-cols-2" : "grid-cols-1"}`}>
