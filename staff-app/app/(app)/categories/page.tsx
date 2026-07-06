@@ -54,12 +54,6 @@ export default function ProductCategoriesPage() {
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState<"all" | "active" | "inactive">("all");
   const [vendorCat, setVendorCat] = useState<"all" | number>("all");
-  // Category ids that the chosen vendor category's shops actually stock. The
-  // imported vendor_category_id links are unreliable, so the filter is usage-based
-  // (matches the customer browse) rather than link-based. null = no vendor-cat
-  // filter (show all).
-  const [usageIds, setUsageIds] = useState<Set<number> | null>(null);
-  const [usageLoading, setUsageLoading] = useState(false);
   const [editing, setEditing] = useState<Draft | null>(null);
   const [deleteId, setDeleteId] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
@@ -74,27 +68,6 @@ export default function ProductCategoriesPage() {
     })();
   }, []);
 
-  // Vendor category picked → load the category ids its shops actually use
-  // (usage-based, not the messy stored link). "All" clears the filter.
-  useEffect(() => {
-    if (vendorCat === "all") { setUsageIds(null); setUsageLoading(false); return; }
-    let cancelled = false;
-    setUsageLoading(true);
-    setUsageIds(null);
-    void (async () => {
-      try {
-        const r = await api.get(`/admin/categories/used-by-vc/${vendorCat}`);
-        const ids = (r.data.data?.ids ?? []) as number[];
-        if (!cancelled) setUsageIds(new Set(ids.map(Number)));
-      } catch {
-        if (!cancelled) setUsageIds(new Set());
-      } finally {
-        if (!cancelled) setUsageLoading(false);
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [vendorCat]);
-
   const vcatName = useMemo(() => {
     const m = new Map<number, string>();
     vendorCats.forEach((v) => m.set(v.id, v.name));
@@ -104,19 +77,17 @@ export default function ProductCategoriesPage() {
   const filtered = useMemo(() => items.filter((c) => {
     if (search && !c.name.toLowerCase().includes(search.toLowerCase())) return false;
     if (status !== "all" && c.status !== status) return false;
-    // Usage-based vendor-category filter: only categories the chosen vendor
-    // category's shops actually stock (not the unreliable imported link).
-    if (usageIds && !usageIds.has(c.id)) return false;
+    if (vendorCat !== "all" && (c.vendor_category_id ?? null) !== vendorCat) return false;
     return true;
-  }), [items, search, status, usageIds]);
+  }), [items, search, status, vendorCat]);
 
   const totalActive = items.filter((i) => i.status === "active").length;
   const totalLinked = items.filter((i) => i.vendor_category_id != null).length;
 
   // Drag-reorder is only meaningful within ONE vendor category and only when the
-  // full group is visible (no search / status filter hiding rows) and its usage
-  // set has loaded, so the ids we POST are the complete, correctly-ordered group.
-  const isReorderable = vendorCat !== "all" && !search && status === "all" && !usageLoading && usageIds !== null;
+  // full group is visible (no search / status filter hiding rows), so the ids we
+  // POST are the complete, correctly-ordered set for that group.
+  const isReorderable = vendorCat !== "all" && !search && status === "all";
   async function onReorder(next: ProductCategory[]) {
     const ids = new Set(next.map((c) => c.id));
     const prev = items;
@@ -230,11 +201,9 @@ export default function ProductCategoriesPage() {
           </div>
           {vendorCat !== "all" && (
             <p className="mt-2 px-1 text-[11px] text-muted-foreground">
-              {usageLoading
-                ? "Loading the categories this vendor category's shops use…"
-                : isReorderable
-                  ? "Showing the categories these shops actually stock. Drag the ⠿ handle to reorder them."
-                  : "Showing the categories these shops actually stock. Clear the search / status filter to drag-reorder."}
+              {isReorderable
+                ? "Drag the ⠿ handle to reorder categories within this vendor category."
+                : "Clear the search / status filter to drag-reorder this vendor category."}
             </p>
           )}
         </div>

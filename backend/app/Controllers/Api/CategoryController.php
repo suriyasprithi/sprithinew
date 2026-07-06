@@ -100,28 +100,6 @@ class CategoryController extends BaseApiController
     }
 
     /**
-     * Admin: the product-category ids that shops IN a given vendor category
-     * actually stock (active products), regardless of each category's stored
-     * vendor_category_id. Powers the usage-based filter on the Product Categories
-     * page — imported links are unreliable, so admin filters by what a vendor
-     * category's shops really use (matching the customer browse) instead.
-     */
-    public function usedByVendorCategory(int $vendorCategoryId): ResponseInterface
-    {
-        if ($r = $this->requireAdmin()) return $r;
-        $rows = \Config\Database::connect()->table('products p')
-            ->select('p.category_id', false)->distinct()
-            ->join('vendor_profiles vp', 'vp.user_id = p.vendor_id')
-            ->where('vp.vendor_category_id', $vendorCategoryId)
-            ->where('p.status', 'active')
-            ->where('p.deleted_at', null)
-            ->where('p.category_id IS NOT NULL')
-            ->get()->getResultArray();
-        $ids = array_values(array_map(static fn ($r) => (int) $r['category_id'], $rows));
-        return $this->ok(['ids' => $ids]);
-    }
-
-    /**
      * Admin: bulk reorder product categories within one vendor category. Body:
      * { "ids": [12, 4, 9, ...] } — the product-category ids in their new visual
      * order (all belonging to the same vendor category). Positions 1..N are
