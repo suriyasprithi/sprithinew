@@ -13,8 +13,10 @@ import { cn } from "@/lib/utils";
 
 type Product = {
   id: number; name: string; description: string | null; price: number; stock: number;
-  image: string | null; vendor_name: string | null; category_name: string | null;
-  sub_category_name?: string | null; has_variants: boolean; old_price?: number | null;
+  image: string | null; vendor_name: string | null;
+  category_id?: number | string | null; category_name: string | null;
+  sub_category_id?: number | string | null; sub_category_name?: string | null;
+  has_variants: boolean; old_price?: number | null;
 };
 type Variant = {
   id: number; name: string; price: number; stock: number;
@@ -55,7 +57,12 @@ function pickValue(variants: Variant[], picks: Record<string, string>, axis: str
  * the /product-public page (image + variant gallery, variant chips, price/MRP,
  * add-to-cart) but rendered inline so the shop context (left rail) is kept.
  */
-export function ProductQuickView({ productId, onClose }: { productId: number; onClose: () => void }) {
+export function ProductQuickView({ productId, onClose, onLoaded }: {
+  productId: number;
+  onClose: () => void;
+  /** Fired once the product loads, so the shop rail can highlight its category. */
+  onLoaded?: (info: { categoryId: number | null; subCategoryId: number | null }) => void;
+}) {
   const router = useRouter();
   const { user, isHydrated } = useAuth();
   const [product, setProduct] = useState<Product | null>(null);
@@ -71,6 +78,8 @@ export function ProductQuickView({ productId, onClose }: { productId: number; on
   // reset the loading spinner + picks + qty and re-hit the API).
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
+  const onLoadedRef = useRef(onLoaded);
+  onLoadedRef.current = onLoaded;
 
   useEffect(() => {
     let cancelled = false;
@@ -85,6 +94,10 @@ export function ProductQuickView({ productId, onClose }: { productId: number; on
         const vi = (res.data.data?.variant_images ?? {}) as VariantImages;
         if (!p) { toast.error("Not found"); onCloseRef.current(); return; }
         setProduct(p); setVariants(vs); setVariantTypes(vt); setVariantImages(vi);
+        onLoadedRef.current?.({
+          categoryId: p.category_id != null ? Number(p.category_id) : null,
+          subCategoryId: p.sub_category_id != null ? Number(p.sub_category_id) : null,
+        });
         const seed = vs.find((v) => (v.stock ?? 0) > 0) ?? vs[0];
         setPicks(seed?.options ? { ...seed.options } : {});
       } catch (e) {

@@ -107,6 +107,8 @@ export default function BrowsePage() {
 
   // ---- in-page product detail (opened from a card; keeps the shop rail) ----
   const [activeProduct, setActiveProduct] = useState<number | null>(null);
+  // The open product's category/sub-category, so the left rail highlights it.
+  const [detailCat, setDetailCat] = useState<{ cat: number | null; sub: number | null }>({ cat: null, sub: null });
   // True once the shops-effect has run its first (mount) pass — used to skip the
   // URL rewrite on mount so a ?shop/?product/?vc deep link isn't clobbered.
   const didMountRef = useRef(false);
@@ -249,7 +251,7 @@ export default function BrowsePage() {
       const prod = Number(sp.get("product") || 0);
       if (prod > 0) { productPushedRef.current = true; setActiveProduct(prod); return; }   // into a product entry
       productPushedRef.current = false;                    // left the product entry
-      setActiveProduct(null);
+      setActiveProduct(null); setDetailCat({ cat: null, sub: null });
       if (Number(sp.get("shop") || 0) > 0) return;         // …but still inside the shop → keep the grid
       setLevel("vendor"); setActiveShop(null); setShopCats([]); setSubCats([]); setActiveProdCat(ALL); setActiveSubCat(ALL); setProducts([]); setQuery("");
     };
@@ -343,7 +345,7 @@ export default function BrowsePage() {
       window.history.back();
       return;
     }
-    setActiveProduct(null);
+    setActiveProduct(null); setDetailCat({ cat: null, sub: null });
     if (typeof window !== "undefined") {
       window.history.replaceState(null, "", browseUrl(activeCat, activeShop?.id));
     }
@@ -357,6 +359,12 @@ export default function BrowsePage() {
   const activeShopName = activeShop?.shop_name || activeShop?.name || products[0]?.vendor_name || "Shop";
   const activeSubCatName = activeSubCat !== ALL ? (subCats.find((s) => s.id === activeSubCat)?.name ?? null) : null;
   const activeProdCatName = activeSubCatName ?? (activeProdCat === ALL ? "All Products" : shopCats.find((c) => c.id === activeProdCat)?.name ?? "Products");
+  // While a product detail is open, the left rail highlights the PRODUCT's own
+  // category/sub-category (from detailCat) rather than the grid's selection.
+  // Normalized to numbers — the API returns category ids as STRINGS, so the rail
+  // comparisons below coerce c.id/s.id with Number() too.
+  const railCat = Number(activeProduct ? (detailCat.cat ?? ALL) : activeProdCat);
+  const railSub = Number(activeProduct ? (detailCat.sub ?? ALL) : activeSubCat);
   // Pharmacy/medicine shop → offer a prescription-only order (same as /shop-public).
   // Falls back to the loaded shop list for deep-linked (?shop=) opens where the
   // activeShop stub has no requires_prescription flag yet.
@@ -431,14 +439,14 @@ export default function BrowsePage() {
             </>
           ) : (
             <>
-              <RailItem active={activeProdCat === ALL} label="All Products" onClick={() => { if (activeProduct) closeProduct(); setActiveProdCat(ALL); setActiveSubCat(ALL); }} />
+              <RailItem active={railCat === ALL} label="All Products" onClick={() => { if (activeProduct) closeProduct(); setActiveProdCat(ALL); setActiveSubCat(ALL); }} />
               {shopCats.filter((c) => (c.status ?? "active") === "active").map((c) => {
                 const subs = subCats.filter((s) => Number(s.category_id) === Number(c.id) && (s.status ?? "active") === "active");
-                const isActiveCat = activeProdCat === c.id;
+                const isActiveCat = railCat === Number(c.id);
                 return (
                   <div key={c.id}>
                     <RailItem
-                      active={isActiveCat && activeSubCat === ALL}
+                      active={isActiveCat && railSub === ALL}
                       label={c.name}
                       onClick={() => { if (activeProduct) closeProduct(); setActiveProdCat(c.id); setActiveSubCat(ALL); }}
                     />
@@ -446,7 +454,7 @@ export default function BrowsePage() {
                     {isActiveCat && subs.length > 0 && subs.map((s) => (
                       <RailSubItem
                         key={s.id}
-                        active={activeSubCat === s.id}
+                        active={railSub === Number(s.id)}
                         label={s.name}
                         onClick={() => { if (activeProduct) closeProduct(); setActiveSubCat(s.id); }}
                       />
@@ -479,7 +487,11 @@ export default function BrowsePage() {
           )}
 
           {activeProduct ? (
-            <ProductQuickView productId={activeProduct} onClose={closeProduct} />
+            <ProductQuickView
+              productId={activeProduct}
+              onClose={closeProduct}
+              onLoaded={({ categoryId, subCategoryId }) => setDetailCat({ cat: categoryId, sub: subCategoryId })}
+            />
           ) : (level === "vendor" && !debouncedQ) ? (
             <>
               {/* Prescription prompt for a pharmacy/medicine category. The button
