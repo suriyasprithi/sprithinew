@@ -54,6 +54,21 @@ const SLOTS = [
   { value: "mega_right",        label: "Mega Offers — Right" },
 ];
 
+// Recommended upload size per slot — derived from each slot's actual rendered
+// container (mobile vs desktop shape differ a lot for the hero side slots).
+// The customer-app never crops these (object-contain), so a mismatched ratio
+// just shows extra blurred padding, never lost content — these are guidance,
+// not hard requirements.
+const SLOT_IMAGE_HINTS: Record<string, string> = {
+  coupon: "No image for this slot — it's a text + icon strip only (eyebrow, title, code).",
+  hero_left: "Recommended 1200 × 600px (2:1). Near full-width on mobile; on desktop it sits in a tall side column, so top/bottom get a soft blurred fill — nothing is ever cropped.",
+  hero_center: "Recommended 1200 × 900px (4:3). Fits both the mobile and desktop carousel closely with minimal padding.",
+  hero_right_top: "Recommended 900 × 750px (~4:3). Full-width landscape on mobile; a smaller near-square tile on desktop.",
+  hero_right_bottom: "Recommended 900 × 750px (~4:3). Full-width landscape on mobile; a smaller near-square tile on desktop.",
+  mega_left: "Recommended ~600 × 600px, transparent-background PNG (a product cutout) — it floats over the gradient panel, not a full banner photo.",
+  mega_right: "Recommended ~600 × 600px, transparent-background PNG (a product cutout) — it floats over the gradient panel, not a full banner photo.",
+};
+
 const LUCIDE_OPTIONS = [
   "ShoppingBag", "ShoppingCart", "Ticket", "Briefcase", "Bike", "Apple", "Cpu", "Pill",
   "UtensilsCrossed", "Sparkles", "Award", "BadgeCheck", "ShieldCheck", "Truck",
@@ -378,6 +393,9 @@ export default function BannersPage() {
                     >Upload</button>
                   </div>
                 </div>
+                {editing.slot && SLOT_IMAGE_HINTS[editing.slot] && (
+                  <p className="text-xs text-muted-foreground">{SLOT_IMAGE_HINTS[editing.slot]}</p>
+                )}
                 {imageMode === "url" ? (
                   <Input
                     value={editing.image_url ?? ""}
