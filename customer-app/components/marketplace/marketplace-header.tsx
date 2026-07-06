@@ -10,7 +10,7 @@ import { api, fileUrl } from "@/lib/api";
 import { wishlist } from "@/lib/wishlist";
 import { cartBadge } from "@/lib/cart";
 
-type Suggestion = { id: number; name: string; price: number; image: string | null };
+type Suggestion = { id: number; name: string; price: number; image: string | null; vendor_id: number | null };
 const fmtINR = (n: number) => new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(n);
 
 // Search-suggestion thumbnail: shows the product image, but falls back to the
@@ -113,9 +113,9 @@ export function MarketplaceHeader({ cartCount = 0, wishlistCount = 0, unreadCoun
           else if (loc?.state_id)    params.state_id    = String(loc.state_id);
           const r = await api.get("/public/products", { params });
           if (cancelled) return;
-          const items = ((r.data.data?.items ?? []) as Array<{ id: number; name: string; price: number | string; image: string | null }>)
+          const items = ((r.data.data?.items ?? []) as Array<{ id: number; name: string; price: number | string; image: string | null; vendor_id?: number | string | null }>)
             .slice(0, 6)
-            .map((p) => ({ id: Number(p.id), name: p.name, price: Number(p.price), image: p.image }));
+            .map((p) => ({ id: Number(p.id), name: p.name, price: Number(p.price), image: p.image, vendor_id: p.vendor_id != null ? Number(p.vendor_id) : null }));
           setSugs(items);
           setSugOpen(true);
         } catch { if (!cancelled) setSugs([]); }
@@ -142,9 +142,15 @@ export function MarketplaceHeader({ cartCount = 0, wishlistCount = 0, unreadCoun
     setSugOpen(false);
     router.push(`/browse${term ? `?q=${encodeURIComponent(term)}` : ""}`);
   };
-  const openProduct = (id: number) => {
+  const openProduct = (s: Suggestion) => {
     setSugOpen(false);
-    router.push(`/browse?product=${id}`);   // open the product inside the unified browse view
+    // Open the product INSIDE its own shop so the browse left rail reflects that
+    // shop (its product categories) — same as opening a product anywhere else.
+    // Falls back to a shopless product view if the vendor is somehow unknown.
+    const out = new URLSearchParams();
+    if (s.vendor_id) out.set("shop", String(s.vendor_id));
+    out.set("product", String(s.id));
+    router.push(`/browse?${out.toString()}`);
   };
 
   return (
@@ -200,7 +206,7 @@ export function MarketplaceHeader({ cartCount = 0, wishlistCount = 0, unreadCoun
                     <li key={s.id}>
                       <button
                         type="button"
-                        onClick={() => openProduct(s.id)}
+                        onClick={() => openProduct(s)}
                         className="flex w-full items-center gap-3 px-3 py-2 text-left hover:bg-[var(--mk-surface-2)]"
                       >
                         <SuggestionThumb image={s.image} />
