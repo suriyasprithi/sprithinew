@@ -225,10 +225,10 @@ export default function PublicHomePage() {
             </div>
             <Link href="/shop-public" className="text-sm font-semibold text-[var(--mk-brand)] hover:underline">See all →</Link>
           </div>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5">
             {loading
-              ? Array.from({ length: 4 }).map((_, i) => <ProductCardSkeleton key={i} />)
-              : newArrivals.slice(0, 8).map((p) => <ProductCard key={p.id} product={p} />)}
+              ? Array.from({ length: 5 }).map((_, i) => <ProductCardSkeleton key={i} />)
+              : newArrivals.slice(0, 10).map((p) => <ProductCard key={p.id} product={p} />)}
           </div>
         </section>
       )}
@@ -252,16 +252,16 @@ export default function PublicHomePage() {
           <Link href="/shop-public" className="text-sm font-semibold text-[var(--mk-brand)] hover:underline">See all →</Link>
         </div>
 
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5">
           {loading
-            ? Array.from({ length: 4 }).map((_, i) => <ProductCardSkeleton key={i} />)
+            ? Array.from({ length: 5 }).map((_, i) => <ProductCardSkeleton key={i} />)
             : (() => {
                 // Real bestsellers by sold quantity; fall back to recent only when
                 // there are no sales yet, so the section is never blank.
                 const list = topProducts.length > 0 ? topProducts : products;
                 return list.length === 0
                   ? <EmptyState />
-                  : list.slice(0, 8).map((p) => <ProductCard key={p.id} product={p} />);
+                  : list.slice(0, 10).map((p) => <ProductCard key={p.id} product={p} />);
               })()}
         </div>
       </section>
