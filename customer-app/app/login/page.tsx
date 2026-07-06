@@ -29,14 +29,14 @@ export default function LoginPage() {
     try {
       await login(mobile.trim(), password);
       toast.success("Welcome back");
-      router.replace("/home");
+      router.replace("/dashboard");
     } catch (err) {
       toast.error(apiErrorMessage(err, "Login failed"));
     }
   };
 
   return (
-    <GuestGuard>
+    <GuestGuard redirectTo="/dashboard">
       <main className="relative flex min-h-screen items-center justify-center overflow-hidden px-4 py-10">
         <div className="pointer-events-none absolute inset-0">
           <div className="absolute -top-40 -right-40 h-80 w-80 rounded-full brand-gradient opacity-20 blur-3xl" />
