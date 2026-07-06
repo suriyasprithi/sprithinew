@@ -54,6 +54,11 @@ export default function ProductCategoriesPage() {
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState<"all" | "active" | "inactive">("all");
   const [vendorCat, setVendorCat] = useState<"all" | number>("all");
+  // Vendor (shop) filter — view-only: pick a shop to see just the product
+  // categories it stocks. Scoped to the chosen vendor category.
+  const [vendor, setVendor] = useState<"all" | number>("all");
+  const [vendorList, setVendorList] = useState<{ id: number; label: string }[]>([]);
+  const [vendorUsedIds, setVendorUsedIds] = useState<Set<number> | null>(null);
   const [editing, setEditing] = useState<Draft | null>(null);
   const [deleteId, setDeleteId] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
@@ -68,6 +73,38 @@ export default function ProductCategoriesPage() {
     })();
   }, []);
 
+  // Vendor category picked → load its shops for the vendor dropdown, and reset
+  // any selected vendor. "All" clears the vendor filter entirely.
+  useEffect(() => {
+    setVendor("all");
+    setVendorUsedIds(null);
+    if (vendorCat === "all") { setVendorList([]); return; }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const r = await api.get("/public/vendors", { params: { vendor_category_id: String(vendorCat) } });
+        const rows = (r.data.data?.items ?? []) as { id: number; name: string; shop_name?: string | null }[];
+        if (!cancelled) setVendorList(rows.map((v) => ({ id: Number(v.id), label: v.shop_name || v.name })));
+      } catch { if (!cancelled) setVendorList([]); }
+    })();
+    return () => { cancelled = true; };
+  }, [vendorCat]);
+
+  // Vendor picked → load the category ids that shop actually stocks (view-only
+  // filter). "All" clears it.
+  useEffect(() => {
+    if (vendor === "all") { setVendorUsedIds(null); return; }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const r = await api.get(`/admin/categories/vendor/${vendor}`);
+        const ids = (r.data.data?.ids ?? []) as number[];
+        if (!cancelled) setVendorUsedIds(new Set(ids.map(Number)));
+      } catch { if (!cancelled) setVendorUsedIds(new Set()); }
+    })();
+    return () => { cancelled = true; };
+  }, [vendor]);
+
   const vcatName = useMemo(() => {
     const m = new Map<number, string>();
     vendorCats.forEach((v) => m.set(v.id, v.name));
@@ -78,16 +115,18 @@ export default function ProductCategoriesPage() {
     if (search && !c.name.toLowerCase().includes(search.toLowerCase())) return false;
     if (status !== "all" && c.status !== status) return false;
     if (vendorCat !== "all" && (c.vendor_category_id ?? null) !== vendorCat) return false;
+    if (vendorUsedIds && !vendorUsedIds.has(c.id)) return false; // only what the picked shop stocks
     return true;
-  }), [items, search, status, vendorCat]);
+  }), [items, search, status, vendorCat, vendorUsedIds]);
 
   const totalActive = items.filter((i) => i.status === "active").length;
   const totalLinked = items.filter((i) => i.vendor_category_id != null).length;
 
   // Drag-reorder is only meaningful within ONE vendor category and only when the
-  // full group is visible (no search / status filter hiding rows), so the ids we
-  // POST are the complete, correctly-ordered set for that group.
-  const isReorderable = vendorCat !== "all" && !search && status === "all";
+  // full group is visible (no search / status / vendor filter hiding rows), so
+  // the ids we POST are the complete, correctly-ordered set for that group. A
+  // vendor filter is view-only (a shop's subset) so it disables reordering.
+  const isReorderable = vendorCat !== "all" && vendor === "all" && !search && status === "all";
   async function onReorder(next: ProductCategory[]) {
     const ids = new Set(next.map((c) => c.id));
     const prev = items;
@@ -176,7 +215,7 @@ export default function ProductCategoriesPage() {
         </div>
 
         <div className="glass rounded-2xl p-3">
-          <div className="grid gap-2 md:grid-cols-[1fr_220px_180px]">
+          <div className="grid gap-2 md:grid-cols-[1fr_190px_190px_140px]">
             <div className="relative">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search category…" className="h-10 rounded-xl bg-surface-2/60 pl-9" />
@@ -190,6 +229,16 @@ export default function ProductCategoriesPage() {
               emptyText="No vendor category."
               className="h-10 rounded-xl bg-surface-2/60"
             />
+            <Combobox
+              value={vendor === "all" ? "all" : String(vendor)}
+              onValueChange={(v) => setVendor(v === "all" ? "all" : Number(v))}
+              options={[{ value: "all", label: "All vendors" }, ...vendorList.map((v) => ({ value: String(v.id), label: v.label }))]}
+              placeholder="Vendor (shop)"
+              searchPlaceholder="Search vendor…"
+              emptyText={vendorCat === "all" ? "Pick a vendor category first." : "No shops in this category."}
+              disabled={vendorCat === "all"}
+              className="h-10 rounded-xl bg-surface-2/60"
+            />
             <Select value={status} onValueChange={(v) => v && setStatus(v as "all" | "active" | "inactive")}>
               <SelectTrigger className="h-10 rounded-xl bg-surface-2/60"><SelectValue /></SelectTrigger>
               <SelectContent>
@@ -201,9 +250,11 @@ export default function ProductCategoriesPage() {
           </div>
           {vendorCat !== "all" && (
             <p className="mt-2 px-1 text-[11px] text-muted-foreground">
-              {isReorderable
-                ? "Drag the ⠿ handle to reorder categories within this vendor category."
-                : "Clear the search / status filter to drag-reorder this vendor category."}
+              {vendor !== "all"
+                ? "Showing only the categories this shop stocks (view only). Set Vendor to “All vendors” to reorder."
+                : isReorderable
+                  ? "Drag the ⠿ handle to reorder categories within this vendor category."
+                  : "Clear the search / status filter to drag-reorder this vendor category."}
             </p>
           )}
         </div>
