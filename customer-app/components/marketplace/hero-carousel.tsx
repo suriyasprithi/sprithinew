@@ -108,11 +108,13 @@ function MainCarousel({ slides }: { slides: Banner[] }) {
   );
 }
 
-// A banner image is shown uncropped (object-contain) on desktop so posters/flyers
-// never lose their edges — but that can leave the container's flat gradient
-// showing as bars beside a mismatched aspect ratio. This blurred, scaled-up copy
-// sits behind the sharp image and fills the frame, turning that bar into a soft
-// glow instead (same idea as Instagram Stories' letterboxing).
+// A banner image is shown fully uncropped (object-contain) so a poster/flyer
+// never loses text at its edges — on ANY screen size, since a portrait flyer in
+// a short mobile slot, or a wide graphic in a narrow mobile column, both crop
+// content with object-cover. That leaves the container's flat gradient showing
+// as bars beside a mismatched aspect ratio; this blurred, scaled-up copy sits
+// behind the sharp image and fills the frame, turning that bar into a soft glow
+// instead (same idea as Instagram Stories' letterboxing).
 function BannerImg({ src, eager = false }: { src: string; eager?: boolean }) {
   return (
     <>
@@ -120,7 +122,7 @@ function BannerImg({ src, eager = false }: { src: string; eager?: boolean }) {
         src={src}
         alt=""
         aria-hidden
-        className="absolute inset-0 z-0 hidden h-full w-full scale-110 object-cover blur-2xl md:block"
+        className="absolute inset-0 z-0 h-full w-full scale-110 object-cover blur-2xl"
         loading={eager ? "eager" : "lazy"}
         decoding="async"
         referrerPolicy="no-referrer"
@@ -128,7 +130,7 @@ function BannerImg({ src, eager = false }: { src: string; eager?: boolean }) {
       <img
         src={src}
         alt=""
-        className="absolute inset-0 z-0 h-full w-full object-cover md:object-contain"
+        className="absolute inset-0 z-0 h-full w-full object-contain"
         loading={eager ? "eager" : "lazy"}
         fetchPriority={eager ? "high" : "auto"}
         decoding="async"
